@@ -1,0 +1,6 @@
+[submodule "navigation"]
+	path = navigation
+	url = git@github.com:EIC-Robocup-2026/navigation.git
+[submodule "description"]
+	path = description
+	url = git@github.com:EIC-Robocup-2026/robot-description.git

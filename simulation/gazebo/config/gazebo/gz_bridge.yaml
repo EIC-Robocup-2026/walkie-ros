@@ -1,0 +1,116 @@
+- ros_topic_name: "clock"
+  gz_topic_name: "clock"
+  ros_type_name: "rosgraph_msgs/msg/Clock"
+  gz_type_name: "gz.msgs.Clock"
+  direction: GZ_TO_ROS
+
+# gz topic published by Sensors plugin
+- ros_topic_name: "scan"
+  gz_topic_name: "scan"
+  ros_type_name: "sensor_msgs/msg/LaserScan"
+  gz_type_name: "gz.msgs.LaserScan"
+  direction: GZ_TO_ROS
+  
+- ros_topic_name: "imu"
+  gz_topic_name: "imu"
+  ros_type_name: "sensor_msgs/msg/Imu"
+  gz_type_name: "gz.msgs.IMU"
+  lazy: true
+  direction: GZ_TO_ROS
+  
+- ros_topic_name: "/gazebo_ground_truth/odom"
+  gz_topic_name: "/model/my_bot/pose"
+  ros_type_name: "geometry_msgs/msg/Pose"
+  gz_type_name: "gz.msgs.Pose"
+  direction: GZ_TO_ROS
+
+ 
+# ----------------------------
+# Camera sensors
+# ----------------------------
+
+# Bottom RGB camera
+- ros_topic_name: "/bottom_rgb/camera_info"
+  gz_topic_name: "/world/default/model/walkie_bot/link/base_footprint/sensor/bottom_rgb_sensor/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "gz.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/bottom_rgb/image_raw"
+  gz_topic_name: "/world/default/model/walkie_bot/link/base_footprint/sensor/bottom_rgb_sensor/image"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: GZ_TO_ROS
+
+# Bottom depth camera
+- ros_topic_name: "/bottom_depth/camera_info"
+  gz_topic_name: "/bottom_depth_sensor/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "gz.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/bottom_depth/image_raw"
+  gz_topic_name: "/bottom_depth/image"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/bottom_depth/points"
+  gz_topic_name: "/bottom_depth/image/points"
+  ros_type_name: "sensor_msgs/msg/PointCloud2"
+  gz_type_name: "gz.msgs.PointCloudPacked"
+  direction: GZ_TO_ROS
+
+# Bottom left IR camera
+- ros_topic_name: "/bottom_left_ir/camera_info"
+  gz_topic_name: "/world/default/model/walkie_bot/link/base_footprint/sensor/bottom_left_ired_sensor/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "gz.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/bottom_left_ir/image_raw"
+  gz_topic_name: "/world/default/model/walkie_bot/link/base_footprint/sensor/bottom_left_ired_sensor/image"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: GZ_TO_ROS
+
+# Bottom right IR camera
+- ros_topic_name: "/bottom_right_ir/camera_info"
+  gz_topic_name: "/world/default/model/walkie_bot/link/base_footprint/sensor/bottom_right_ired_sensor/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "gz.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/bottom_right_ir/image_raw"
+  gz_topic_name: "/world/default/model/walkie_bot/link/base_footprint/sensor/bottom_right_ired_sensor/image"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: GZ_TO_ROS
+
+# # gz topic published by DiffDrive plugin
+# - ros_topic_name: "odom"
+#   gz_topic_name: "odom"
+#   ros_type_name: "nav_msgs/msg/Odometry"
+#   gz_type_name: "gz.msgs.Odometry"
+#   direction: GZ_TO_ROS
+
+# # gz topic published by DiffDrive plugin
+# - ros_topic_name: "tf"
+#   gz_topic_name: "tf"
+#   ros_type_name: "tf2_msgs/msg/TFMessage"
+#   gz_type_name: "gz.msgs.Pose_V"
+#   direction: GZ_TO_ROS
+
+# # gz topic subscribed to by DiffDrive plugin
+# - ros_topic_name: "diff_cont/cmd_vel_unstamped"
+#   gz_topic_name: "cmd_vel"
+#   ros_type_name: "geometry_msgs/msg/Twist"
+#   gz_type_name: "gz.msgs.Twist"
+#   direction: ROS_TO_GZ
+
+# # gz topic published by JointState plugin
+# - ros_topic_name: "joint_states"
+#   gz_topic_name: "joint_states"
+#   ros_type_name: "sensor_msgs/msg/JointState"
+#   gz_type_name: "gz.msgs.Model"
+#   direction: GZ_TO_ROS

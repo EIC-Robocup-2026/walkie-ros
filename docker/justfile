@@ -1,0 +1,38 @@
+[private]
+default:
+    @just --list --unsorted
+
+[private]
+alias list-topics := run-topic-list
+
+# run teleop_twist_keybaord (inside rviz2 container)
+run-topic-list: _run-as-root
+    sudo docker exec robot-simulation /bin/bash -c "/ros_entrypoint.sh ros2 topic list"    
+
+build-sim :
+    sudo docker build -t "eic-robocup2026-development:latest" -f Dockerfile.simulation ..
+
+run-sim :
+    xhost local:root
+    sudo docker compose -f compose.simulation.yml up
+
+stop-sim :
+    sudo docker compose -f compose.simulation.yml down
+
+shell CONTAINER_NAME:
+    @echo "Entering shell for container '{{CONTAINER_NAME}}'..."
+    sudo docker exec -it {{CONTAINER_NAME}} /bin/bash -c "source /ros_entrypoint.sh && /bin/bash"
+
+_run-as-root:
+    #!/bin/bash
+    if [ "$EUID" -ne 0 ]; then
+        echo -e "\e[1;33mPlease re-run as root user to install dependencies\e[0m"
+        exit 0
+    fi
+
+_run-as-user:
+    #!/bin/bash
+    if [ "$EUID" -eq 0 ]; then
+        echo -e "\e[1;33mPlease re-run as non-root user\e[0m"
+        exit 0
+    fi
