@@ -4,12 +4,12 @@
 urg_node2:
   launch_config:
     auto_start: true
-    node_name: 'urg_node2'
-    scan_topic: 'front_lidar'
+    node_name: "urg_node2"
+    scan_topic: "front_lidar"
   ros__parameters:
-    ip_address: '10.0.0.101'
+    ip_address: "10.0.0.101"
     ip_port: 10940
-    frame_id: 'front_lidar_link'
+    frame_id: "front_lidar_link"
     calibrate_time: false
     synchronize_time: false
     publish_intensity: false
@@ -26,23 +26,22 @@ urg_node2:
 
 lakibeam_lidar:
   ros__parameters:
-    frame_id: 'back_lidar_link'
-    output_topic: 'back_lidar'
-    
+    frame_id: "back_lidar_link"
+    output_topic: "back_lidar"
+
     inverted: false
-    
+
     #jetson
-    # hostip: '10.0.0.201' 
+    # hostip: '10.0.0.201'
 
     #walkie pc
-    hostip: '10.0.0.6' 
-    
-    port: '2368'
-    angle_offset: 0
-    sensorip: '10.0.0.102'
-    scanfreq: '30'
-    filter: '3'
-    laser_enable: 'true'
-    scan_range_start: '60'
-    scan_range_stop: '300'
+    hostip: "10.0.0.6"
 
+    port: "2368"
+    angle_offset: 0
+    sensorip: "10.0.0.102"
+    scanfreq: "30"
+    filter: "3"
+    laser_enable: "true"
+    scan_range_start: "60"
+    scan_range_stop: "300"

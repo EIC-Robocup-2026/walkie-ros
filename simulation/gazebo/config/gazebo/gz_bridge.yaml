@@ -5,26 +5,39 @@
   direction: GZ_TO_ROS
 
 # gz topic published by Sensors plugin
+# ********** default 1 Lidar mode in robot urdf **********
 - ros_topic_name: "scan"
-  gz_topic_name: "scan"
+  gz_topic_name: "single_lidar"
   ros_type_name: "sensor_msgs/msg/LaserScan"
   gz_type_name: "gz.msgs.LaserScan"
   direction: GZ_TO_ROS
-  
+
+# ********** Use when enable 2 Lidar mode in robot urdf **********
+# - ros_topic_name: "front_lidar"
+#   gz_topic_name: "front_lidar"
+#   ros_type_name: "sensor_msgs/msg/LaserScan"
+#   gz_type_name: "gz.msgs.LaserScan"
+#   direction: GZ_TO_ROS
+
+# - ros_topic_name: "back_lidar"
+#   gz_topic_name: "back_lidar"
+#   ros_type_name: "sensor_msgs/msg/LaserScan"
+#   gz_type_name: "gz.msgs.LaserScan"
+#   direction: GZ_TO_ROS
+
 - ros_topic_name: "imu"
   gz_topic_name: "imu"
   ros_type_name: "sensor_msgs/msg/Imu"
   gz_type_name: "gz.msgs.IMU"
   lazy: true
   direction: GZ_TO_ROS
-  
+
 - ros_topic_name: "/gazebo_ground_truth/odom"
   gz_topic_name: "/model/my_bot/pose"
   ros_type_name: "geometry_msgs/msg/Pose"
   gz_type_name: "gz.msgs.Pose"
   direction: GZ_TO_ROS
 
- 
 # ----------------------------
 # Camera sensors
 # ----------------------------
@@ -86,7 +99,6 @@
   ros_type_name: "sensor_msgs/msg/Image"
   gz_type_name: "gz.msgs.Image"
   direction: GZ_TO_ROS
-
 # # gz topic published by DiffDrive plugin
 # - ros_topic_name: "odom"
 #   gz_topic_name: "odom"
