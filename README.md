@@ -20,9 +20,10 @@ walkie-ros
 │   └── lidar
 ├── navigation (sub repo)
 │   └── nav2
+├── scripts
 ├── simulation
 │   └── gazebo
-└── tools
+├── tools
 │   └── joy_interface
 └── readme.md
 ```
@@ -31,6 +32,7 @@ walkie-ros
 - **description**: Robot URDF and mesh files.
 - **hardware**: Contains all hardware drivers and software/packages specific to hardware.
 - **navigation**: Contains Nav2 config and launch files, and future custom navigation packages.
+- **scripts**: Utility scripts for quick execution of common tasks (e.g., launching simulations).
 - **simulation**: Gazebo launch, world, and model files.
 - **tools**: Custom packages / tools for development/deployment.
 
@@ -80,7 +82,21 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-### Run Gazebo Simulation
+### Run Navigation Simulation (Quick Start)
+You can launch the full Gazebo simulation with the Nav2 stack using the provided script:
+```bash
+./src/walkie-ros/scripts/sim_nav_gazebo.sh
+```
+
+### Manual Launch
+
+#### Run Navigation + Gazebo Simulation
+```bash
+ros2 launch robot_bringup nav_sim_omnibot.launch.py
+```
+
+#### Run Gazebo Simulation
 ```bash
 ros2 launch robot_simulation gzsim_omnibot.launch.py
+
 ```
