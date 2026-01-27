@@ -1,0 +1,125 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="left_arm_ros2_control" params="name prefix hardware_config_file">
+
+    <xacro:property name="hw_config" value="${xacro.load_yaml(hardware_config_file)}"/>
+
+    <xacro:if value="${'cubemars' in hw_config['hardware_config'].values()}">
+      <ros2_control name="RealSystem" type="system">
+        <hardware>
+          <plugin>cubemars_hardware/CubeMarsSystemHardware</plugin>
+          <param name="can_interface">can0</param>
+        </hardware>
+        
+        <xacro:configure_joints_from_config prefix="${prefix}" target_type="cubemars" id_offset="10"/>
+      </ros2_control>
+    </xacro:if>
+
+    <ros2_control name="MockSystem" type="system">
+      <hardware>
+         <plugin>mock_components/GenericSystem</plugin>
+      </hardware>
+      
+      <xacro:configure_joints_from_config prefix="${prefix}" target_type="mock" id_offset="10"/>
+    </ros2_control>
+
+  </xacro:macro>
+
+  <xacro:macro name="configure_joints_from_config" params="prefix target_type id_offset">
+    
+    <xacro:if value="${hw_config['hardware_config'][prefix + '_joint1'] == target_type}">
+      <xacro:configure_single_joint name="${prefix}_joint1" type="${target_type}" 
+          can_id="${id_offset + 1}" gear_ratio="100.0" trq_limit="30" pole_pairs="14" />
+    </xacro:if>
+
+    <xacro:if value="${hw_config['hardware_config'][prefix + '_joint2'] == target_type}">
+      <xacro:configure_single_joint name="${prefix}_joint2" type="${target_type}" 
+          can_id="${id_offset + 2}" gear_ratio="10.0" trq_limit="30" pole_pairs="14" />
+    </xacro:if>
+
+    <xacro:if value="${hw_config['hardware_config'][prefix + '_joint3'] == target_type}">
+      <xacro:configure_single_joint name="${prefix}_joint3" type="${target_type}" 
+          can_id="${id_offset + 3}" gear_ratio="10.0" trq_limit="30" pole_pairs="14" />
+    </xacro:if>
+
+    <xacro:if value="${hw_config['hardware_config'][prefix + '_joint4'] == target_type}">
+      <xacro:configure_single_joint name="${prefix}_joint4" type="${target_type}" 
+          can_id="${id_offset + 4}" gear_ratio="10.0" trq_limit="20" pole_pairs="14" />
+    </xacro:if>
+
+    <xacro:if value="${hw_config['hardware_config'][prefix + '_joint5'] == target_type}">
+      <xacro:configure_single_joint name="${prefix}_joint5" type="${target_type}" 
+          can_id="${id_offset + 5}" gear_ratio="10.0" trq_limit="10" pole_pairs="14" />
+    </xacro:if>
+
+    <xacro:if value="${hw_config['hardware_config'][prefix + '_joint6'] == target_type}">
+      <xacro:configure_single_joint name="${prefix}_joint6" type="${target_type}" 
+          can_id="${id_offset + 6}" gear_ratio="10.0" trq_limit="10" pole_pairs="14" />
+    </xacro:if>
+
+    <xacro:if value="${hw_config['hardware_config'][prefix + '_joint7'] == target_type}">
+      <xacro:configure_single_joint name="${prefix}_joint7" type="${target_type}" 
+          can_id="${id_offset + 7}" gear_ratio="10.0" trq_limit="10" pole_pairs="14" />
+    </xacro:if>
+
+    <xacro:if value="${prefix + '_gripper_worm_gear' in hw_config['hardware_config']}">
+         <xacro:if value="${hw_config['hardware_config'][prefix + '_gripper_worm_gear'] == target_type}">
+            <xacro:configure_single_gripper name="${prefix}_gripper_worm_gear" type="${target_type}" 
+                can_id="${id_offset + 8}" gear_ratio="1.0" trq_limit="5" />
+         </xacro:if>
+    </xacro:if>
+
+  </xacro:macro>
+
+  <xacro:macro name="configure_single_joint" params="name type can_id gear_ratio trq_limit pole_pairs">
+    <joint name="${name}">
+      <xacro:if value="${type == 'cubemars'}">
+        <param name="can_id">${can_id}</param>
+        <param name="pole_pairs">${pole_pairs}</param>
+        <param name="gear_ratio">${gear_ratio}</param>
+        <param name="kt">0.123</param>
+        <param name="enc_off">0.0</param>
+        <param name="trq_limit">${trq_limit}</param>
+        <param name="read_only">0</param>
+      </xacro:if>
+      
+      <command_interface name="position"/>
+      <command_interface name="velocity">
+        <xacro:if value="${type == 'cubemars'}">
+           <param name="min">-16</param> <param name="max">16</param>
+        </xacro:if>
+      </command_interface>
+      
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity"/>
+      <xacro:if value="${type == 'cubemars'}">
+        <state_interface name="temperature"/>
+      </xacro:if>
+    </joint>
+  </xacro:macro>
+
+  <xacro:macro name="configure_single_gripper" params="name type can_id gear_ratio trq_limit">
+    <joint name="${name}">
+      <xacro:if value="${type == 'cubemars'}">
+         <param name="can_id">${can_id}</param>
+         <param name="pole_pairs">14</param>
+         <param name="gear_ratio">${gear_ratio}</param>
+         <param name="kt">0.123</param>
+         <param name="enc_off">0.0</param>
+         <param name="trq_limit">${trq_limit}</param>
+         <param name="read_only">0</param>
+      </xacro:if>
+
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+      <xacro:if value="${type == 'cubemars'}">
+        <state_interface name="temperature"/>
+      </xacro:if>
+    </joint>
+  </xacro:macro>
+
+</robot>
