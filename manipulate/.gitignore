@@ -1,0 +1,108 @@
+# ROS 2 build folders
+build
+install
+log
+
+# ROSbots submodules
+rosbot_hardware_interfaces/
+rosbot_controllers/
+husarion_components_description/
+husarion_gz_worlds
+gazebosim/gz_ros2_control
+diff_drive_controller
+imu_sensor_broadcaster
+micro-ROS-Agent/
+micro_ros_msgs/
+
+# pyspelling
+*.dic
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and Editor folders
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.sublime-workspace
+*.sublime-project
+
+# Dependencies
+node_modules/
+bower_components/
+jspm_packages/
+vendor/
+.pnp/
+.pnp.js
+
+# Build outputs
+dist/
+build/
+out/
+target/
+*.pyc
+__pycache__/
+*.class
+bin/
+obj/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+.env.local
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+debug.log
+*.log
+
+# Coverage directories
+coverage/
+.coverage
+htmlcov/
+
+# Cache directories
+.cache/
+.npm
+.eslintcache
+.stylelintcache
+*.sass-cache
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Optional: Package lock files (uncomment if you want to ignore)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Optional: Local configuration files
+# config.local.js
+# settings.local.json
+
+# Optional: Database files
+*.sqlite
+*.db
+
+# Optional: Compiled source
+*.com
+*.dll
+*.exe
+*.o
+*.so
