@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<robot name="left_walkie_arm">
+    <group name="left_arm">
+        <joint name="virtual_joint"/>
+        <joint name="left_joint1"/>
+        <joint name="left_joint2"/>
+        <joint name="left_joint3"/>
+        <joint name="left_joint4"/>
+        <joint name="left_joint5"/>
+        <joint name="left_joint6"/>
+        <joint name="left_joint7"/>
+        <joint name="left_gripper_center_joint"/>
+    </group>
+    <group name="left_gripper">
+        <joint name="left_gripper_gear_l"/>
+        <joint name="left_gripper_hand_l"/>
+        <joint name="left_gripper_connector_l"/>
+        <joint name="left_gripper_gear_r"/>
+        <joint name="left_gripper_hand_r"/>
+        <joint name="left_gripper_connector_r"/>
+        <joint name="left_gripper_worm_gear"/>
+    </group>
+    <group_state name="home" group="left_arm">
+        <joint name="left_joint1" value="0"/>
+        <joint name="left_joint2" value="0"/>
+        <joint name="left_joint3" value="0"/>
+        <joint name="left_joint4" value="0"/>
+        <joint name="left_joint5" value="0"/>
+        <joint name="left_joint6" value="0"/>
+        <joint name="left_joint7" value="0"/>
+    </group_state>
+    <group_state name="down" group="left_arm">
+        <joint name="left_joint1" value="0"/>
+        <joint name="left_joint2" value="-1.57"/>
+        <joint name="left_joint3" value="1.57"/>
+        <joint name="left_joint4" value="0"/>
+        <joint name="left_joint5" value="0"/>
+        <joint name="left_joint6" value="0"/>
+        <joint name="left_joint7" value="0"/>
+    </group_state>
+    <group_state name="open" group="left_gripper">
+        <joint name="left_gripper_worm_gear" value="-15.7"/>
+    </group_state>
+    <group_state name="close" group="left_gripper">
+        <joint name="left_gripper_worm_gear" value="0"/>
+    </group_state>
+    <end_effector name="left_gripper" parent_link="left_gripper_center" group="left_gripper" parent_group="left_arm"/>
+    <virtual_joint name="virtual_joint" type="fixed" parent_frame="world_link" child_link="base_link"/>
+    <disable_collisions link1="base_link" link2="left_link1" reason="Adjacent"/>
+    <disable_collisions link1="base_link" link2="left_link2" reason="Never"/>
+    <disable_collisions link1="base_link" link2="left_link3" reason="Never"/>
+    <disable_collisions link1="base_link" link2="left_link4" reason="Never"/>
+    <disable_collisions link1="base_link" link2="left_link5" reason="Never"/>
+    
+    <disable_collisions link1="left_gripper_hand_l" link2="left_link3" reason="Never"/>
+    <disable_collisions link1="left_gripper_hand_l" link2="left_link4" reason="Never"/>
+    <disable_collisions link1="left_gripper_hand_l" link2="left_link5" reason="Never"/>
+    <disable_collisions link1="left_gripper_hand_l" link2="left_link6" reason="Never"/>
+    <disable_collisions link1="left_gripper_hand_l" link2="left_link7" reason="Adjacent"/>
+    <disable_collisions link1="left_gripper_hand_r" link2="left_link3" reason="Never"/>
+    <disable_collisions link1="left_gripper_hand_r" link2="left_link4" reason="Never"/>
+    <disable_collisions link1="left_gripper_hand_r" link2="left_link5" reason="Never"/>
+    <disable_collisions link1="left_gripper_hand_r" link2="left_link6" reason="Never"/>
+    <disable_collisions link1="left_gripper_hand_r" link2="left_link7" reason="Adjacent"/>
+
+    <disable_collisions link1="left_gripper_center" link2="left_link3" reason="Never"/>
+    <disable_collisions link1="left_gripper_center" link2="left_link4" reason="Never"/>
+    <disable_collisions link1="left_gripper_center" link2="left_link5" reason="Never"/>
+    <disable_collisions link1="left_gripper_center" link2="left_link6" reason="Never"/>
+    <disable_collisions link1="left_gripper_center" link2="left_link7" reason="Adjacent"/>
+    <disable_collisions link1="left_gripper_center" link2="left_gripper_hand_l" reason="Adjacent"/>
+    <disable_collisions link1="left_gripper_center" link2="left_gripper_hand_r" reason="Adjacent"/>
+    <disable_collisions link1="left_gripper_center" link2="left_gripper_connector_l" reason="Adjacent"/>
+    <disable_collisions link1="left_gripper_center" link2="left_gripper_connector_r" reason="Adjacent"/>
+
+    <disable_collisions link1="left_link1" link2="left_link2" reason="Adjacent"/>
+    <disable_collisions link1="left_link1" link2="left_link3" reason="Never"/>
+    <disable_collisions link1="left_link1" link2="left_link4" reason="Never"/>
+    <disable_collisions link1="left_link1" link2="left_link5" reason="Never"/>
+    <disable_collisions link1="left_link2" link2="left_link3" reason="Adjacent"/>
+    <disable_collisions link1="left_link2" link2="left_link4" reason="Never"/>
+    <disable_collisions link1="left_link2" link2="left_link5" reason="Never"/>
+    <disable_collisions link1="left_link2" link2="left_link6" reason="Never"/>
+    <disable_collisions link1="left_link3" link2="left_link4" reason="Adjacent"/>
+    <disable_collisions link1="left_link3" link2="left_link5" reason="Never"/>
+    <disable_collisions link1="left_link3" link2="left_link6" reason="Never"/>
+    <disable_collisions link1="left_link3" link2="left_link7" reason="Never"/>
+    <disable_collisions link1="left_link4" link2="left_link5" reason="Adjacent"/>
+    <disable_collisions link1="left_link4" link2="left_link6" reason="Never"/>
+    <disable_collisions link1="left_link4" link2="left_link7" reason="Never"/>
+    <disable_collisions link1="left_link5" link2="left_link6" reason="Adjacent"/>
+    <disable_collisions link1="left_link5" link2="left_link7" reason="Never"/>
+    <disable_collisions link1="left_link6" link2="left_link7" reason="Adjacent"/>
+</robot>

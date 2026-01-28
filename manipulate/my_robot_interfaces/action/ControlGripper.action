@@ -1,0 +1,7 @@
+string group_name
+bool open
+---
+bool success
+string status
+---
+# Feedback
