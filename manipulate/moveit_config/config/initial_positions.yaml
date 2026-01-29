@@ -1,0 +1,11 @@
+# Default initial positions for left_walkie_arm's ros2_control fake system
+
+initial_positions:
+  left_gripper_worm_gear: 0
+  left_joint1: 0
+  left_joint2: 0
+  left_joint3: 0
+  left_joint4: 0
+  left_joint5: 0
+  left_joint6: 0
+  left_joint7: 0
