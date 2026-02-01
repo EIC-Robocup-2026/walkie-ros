@@ -3,5 +3,5 @@ from moveit_configs_utils.launches import generate_spawn_controllers_launch
 
 
 def generate_launch_description():
-    moveit_config = MoveItConfigsBuilder("left_walkie_arm", package_name="moveit_config").to_moveit_configs()
+    moveit_config = MoveItConfigsBuilder("walkie_bot", package_name="left_arm_moveit_config").to_moveit_configs()
     return generate_spawn_controllers_launch(moveit_config)

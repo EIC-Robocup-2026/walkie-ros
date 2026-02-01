@@ -5,7 +5,7 @@ from moveit_configs_utils import MoveItConfigsBuilder
 def generate_launch_description():
     # CHANGED: "dual_walkie_arm" -> "left_walkie_arm"
     # This must match the name used in your SRDF and other config files
-    moveit_config = MoveItConfigsBuilder("left_walkie_arm", package_name="moveit_config").to_moveit_configs()
+    moveit_config = MoveItConfigsBuilder("left_walkie_arm", package_name="left_arm_moveit_config").to_moveit_configs()
 
     commander_node = Node(
         package="left_arm_commander_cpp",

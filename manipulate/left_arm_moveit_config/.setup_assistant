@@ -1,29 +1,25 @@
 moveit_setup_assistant_config:
   urdf:
-    package: arm_description
-    relative_path: robots/left-walkie-arm.urdf.xacro
+    package: walkie_description
+    relative_path: robots/gz_walkie_1arm.urdf
   srdf:
-    relative_path: config/left_walkie_arm.srdf
+    relative_path: config/walkie_bot.srdf
   package_settings:
     author_name: ryu49th
     author_email: ryu49th@gmail.com
-    generated_timestamp: 1769454791
+    generated_timestamp: 1769930676
   control_xacro:
     command:
       - position
-      - effort
     state:
       - position
       - velocity
-      - effort
   modified_urdf:
     xacros:
       - control_xacro
   control_xacro:
     command:
       - position
-      - effort
     state:
       - position
       - velocity
-      - effort

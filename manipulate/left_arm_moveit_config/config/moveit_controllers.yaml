@@ -2,6 +2,10 @@
 
 moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
 
+planning_scene_monitor_options:
+  # Increase this if you see time diff warnings
+  state_update_delay: 0.1  # Default is often 0.05
+
 moveit_simple_controller_manager:
   controller_names:
     - left_arm_controller
@@ -19,9 +23,11 @@ moveit_simple_controller_manager:
       - left_joint7
     action_ns: follow_joint_trajectory
     default: true
+
   left_hand_controller:
     type: FollowJointTrajectory
     joints:
       - left_gripper_worm_gear_joint
     action_ns: follow_joint_trajectory
     default: true
+

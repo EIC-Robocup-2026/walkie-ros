@@ -82,6 +82,8 @@ private:
 
   std::vector<double> erpm_conversions_;
   std::vector<double> torque_constants_;
+  std::vector<double> internal_gear_ratios_;
+  std::vector<double> external_gear_ratios_;
   std::vector<double> enc_offs_;
   std::vector<double> trq_limits_;
   std::vector<std::pair<std::int16_t, std::int16_t>> limits_;
