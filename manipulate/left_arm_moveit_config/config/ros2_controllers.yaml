@@ -26,7 +26,6 @@ left_arm_controller:
       - left_joint7
     command_interfaces:
       - position
-      - effort
     state_interfaces:
       - position
       - velocity
@@ -37,7 +36,6 @@ left_hand_controller:
       - left_gripper_worm_gear_joint
     command_interfaces:
       - position
-      - effort
     state_interfaces:
       - position
       - velocity

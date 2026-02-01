@@ -45,7 +45,7 @@ public:
 
         // 2. Initialize Groups (LEFT ONLY)
         left_arm_ = std::make_shared<MoveGroupInterface>(node_, "left_arm");
-        left_gripper_ = std::make_shared<MoveGroupInterface>(node_, "left_gripper");
+        left_gripper_ = std::make_shared<MoveGroupInterface>(node_, "left_hand");
 
         // Set scaling
         left_arm_->setMaxVelocityScalingFactor(1.0);
@@ -150,7 +150,7 @@ public:
 
         // Fixed to left side
         std::string controller_name = "left_hand_controller";
-        std::string joint_name = "left_gripper_controller";
+        std::string joint_name = "left_gripper_worm_gear_joint";
         std::string action_topic = "/" + controller_name + "/follow_joint_trajectory";
 
         // Determine target position
@@ -175,7 +175,7 @@ public:
         }
 
         FollowJointTrajectory::Goal goal;
-        goal.trajectory.header.frame_id = "base_link";
+        goal.trajectory.header.frame_id = "base_footprint";
         goal.trajectory.joint_names = {joint_name};
         
         trajectory_msgs::msg::JointTrajectoryPoint p;
@@ -216,7 +216,7 @@ public:
         if (!group) return false;
         
         group->setStartStateToCurrentState();
-        group->setPoseReferenceFrame("base_link");
+        group->setPoseReferenceFrame("base_footprint");
 
         if (cartesian) {
             std::vector<geometry_msgs::msg::Pose> waypoints;

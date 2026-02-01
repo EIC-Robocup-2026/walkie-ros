@@ -4,7 +4,7 @@ from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, RegisterEventHandler, DeclareLaunchArgument
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration, PythonExpression
-from launch_ros.actions import Node
+from launch_ros.actions import Node, SetParameter
 from moveit_configs_utils import MoveItConfigsBuilder
 from launch.event_handlers import OnProcessExit
 from launch.conditions import IfCondition, UnlessCondition
@@ -16,15 +16,15 @@ def generate_launch_description():
     # ========================================================================
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
     pkg_walkie_description = get_package_share_directory('walkie_description')
-    pkg_moveit_config = get_package_share_directory('moveit_config')
+    pkg_left_arm_moveit_config = get_package_share_directory('left_arm_moveit_config')
 
-    # CHANGED: Point to the Left Arm URDF
-    xacro_path = os.path.join(pkg_walkie_description, 'robots', 'left-walkie-arm.urdf.xacro')
+    # Point to the full mobile robot URDF with base, wheels, arm, and gripper
+    xacro_path = os.path.join(pkg_walkie_description, 'robots', 'gz_walkie_1arm_moveit.urdf.xacro')
     
-    rviz_config_path = os.path.join(pkg_moveit_config, 'config', 'moveit.rviz')
+    rviz_config_path = os.path.join(pkg_left_arm_moveit_config, 'config', 'moveit.rviz')
   
-    # Point to the controllers in moveit_config
-    controller_config = os.path.join(pkg_moveit_config, 'config', 'ros2_controllers.yaml')
+    # Point to the controllers in left_arm_moveit_config
+    controller_config = os.path.join(pkg_left_arm_moveit_config, 'config', 'ros2_controllers.yaml')
 
     # Launch Argument: hardware_type
     hardware_type_arg = DeclareLaunchArgument(
@@ -43,7 +43,7 @@ def generate_launch_description():
 
     # Condition: Are we running Gazebo?
     should_launch_gazebo = PythonExpression(["'", hardware_type, "' == 'gazebo'"])
-    use_sim_time = should_launch_gazebo
+    use_sim_time = PythonExpression(["'", hardware_type, "' == 'gazebo' or '", hardware_type, "' == 'isaac'"])
 
     # ========================================================================
     # 2. GENERATE ROBOT DESCRIPTION
@@ -117,16 +117,16 @@ def generate_launch_description():
     # G. MoveIt Group
     move_group = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(pkg_moveit_config, 'launch', 'move_group.launch.py')
+            os.path.join(pkg_left_arm_moveit_config, 'launch', 'move_group.launch.py')
         ),
-        launch_arguments={'use_sim_time': use_sim_time}.items(),
+        # launch_arguments={'use_sim_time': use_sim_time}.items(),
     )
 
     # ========================================================================
     # H. RViz
     # ========================================================================
     # CHANGED: Ensure this matches the name in your SRDF file
-    moveit_config = MoveItConfigsBuilder("left_walkie_arm", package_name="moveit_config").to_moveit_configs()
+    moveit_config = MoveItConfigsBuilder("walkie_bot", package_name="left_arm_moveit_config").to_moveit_configs()
     
     rviz_parameters = [
         robot_description,
@@ -134,7 +134,7 @@ def generate_launch_description():
         moveit_config.robot_description_kinematics,
         moveit_config.planning_pipelines,
         moveit_config.joint_limits,
-        {'use_sim_time': use_sim_time}
+        # {'use_sim_time': use_sim_time}
     ]
     
     rviz = Node(
@@ -195,6 +195,9 @@ def generate_launch_description():
     # Args
     ld.add_action(hardware_type_arg)
     ld.add_action(hardware_config_file_arg)
+
+    # Global Parameters
+    ld.add_action(SetParameter(name='use_sim_time', value=use_sim_time))
 
     # Core Nodes
     ld.add_action(robot_state_publisher)

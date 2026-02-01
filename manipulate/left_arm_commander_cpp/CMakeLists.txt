@@ -37,7 +37,17 @@ ament_target_dependencies(left_arm_test
   control_msgs
 )
 
-install(TARGETS left_arm_test commander commander_vision
+
+add_executable(commander_isaac src/commander_isaac.cpp)
+ament_target_dependencies(commander_isaac 
+  rclcpp 
+  moveit_ros_planning_interface 
+  geometry_msgs 
+  tf2_geometry_msgs 
+  moveit_msgs
+)
+
+install(TARGETS left_arm_test commander commander_vision commander_isaac
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch
