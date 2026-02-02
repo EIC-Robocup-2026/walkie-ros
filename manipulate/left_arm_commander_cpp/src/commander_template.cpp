@@ -6,6 +6,8 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Vector3.h>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
 #include <my_robot_interfaces/msg/pose_command.hpp>
 #include <example_interfaces/msg/bool.hpp>
 #include <example_interfaces/msg/float64_multi_array.hpp>
@@ -43,13 +45,20 @@ public:
         auto sub_opt = rclcpp::SubscriptionOptions();
         sub_opt.callback_group = callback_group_;
 
+        tf_buffer_ = std::make_shared<tf2_ros::Buffer>(node_->get_clock());
+        tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+        
         // 2. Initialize Groups (LEFT ONLY)
         left_arm_ = std::make_shared<MoveGroupInterface>(node_, "left_arm");
         left_gripper_ = std::make_shared<MoveGroupInterface>(node_, "left_hand");
 
+
         // Set scaling
         left_arm_->setMaxVelocityScalingFactor(1.0);
         left_arm_->setMaxAccelerationScalingFactor(1.0);
+
+        left_arm_->setPlanningTime(1.0); 
+        left_gripper_->setPlanningTime(1.0);
         
         // Initialize Gripper Action Client (LEFT ONLY)
         left_gripper_client_ = rclcpp_action::create_client<control_msgs::action::FollowJointTrajectory>(
@@ -92,35 +101,6 @@ public:
         if (group_name == "left_arm") return left_arm_;
         if (group_name == "left_gripper") return left_gripper_;
         return nullptr;
-    }
-
-    bool goToPoseRelativeTarget(std::shared_ptr<MoveGroupInterface> group, double dx, double dy, double dz, 
-                                double droll, double dpitch, double dyaw, bool cartesian_path)
-    {
-        if (!group) return false;
-        
-        geometry_msgs::msg::Pose current_pose = group->getCurrentPose().pose;
-
-        // Local Math
-        tf2::Quaternion q_current;
-        tf2::fromMsg(current_pose.orientation, q_current);
-        
-        tf2::Quaternion q_increment;
-        q_increment.setRPY(droll, dpitch, dyaw);
-        tf2::Quaternion q_final = q_current * q_increment;
-        q_final.normalize();
-
-        tf2::Matrix3x3 mat_rot(q_current);
-        tf2::Vector3 v_offset(dx, dy, dz);
-        tf2::Vector3 v_offset_rotated = mat_rot * v_offset;
-
-        geometry_msgs::msg::Pose target_pose;
-        target_pose.position.x = current_pose.position.x + v_offset_rotated.x();
-        target_pose.position.y = current_pose.position.y + v_offset_rotated.y();
-        target_pose.position.z = current_pose.position.z + v_offset_rotated.z();
-        target_pose.orientation = tf2::toMsg(q_final);
-
-        return executeTarget(group, target_pose, cartesian_path);
     }
 
     bool goToPoseTarget(std::shared_ptr<MoveGroupInterface> group, double x, double y, double z, double roll, double pitch, double yaw, bool cartesian_path)
@@ -218,6 +198,9 @@ public:
         group->setStartStateToCurrentState();
         group->setPoseReferenceFrame("base_footprint");
 
+        // 2. But require it to end VERY close to the target (Fixes "Ghost Success")
+        group->setGoalTolerance(0.01);
+
         if (cartesian) {
             std::vector<geometry_msgs::msg::Pose> waypoints;
             waypoints.push_back(target);
@@ -267,7 +250,15 @@ public:
     }
 
     rclcpp_action::CancelResponse handle_cancel_pose(const std::shared_ptr<GoalHandleGoToPose> goal_handle) {
+        RCLCPP_INFO(node_->get_logger(), "Received request to cancel GoToPose");
         (void)goal_handle;
+        
+        // --- ADD THIS BLOCK ---
+        if (left_arm_) {
+            left_arm_->stop(); // Forces the blocking execute() to return immediately
+        }
+        // ----------------------
+
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -278,23 +269,81 @@ public:
     void execute_go_to_pose(const std::shared_ptr<GoalHandleGoToPose> goal_handle) {
         auto result = std::make_shared<GoToPose::Result>();
         const auto goal = goal_handle->get_goal();
+        auto group = getGroup(goal->group_name);
 
-        bool success = goToPoseTarget(getGroup(goal->group_name), goal->x, goal->y, goal->z, goal->roll, goal->pitch, goal->yaw, goal->cartesian_path);
+        if (!group) {
+            result->success = false;
+            result->status = "Invalid Group";
+            goal_handle->abort(result);
+            return;
+        }
 
+        // 1. Setup
+        group->setStartStateToCurrentState();
+        group->setPoseReferenceFrame("base_footprint");
+        group->setGoalTolerance(0.01);
+
+        // 2. Prepare Target Pose (Math logic moved here)
+        tf2::Quaternion q;
+        q.setRPY(goal->roll, goal->pitch, goal->yaw);
+        q.normalize();
+        
+        geometry_msgs::msg::Pose target_pose;
+        target_pose.position.x = goal->x;
+        target_pose.position.y = goal->y;
+        target_pose.position.z = goal->z;
+        target_pose.orientation = tf2::toMsg(q);
+
+        RCLCPP_INFO(node_->get_logger(), "Planning to X:%.2f Y:%.2f Z:%.2f", goal->x, goal->y, goal->z);
+
+        // 3. Plan
+        bool plan_success = false;
+        MoveGroupInterface::Plan plan;
+
+        if (goal->cartesian_path) {
+            std::vector<geometry_msgs::msg::Pose> waypoints = {target_pose};
+            moveit_msgs::msg::RobotTrajectory trajectory;
+            double fraction = group->computeCartesianPath(waypoints, 0.01, trajectory);
+            
+            if (fraction > 0.9) {
+                // Convert to full plan
+                robot_trajectory::RobotTrajectory rt(group->getCurrentState()->getRobotModel(), group->getName());
+                rt.setRobotTrajectoryMsg(*group->getCurrentState(), trajectory);
+                trajectory_processing::TimeOptimalTrajectoryGeneration totg;
+                if (totg.computeTimeStamps(rt, 1.0, 1.0)) {
+                    rt.getRobotTrajectoryMsg(plan.trajectory); // Note: .trajectory_ or .trajectory depending on version
+                    plan_success = true;
+                }
+            }
+        } else {
+            group->setPoseTarget(target_pose);
+            plan_success = (group->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+        }
+
+        // 4. CRITICAL: Check for Cancel BEFORE Executing
         if (goal_handle->is_canceling()) {
+            RCLCPP_WARN(node_->get_logger(), "Goal Canceled during planning phase");
             result->success = false;
             result->status = "Canceled";
             goal_handle->canceled(result);
             return;
         }
 
-        if (success) {
-            result->success = true;
-            result->status = "Success";
-            goal_handle->succeed(result);
+        // 5. Execute
+        if (plan_success) {
+            auto err = group->execute(plan);
+            if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+                result->success = true;
+                result->status = "Success";
+                goal_handle->succeed(result);
+            } else {
+                result->success = false;
+                result->status = "Execution Failed";
+                goal_handle->abort(result);
+            }
         } else {
             result->success = false;
-            result->status = "Failed";
+            result->status = "Planning Failed";
             goal_handle->abort(result);
         }
     }
@@ -310,7 +359,15 @@ public:
     }
 
     rclcpp_action::CancelResponse handle_cancel_pose_relative(const std::shared_ptr<GoalHandleGoToPoseRelative> goal_handle) {
+        RCLCPP_INFO(node_->get_logger(), "Received request to cancel GoToPoseRelative");
         (void)goal_handle;
+
+        // --- ADD THIS TO FORCE STOP ---
+        if (left_arm_) {
+            left_arm_->stop();
+        }
+        // ------------------------------
+
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -321,23 +378,154 @@ public:
     void execute_go_to_pose_relative(const std::shared_ptr<GoalHandleGoToPoseRelative> goal_handle) {
         auto result = std::make_shared<GoToPoseRelative::Result>();
         const auto goal = goal_handle->get_goal();
+        auto group = getGroup(goal->group_name);
 
-        bool success = goToPoseRelativeTarget(getGroup(goal->group_name), goal->x, goal->y, goal->z, goal->roll, goal->pitch, goal->yaw, goal->cartesian_path);
-
-        if (goal_handle->is_canceling()) {
-             result->success = false;
-             result->status = "Canceled";
-             goal_handle->canceled(result);
-             return;
+        if (!group) {
+            result->success = false;
+            result->status = "Invalid Group";
+            goal_handle->abort(result);
+            return;
         }
 
-        if (success) {
+        // ---------------------------------------------------------
+        // 1. Get Current Pose from TF (More reliable than MoveIt)
+        // ---------------------------------------------------------
+        std::string target_frame = "base_footprint";
+        std::string source_frame = group->getEndEffectorLink(); // Gets the tip link name automatically
+
+        geometry_msgs::msg::Pose current_pose;
+
+        try {
+            // Look up the transform from EEF -> Base
+            geometry_msgs::msg::TransformStamped t;
+            t = tf_buffer_->lookupTransform(
+                target_frame, 
+                source_frame, 
+                tf2::TimePointZero // Get the very latest transform
+            );
+
+            // Convert to Pose
+            current_pose.position.x = t.transform.translation.x;
+            current_pose.position.y = t.transform.translation.y;
+            current_pose.position.z = t.transform.translation.z;
+            current_pose.orientation = t.transform.rotation;
+            
+            RCLCPP_INFO(node_->get_logger(), "TF Current Pose -> X:%.2f Y:%.2f Z:%.2f", 
+                current_pose.position.x, current_pose.position.y, current_pose.position.z);
+
+        } catch (const tf2::TransformException &ex) {
+            RCLCPP_ERROR(node_->get_logger(), "TF Lookup Failed: %s", ex.what());
+            result->success = false;
+            result->status = "TF Lookup Failed";
+            goal_handle->abort(result);
+            return;
+        }
+
+        // Setup Group for Planning
+        group->setStartStateToCurrentState();
+        group->setPoseReferenceFrame(target_frame); // Must match the frame we used for TF!
+        group->setGoalTolerance(0.01);
+
+        // ---------------------------------------------------------
+        // 2. Do the Math (Relative -> Absolute)
+        // ---------------------------------------------------------
+        tf2::Quaternion q_current;
+        tf2::fromMsg(current_pose.orientation, q_current);
+        
+        // Rotation relative to current tool orientation
+        tf2::Quaternion q_increment;
+        q_increment.setRPY(goal->roll, goal->pitch, goal->yaw);
+        tf2::Quaternion q_final = q_current * q_increment; 
+        q_final.normalize();
+
+        // Translation relative to current tool orientation
+        tf2::Matrix3x3 mat_rot(q_current);
+        tf2::Vector3 v_offset(goal->x, goal->y, goal->z);
+        tf2::Vector3 v_offset_rotated = mat_rot * v_offset;
+
+        geometry_msgs::msg::Pose target_pose;
+        target_pose.position.x = current_pose.position.x + v_offset_rotated.x();
+        target_pose.position.y = current_pose.position.y + v_offset_rotated.y();
+        target_pose.position.z = current_pose.position.z + v_offset_rotated.z();
+        target_pose.orientation = tf2::toMsg(q_final);
+
+        RCLCPP_INFO(node_->get_logger(), "Relative Target -> X:%.2f Y:%.2f Z:%.2f", 
+            target_pose.position.x, target_pose.position.y, target_pose.position.z);
+
+        // ---------------------------------------------------------
+        // 3. Plan (Cartesian with Fallback)
+        // ---------------------------------------------------------
+        bool plan_success = false;
+        bool using_cartesian_result = false;
+        
+        MoveGroupInterface::Plan plan;
+        moveit_msgs::msg::RobotTrajectory cartesian_traj;
+
+        // A. Try Cartesian Path First
+        if (goal->cartesian_path) {
+            std::vector<geometry_msgs::msg::Pose> waypoints = {target_pose};
+            
+            double eef_step = 0.01;      // 1cm resolution
+            
+            double fraction = group->computeCartesianPath(waypoints, eef_step , cartesian_traj);
+            RCLCPP_INFO(node_->get_logger(), "Cartesian path fraction: %.2f", fraction);
+
+            if (fraction >= 0.90) {
+                // Apply Time Parameterization
+                robot_trajectory::RobotTrajectory rt(group->getCurrentState()->getRobotModel(), group->getName());
+                rt.setRobotTrajectoryMsg(*group->getCurrentState(), cartesian_traj);
+                
+                trajectory_processing::TimeOptimalTrajectoryGeneration totg;
+                if (totg.computeTimeStamps(rt, 1.0, 1.0)) {
+                    rt.getRobotTrajectoryMsg(cartesian_traj);
+                    plan_success = true;
+                    using_cartesian_result = true;
+                }
+            }
+        }
+
+        // B. Fallback to Standard PTP
+        if (!plan_success) {
+            if (goal->cartesian_path) {
+                RCLCPP_WARN(node_->get_logger(), "Cartesian failed. Falling back to PTP.");
+            }
+            
+            group->setPoseTarget(target_pose);
+            moveit::core::MoveItErrorCode plan_result = group->plan(plan);
+            
+            if (plan_result == moveit::core::MoveItErrorCode::SUCCESS) {
+                plan_success = true;
+                using_cartesian_result = false;
+            }
+        }
+
+        // 4. Check Cancel
+        if (goal_handle->is_canceling()) {
+            result->success = false;
+            result->status = "Canceled";
+            goal_handle->canceled(result);
+            return;
+        }
+
+        // 5. Execute
+        moveit::core::MoveItErrorCode err = moveit::core::MoveItErrorCode::FAILURE;
+        
+        if (plan_success) {
+            if (using_cartesian_result) {
+                err = group->execute(cartesian_traj);
+            } else {
+                err = group->execute(plan);
+            }
+        }
+
+        // 6. Result
+        if (err == moveit::core::MoveItErrorCode::SUCCESS) {
             result->success = true;
             result->status = "Success";
             goal_handle->succeed(result);
         } else {
             result->success = false;
-            result->status = "Failed";
+            result->status = plan_success ? "Execution Failed" : "Planning Failed";
             goal_handle->abort(result);
         }
     }
@@ -401,7 +589,15 @@ public:
     }
 
     rclcpp_action::CancelResponse handle_cancel_home(const std::shared_ptr<GoalHandleGoToHome> goal_handle) {
+        RCLCPP_INFO(node_->get_logger(), "Received request to cancel GoToHome");
         (void)goal_handle;
+
+        // --- ADD THIS BLOCK ---
+        if (left_arm_) {
+            left_arm_->stop();
+        }
+        // ----------------------
+
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -411,36 +607,49 @@ public:
 
     void execute_go_to_home(const std::shared_ptr<GoalHandleGoToHome> goal_handle) {
         auto result = std::make_shared<GoToHome::Result>();
-        const auto goal = goal_handle->get_goal();
+        
+        RCLCPP_INFO(node_->get_logger(), "Executing GoToHome Action");
 
-        RCLCPP_INFO(node_->get_logger(), "Executing GoToHome Action for Left Arm");
-        
-        std::string target_state = "left_home";
-        bool success = false;
-        
-        // Use Left Arm
-        if (left_arm_) {
-             left_arm_->setStartStateToCurrentState();
-             left_arm_->setNamedTarget(target_state);
-             MoveGroupInterface::Plan plan;
-             if (left_arm_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS) {
-                 left_arm_->execute(plan);
-                 success = true;
-             }
+        if (!left_arm_) {
+             goal_handle->abort(result);
+             return;
         }
 
+        // Setup
+        left_arm_->setStartStateToCurrentState();
+        left_arm_->setPoseReferenceFrame("base_footprint");
+        left_arm_->setGoalTolerance(0.01); 
+
+        // Set Target (All Zeros)
+        std::vector<double> home_joints(left_arm_->getVariableCount(), 0.0);
+        left_arm_->setJointValueTarget(home_joints);
+
+        // 1. Plan
+        MoveGroupInterface::Plan plan;
+        bool plan_success = (left_arm_->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+
+        // 2. CRITICAL: Check for Cancel
         if (goal_handle->is_canceling()) {
+            RCLCPP_WARN(node_->get_logger(), "Home Goal Canceled during planning");
             result->success = false;
             goal_handle->canceled(result);
             return;
         }
 
-        if (success) {
-            result->success = true;
-            goal_handle->succeed(result);
+        // 3. Execute
+        if (plan_success) {
+             auto err = left_arm_->execute(plan);
+             if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+                 result->success = true;
+                 goal_handle->succeed(result);
+             } else {
+                 result->success = false;
+                 goal_handle->abort(result);
+             }
         } else {
-            result->success = false;
-            goal_handle->abort(result);
+             RCLCPP_ERROR(node_->get_logger(), "Failed to plan path to Home!");
+             result->success = false;
+             goal_handle->abort(result);
         }
     }
 
@@ -453,6 +662,9 @@ private:
     std::shared_ptr<MoveGroupInterface> left_arm_;
     std::shared_ptr<MoveGroupInterface> left_gripper_;
     
+    std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+
     // Action Client for Gripper (LEFT ONLY)
     rclcpp_action::Client<control_msgs::action::FollowJointTrajectory>::SharedPtr left_gripper_client_;
 
