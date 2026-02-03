@@ -64,7 +64,6 @@ hardware_config:
   left_joint6: mock
   left_joint7: mock
   left_gripper_worm_gear_joint: mock
-
 ```
 
 All joints are set to **`mock`**, meaning:
@@ -146,6 +145,17 @@ ros2 action send_goal /control_gripper my_robot_interfaces/action/ControlGripper
 
 ### B. Go To Pose (Absolute)
 Moves the arm to a specific Cartesian coordinate (x, y, z) and orientation (roll, pitch, yaw) relative to the `base_footprint`.
+
+**Coordinate Mapping (Base_Footprint Frame):**
+* **X:** (+ FORWARD) / (- BACKWARD)
+* **Y:** (+ LEFT) / (- RIGHT)
+* **Z:** (+ UP) / (- DOWN)
+
+**Orientation Presets:**
+* **Gripper Forward:** `Roll: -1.57, Pitch: 0.0, Yaw: 1.57`
+* **Gripper Down:** `Roll: 0.0, Pitch: 0.0, Yaw: 0.0` (Parallel to body)
+
+**Example with Gripper Forward orientation:**
 ```bash
 ros2 action send_goal /go_to_pose my_robot_interfaces/action/GoToPose "
 {
@@ -156,6 +166,21 @@ ros2 action send_goal /go_to_pose my_robot_interfaces/action/GoToPose "
   roll: -1.57, 
   pitch: 0.0, 
   yaw: 1.57, 
+  cartesian_path: false
+}"
+```
+
+**Example with Gripper Down orientation:**
+```bash
+ros2 action send_goal /go_to_pose my_robot_interfaces/action/GoToPose "
+{
+  group_name: 'left_arm',
+  x: 0.38, 
+  y: 0.19, 
+  z: 0.58, 
+  roll: 0.0, 
+  pitch: 0.0, 
+  yaw: 0.0, 
   cartesian_path: false
 }"
 ```
@@ -215,7 +240,6 @@ left_arm:
 - **`Speed`**: Fastest solution, optimizes for computation time
 - **`Distance`**: Optimizes for minimal joint displacement from current position
 - **`Manip1`**: Optimizes for manipulability (avoids singularities and joint limits)
-
 
 ## Troubleshooting
 
