@@ -123,6 +123,8 @@ public:
         
         return executeTarget(group, target_pose, cartesian_path);
     }
+
+    
     
     bool controlGripper(std::shared_ptr<MoveGroupInterface> gripper, const std::string& state) 
     { 
@@ -549,14 +551,64 @@ public:
         std::thread{std::bind(&Commander::execute_control_gripper, this, goal_handle)}.detach();
     }
 
+    // Updated: Now accepts specific 'target_pos' instead of string state
+    bool controlGripper(std::shared_ptr<MoveGroupInterface> gripper, double target_pos) 
+    { 
+        if (!gripper) return false;
+
+        std::string controller_name = "left_hand_controller";
+        std::string joint_name = "left_gripper_worm_gear_joint";
+        std::string action_topic = "/" + controller_name + "/follow_joint_trajectory";
+
+        RCLCPP_INFO(node_->get_logger(), "Setting left gripper to %.2f...", target_pos);
+
+        using FollowJointTrajectory = control_msgs::action::FollowJointTrajectory;
+
+        if (!left_gripper_client_->wait_for_action_server(std::chrono::seconds(2))) {
+             RCLCPP_ERROR(node_->get_logger(), "Gripper action server %s not available", action_topic.c_str());
+             return false;
+        }
+
+        FollowJointTrajectory::Goal goal;
+        goal.trajectory.header.frame_id = "base_footprint";
+        goal.trajectory.joint_names = {joint_name};
+        
+        trajectory_msgs::msg::JointTrajectoryPoint p;
+        p.positions = {target_pos}; // Use the specific value passed from the action
+        p.time_from_start = rclcpp::Duration::from_seconds(1.0);
+        goal.trajectory.points.push_back(p);
+
+        auto send_goal_options = rclcpp_action::Client<FollowJointTrajectory>::SendGoalOptions();
+        
+        auto goal_handle_future = left_gripper_client_->async_send_goal(goal, send_goal_options);
+        
+        if (goal_handle_future.wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
+            RCLCPP_ERROR(node_->get_logger(), "Gripper goal send timed out");
+            return false;
+        }
+        
+        auto goal_handle = goal_handle_future.get();
+        if (!goal_handle) {
+             RCLCPP_ERROR(node_->get_logger(), "Gripper goal rejected");
+             return false;
+        }
+
+        auto result_future = left_gripper_client_->async_get_result(goal_handle);
+        if (result_future.wait_for(std::chrono::seconds(3)) == std::future_status::ready) {
+             auto result = result_future.get();
+             if (result.code == rclcpp_action::ResultCode::SUCCEEDED) {
+                 return true;
+             }
+        }
+        return false;
+    }
+
     void execute_control_gripper(const std::shared_ptr<GoalHandleControlGripper> goal_handle) {
         auto result = std::make_shared<ControlGripper::Result>();
         const auto goal = goal_handle->get_goal();
         
-        std::string state = goal->open ? "open" : "close";
-        std::string full_state = "left_" + state;
-
-        bool success = controlGripper(getGroup(goal->group_name), full_state);
+        // Pass the raw position value from the Action Goal directly to the controller
+        bool success = controlGripper(getGroup(goal->group_name), goal->position);
 
         if (goal_handle->is_canceling()) {
              result->success = false;
