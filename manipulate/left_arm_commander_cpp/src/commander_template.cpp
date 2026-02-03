@@ -59,6 +59,10 @@ public:
 
         left_arm_->setPlanningTime(1.0); 
         left_gripper_->setPlanningTime(1.0);
+
+        // Set Planning Attempts
+        left_arm_->setNumPlanningAttempts(10000);     // <--- Added
+        left_gripper_->setNumPlanningAttempts(100); // <--- Added
         
         // Initialize Gripper Action Client (LEFT ONLY)
         left_gripper_client_ = rclcpp_action::create_client<control_msgs::action::FollowJointTrajectory>(
