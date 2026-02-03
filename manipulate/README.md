@@ -128,7 +128,7 @@ You can control the robot by sending Action Goals from the terminal or another n
 - More computationally expensive and can fail if obstacles are in the way
 - **Good for:** precise tasks like drawing, pouring, inserting objects, or avoiding obstacles along a specific path
 
-### A. Control Gripper (Degrees)
+### A. Control Gripper (Rad)
 The node accepts degrees and automatically converts them to radians for the controller.
 * **Open:** -15.71 rad
 * **Close:** 0.7 rad
