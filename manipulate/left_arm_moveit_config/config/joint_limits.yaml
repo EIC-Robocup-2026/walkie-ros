@@ -45,22 +45,22 @@ joint_limits:
     max_acceleration: 3.0
   left_joint1:
     has_velocity_limits: true
-    max_velocity: 5.0
+    max_velocity: 1.5
     has_acceleration_limits: true
     max_acceleration: 3.0
   left_joint2:
     has_velocity_limits: true
-    max_velocity: 5.0
+    max_velocity: 1.5
     has_acceleration_limits: true
     max_acceleration: 3.0
   left_joint3:
     has_velocity_limits: true
-    max_velocity: 5.0
+    max_velocity: 1.5
     has_acceleration_limits: true
     max_acceleration: 3.0
   left_joint4:
     has_velocity_limits: true
-    max_velocity: 5.0
+    max_velocity: 1.5
     has_acceleration_limits: true
     max_acceleration: 3.0
   left_joint5:
