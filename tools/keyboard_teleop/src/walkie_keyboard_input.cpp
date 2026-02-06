@@ -166,7 +166,7 @@ KeyboardServo::KeyboardServo() : joint_vel_cmd_(1.0)
   nh_ = rclcpp::Node::make_shared("walkie_keyboard_input");
 
   // Declare and get parameters
-  planning_frame_id_ = nh_->declare_parameter<std::string>("planning_frame", "base_link");
+  planning_frame_id_ = nh_->declare_parameter<std::string>("planning_frame", "base_footprint");
   ee_frame_id_ = nh_->declare_parameter<std::string>("ee_frame_name", "left_gripper_center");
   joint_names_ = nh_->declare_parameter<std::vector<std::string>>("joint_names", {"left_joint1", "left_joint2", "left_joint3", "left_joint4",
                                "left_joint5", "left_joint6", "left_joint7"});
