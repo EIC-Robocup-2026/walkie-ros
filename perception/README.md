@@ -57,8 +57,8 @@ Description: This node runs the YOLOv8 model internally. It synchronizes RGB and
 ```Bash
 
 ros2 run perception ob_detection
-
-2. ob_pose (Absolute Map Positioning)
+``` 
+### 2. ob_pose (Absolute Map Positioning)
 
 Description: This node is designed to work with an external 2D detector. It takes 2D bounding boxes, looks up the depth, and uses TF2 to transform the coordinate from the Camera Frame to the Map Frame.
 
