@@ -4,6 +4,7 @@
          base_class_type="hardware_interface::SystemInterface">
     <description>
       The ros2_control CubeMars plugin using a system hardware interface-type.
+      This hardware interface supports an optional 'external_gear_ratio' parameter for each joint.
     </description>
   </class>
 </library>

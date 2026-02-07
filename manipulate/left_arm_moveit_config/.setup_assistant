@@ -1,0 +1,25 @@
+moveit_setup_assistant_config:
+  urdf:
+    package: walkie_description
+    relative_path: robots/gz_walkie_1arm.urdf
+  srdf:
+    relative_path: config/walkie_bot.srdf
+  package_settings:
+    author_name: ryu49th
+    author_email: ryu49th@gmail.com
+    generated_timestamp: 1769930676
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity
+  modified_urdf:
+    xacros:
+      - control_xacro
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity

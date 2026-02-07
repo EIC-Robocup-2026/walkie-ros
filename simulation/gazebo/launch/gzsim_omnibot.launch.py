@@ -39,6 +39,7 @@ def generate_launch_description():
     world_file = LaunchConfiguration("world", default=default_world)
     robot_model = LaunchConfiguration("robot_model", default=default_robot)
     ros2_control = LaunchConfiguration("ros2_control", default="gazebo")
+    dual_lidar = LaunchConfiguration("dual_lidar", default="False")
     rviz_config_file = LaunchConfiguration("rviz_config_file")
     use_rviz = LaunchConfiguration("use_rviz")
 
@@ -131,6 +132,7 @@ def generate_launch_description():
             "use_sim_time": use_sim_time,
             "robot_model": robot_model,
             "ros2_control": ros2_control,
+            "dual_lidar": dual_lidar,
         }.items(),
     )
 

@@ -42,9 +42,12 @@ hardware_interface::CallbackReturn CubeMarsSystemHardware::on_init(
   hw_commands_accelerations_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN());
   hw_commands_efforts_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN());
   control_mode_.resize(info_.joints.size(), control_mode_t::UNDEFINED);
+  internal_gear_ratios_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN());
+  external_gear_ratios_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN());
 
-  for (const hardware_interface::ComponentInfo & joint : info_.joints)
+  for (std::size_t i = 0; i < info_.joints.size(); i++)
   {
+    const auto & joint = info_.joints[i];
     if (joint.parameters.count("can_id") != 0 &&
       joint.parameters.count("kt") != 0 &&
       joint.parameters.count("pole_pairs") != 0 &&
@@ -52,9 +55,19 @@ hardware_interface::CallbackReturn CubeMarsSystemHardware::on_init(
     {
       can_ids_.emplace_back(std::stoul(joint.parameters.at("can_id")));
       torque_constants_.emplace_back(std::stod(joint.parameters.at("kt")));
+      internal_gear_ratios_[i] = std::stod(joint.parameters.at("gear_ratio"));
       double erpm_conversion = std::stoi(joint.parameters.at("pole_pairs")) * 
-        std::stoi(joint.parameters.at("gear_ratio")) * 60 / (2 * M_PI);
+        internal_gear_ratios_[i] * 60 / (2 * M_PI);
       erpm_conversions_.emplace_back(erpm_conversion);
+
+      if (joint.parameters.count("external_gear_ratio") != 0)
+      {
+        external_gear_ratios_[i] = std::stod(joint.parameters.at("external_gear_ratio"));
+      }
+      else
+      {
+        external_gear_ratios_[i] = 1.0;
+      }
 
       if (joint.parameters.count("acc_limit") != 0 &&
         joint.parameters.count("vel_limit") != 0)
@@ -365,10 +378,10 @@ hardware_interface::return_type CubeMarsSystemHardware::read(
     else
     {
       // Unit conversions
-      hw_states_positions_[i] = hw_states_positions_[i] * 0.1 * M_PI / 180 - enc_offs_[i];
-      hw_states_velocities_[i] = hw_states_velocities_[i] * 10 / erpm_conversions_[i];
+      hw_states_positions_[i] = (hw_states_positions_[i] * 0.1 * M_PI / 180) / external_gear_ratios_[i] - enc_offs_[i];
+      hw_states_velocities_[i] = (hw_states_velocities_[i] * 10 / erpm_conversions_[i]) / external_gear_ratios_[i];
       hw_states_efforts_[i] = hw_states_efforts_[i] * 0.01 * torque_constants_[i] *
-        std::stoi(info_.joints[i].parameters.at("gear_ratio"));
+        internal_gear_ratios_[i] * external_gear_ratios_[i];
       hw_states_temperatures_[i] = read_data[6];
       if (trq_limits_[i] != 0 && hw_states_efforts_[i] > trq_limits_[i])
       {
@@ -419,7 +432,7 @@ hardware_interface::return_type CubeMarsSystemHardware::write(
         {
           if (!std::isnan(hw_commands_efforts_[i]))
           {
-            std::int32_t current = hw_commands_efforts_[i] * 1000 / torque_constants_[i];
+            std::int32_t current = (hw_commands_efforts_[i] / (internal_gear_ratios_[i] * external_gear_ratios_[i])) * 1000 / torque_constants_[i];
             if (std::abs(current) >= 60000)
             {
               RCLCPP_ERROR(
@@ -445,7 +458,7 @@ hardware_interface::return_type CubeMarsSystemHardware::write(
         {
           if (!std::isnan(hw_commands_velocities_[i]))
           {
-            std::int32_t speed = hw_commands_velocities_[i] * erpm_conversions_[i];
+            std::int32_t speed = (hw_commands_velocities_[i] * external_gear_ratios_[i]) * erpm_conversions_[i];
             if (std::abs(speed) >= 100000)
             {
               RCLCPP_ERROR(
@@ -471,7 +484,7 @@ hardware_interface::return_type CubeMarsSystemHardware::write(
         {
           if (!std::isnan(hw_commands_positions_[i]))
           {
-            std::int32_t position = (hw_commands_positions_[i] + enc_offs_[i]) * 10000 * 180 / M_PI;
+            std::int32_t position = ((hw_commands_positions_[i] + enc_offs_[i]) * external_gear_ratios_[i]) * 10000 * 180 / M_PI;
             if (std::abs(position) >= 360000000)
             {
               RCLCPP_ERROR(
@@ -496,7 +509,7 @@ hardware_interface::return_type CubeMarsSystemHardware::write(
         {
           if (!std::isnan(hw_commands_positions_[i]))
           {
-            std::int32_t position = (hw_commands_positions_[i] + enc_offs_[i]) * 10000 * 180 / M_PI;
+            std::int32_t position = ((hw_commands_positions_[i] + enc_offs_[i]) * external_gear_ratios_[i]) * 10000 * 180 / M_PI;
             std::int16_t vel = limits_[i].first;
             std::int16_t acc = limits_[i].second;
             if (std::abs(position) >= 360000000)
@@ -525,7 +538,7 @@ hardware_interface::return_type CubeMarsSystemHardware::write(
           }
           break;
         }
-        }
+      }
       }
     }
   }

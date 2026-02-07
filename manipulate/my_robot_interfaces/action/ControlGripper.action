@@ -1,0 +1,7 @@
+string group_name
+float64 position    # Changed from 'bool open' to 'float64 position'
+---
+bool success
+string status
+---
+# Feedbacks

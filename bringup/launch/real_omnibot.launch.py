@@ -19,7 +19,7 @@ def generate_launch_description():
 
     default_robot = os.path.join(get_package_share_directory(description_package_name),
                                  'robots',
-                                 'gz_walkie.urdf.xacro'
+                                 'gz_walkie_1arm.urdf.xacro'
                                  )
 
     # Launch configuration variables
@@ -112,6 +112,18 @@ def generate_launch_description():
         ),
     )
 
+    servo_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["head_servo_controller", "--switch-timeout", "30.0"],
+    )
+
+    delayed_servo_controller_spawner = RegisterEventHandler(
+        event_handler=OnProcessStart(
+            target_action=controller_manager_spawner,
+            on_start=[servo_controller_spawner],
+        )
+    )
 
     ld = LaunchDescription()
     # Add launch arguments
@@ -122,5 +134,6 @@ def generate_launch_description():
     ld.add_action(delayed_omni_controller_spawner)
     ld.add_action(delayed_joint_broad_spawner)
     ld.add_action(dual_lidar_launch)
+    ld.add_action(delayed_servo_controller_spawner) 
 
     return ld

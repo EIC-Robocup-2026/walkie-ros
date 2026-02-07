@@ -1,0 +1,72 @@
+planning_plugins: 
+  - ompl_interface/OMPLPlanner
+
+# ========== CORRECT REQUEST ADAPTERS FOR ROS 2 JAZZY ==========
+request_adapters:
+  - default_planning_request_adapters/ResolveConstraintFrames
+  - default_planning_request_adapters/ValidateWorkspaceBounds
+  - default_planning_request_adapters/CheckStartStateBounds
+  - default_planning_request_adapters/CheckStartStateCollision
+  - default_planning_request_adapters/CheckForStackedConstraints
+
+# ========== RESPONSE ADAPTERS ==========
+response_adapters:
+  - default_planning_response_adapters/AddTimeOptimalParameterization
+  - default_planning_response_adapters/ValidateSolution
+  - default_planning_response_adapters/DisplayMotionPath
+
+start_state_max_bounds_error: 0.1
+
+# ========== ESSENTIAL PLANNERS ==========
+planner_configs:
+  RRTConnectkConfigDefault:
+    type: geometric::RRTConnect
+    range: 0.0
+  
+  RRTkConfigDefault:
+    type: geometric::RRT
+    range: 0.0
+    goal_bias: 0.05
+  
+  RRTstarkConfigDefault:
+    type: geometric::RRTstar
+    range: 0.0
+    goal_bias: 0.05
+    delay_collision_checking: 1
+  
+  PRMkConfigDefault:
+    type: geometric::PRM
+    max_nearest_neighbors: 10
+  
+  PRMstarkConfigDefault:
+    type: geometric::PRMstar
+  
+  TRRTkConfigDefault:
+    type: geometric::TRRT
+    range: 0.0
+    goal_bias: 0.05
+    max_states_failed: 10
+    temp_change_factor: 2.0
+    min_temperature: 10e-10
+    init_temperature: 10e-6
+
+# ========== ARM CONFIGURATION ==========
+left_arm:
+  default_planner_config: RRTConnectkConfigDefault
+  projection_evaluator: joints(left_link1,left_link2,left_link7)
+  longest_valid_segment_fraction: 0.005
+  
+  planner_configs:
+    - RRTConnectkConfigDefault
+    - RRTkConfigDefault
+    - RRTstarkConfigDefault
+    - PRMkConfigDefault
+    - PRMstarkConfigDefault
+    - TRRTkConfigDefault
+
+left_hand:
+  default_planner_config: RRTConnectkConfigDefault
+  
+  planner_configs:
+    - RRTConnectkConfigDefault
+    - RRTstarkConfigDefault
