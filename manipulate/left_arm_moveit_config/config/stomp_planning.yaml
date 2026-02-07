@@ -1,0 +1,37 @@
+planning_plugins:
+  - stomp_moveit/StompPlanner
+
+# Global STOMP parameters
+stomp_moveit:
+  num_timesteps: 60
+  num_iterations: 50
+  num_iterations_after_valid: 0
+  num_rollouts: 10
+  max_rollouts: 10
+  exponentiated_cost_sensitivity: 0.5
+  control_cost_weight: 0.1
+
+# Group-specific parameters
+left_arm:
+  # Planning parameters
+  num_timesteps: 60
+  num_iterations: 50
+  num_rollouts: 10
+  max_rollouts: 10
+  exponentiated_cost_sensitivity: 0.5
+  control_cost_weight: 0.1
+  
+  # Optimization parameters
+  delta_t: 0.1                    # Time between waypoints
+  convergence_criteria: 0.001     # Stop when improvement < this
+  
+  # Cost function weights
+  smoothness_cost_weight: 1.0     # Path smoothness
+  obstacle_cost_weight: 1.0       # Collision avoidance
+  constraint_cost_weight: 1.0     # Constraint satisfaction
+
+left_hand:
+  num_timesteps: 30
+  num_iterations: 30
+  num_rollouts: 5
+  max_rollouts: 5
