@@ -14,6 +14,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GetPosition.srv"
   "action/GoToPose.action"
   "action/GoToPoseRelative.action"
+  "action/GoToPoseQuaternion.action"
   "action/ControlGripper.action"
   "action/GoToHome.action"
  )
