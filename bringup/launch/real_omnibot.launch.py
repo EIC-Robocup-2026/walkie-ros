@@ -13,69 +13,81 @@ from launch.actions import RegisterEventHandler
 
 
 def generate_launch_description():
-    package_name = 'robot_bringup'
+    package_name = "robot_bringup"
     package_dir = os.path.join(get_package_share_directory(package_name))
-    description_package_name = 'walkie_description'
+    description_package_name = "walkie_description"
 
-    default_robot = os.path.join(get_package_share_directory(description_package_name),
-                                 'robots',
-                                 'gz_walkie.urdf.xacro'
-                                 )
+    default_robot = os.path.join(
+        get_package_share_directory(description_package_name),
+        "robots",
+        "gz_walkie.urdf.xacro",
+    )
 
     # Launch configuration variables
-    use_sim_time = LaunchConfiguration('use_sim_time', default='false')
-    robot_model = LaunchConfiguration('robot_model', default=default_robot)
-    ros2_control = LaunchConfiguration('ros2_control', default='real_robot')
+    use_sim_time = LaunchConfiguration("use_sim_time", default="false")
+    robot_model = LaunchConfiguration("robot_model", default=default_robot)
+    ros2_control = LaunchConfiguration("ros2_control", default="real_robot")
 
     robot_description_content = Command(
-        ['xacro ', default_robot, ' ros2_control:=', ros2_control])
+        ["xacro ", default_robot, " ros2_control:=", ros2_control]
+    )
 
-    twist_mux_params = os.path.join(get_package_share_directory(
-        package_name), 'config', 'twist_mux', 'twist_mux.yml')
+    twist_mux_params = os.path.join(
+        get_package_share_directory(package_name),
+        "config",
+        "twist_mux",
+        "twist_mux.yml",
+    )
     twist_mux = Node(
         package="twist_mux",
         executable="twist_mux",
         parameters=[twist_mux_params],
-        remappings=[('/cmd_vel_out', '/cmd_vel')]
+        remappings=[("/cmd_vel_out", "/cmd_vel")],
     )
 
-    twist_stamped_frame_id = 'base_footprint'
+    twist_stamped_frame_id = "base_footprint"
     twist_stamper_node = Node(
-        package='robot_navigation',
-        executable='accel_stamp_node.py',
-        name='Accel_Stamp',
-        output='screen',
+        package="robot_navigation",
+        executable="accel_stamp_node.py",
+        name="Accel_Stamp",
+        output="screen",
         remappings=[
-                ('/cmd_vel_in', '/cmd_vel'),
-                ('/cmd_vel_out', '/omni_wheel_drive_controller/cmd_vel'),
+            ("/cmd_vel_in", "/cmd_vel"),
+            ("/cmd_vel_out", "/omni_wheel_drive_controller/cmd_vel"),
         ],
         parameters=[
-            {'frame_id': twist_stamped_frame_id},
-        ]
+            {"frame_id": twist_stamped_frame_id},
+        ],
     )
 
     robot_state_publisher_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(get_package_share_directory(package_name),
-                         'launch', 'robot_state_publisher.launch.py')
+            os.path.join(
+                get_package_share_directory(package_name),
+                "launch",
+                "robot_state_publisher.launch.py",
+            )
         ),
         launch_arguments={
-            'use_sim_time': use_sim_time,
-            'robot_model': robot_model,
-            'ros2_control': ros2_control,
-        }.items()
+            "use_sim_time": use_sim_time,
+            "robot_model": robot_model,
+            "ros2_control": ros2_control,
+        }.items(),
     )
 
-    controllers_config = os.path.join(get_package_share_directory(description_package_name),
-                                      'config',
-                                      'ros2_controller',
-                                      'real_controllers.yaml')
+    controllers_config = os.path.join(
+        get_package_share_directory(description_package_name),
+        "config",
+        "ros2_controller",
+        "real_controllers.yaml",
+    )
     controller_manager_spawner = Node(
         package="controller_manager",
         executable="ros2_control_node",
-        parameters=[{"robot_description", robot_description_content},
-                    controllers_config
-                    ],
+        parameters=[
+            {"robot_description", robot_description_content},
+            controllers_config,
+        ],
     )
 
     omni_controller_spawner = Node(
@@ -107,11 +119,26 @@ def generate_launch_description():
     # Dual lidar launch (Hokuyo + Lakibeam)
     dual_lidar_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(get_package_share_directory(package_name),
-                         'launch', 'dual_lidar_hokuyo_lakibeam.launch.py')
+            os.path.join(
+                get_package_share_directory(package_name),
+                "launch",
+                "dual_lidar_hokuyo_lakibeam.launch.py",
+            )
         ),
     )
 
+    current_pose_publisher = Node(
+        package="robot_navigation",
+        executable="current_pose_publisher.py",
+        name="current_pose_publisher",
+        output="screen",
+        parameters=[
+            {"source_frame": "map"},
+            {"target_frame": "base_link"},
+            {"publish_rate": 10.0},
+            {"topic_name": "current_pose"},
+        ],
+    )
 
     ld = LaunchDescription()
     # Add launch arguments
@@ -122,5 +149,6 @@ def generate_launch_description():
     ld.add_action(delayed_omni_controller_spawner)
     ld.add_action(delayed_joint_broad_spawner)
     ld.add_action(dual_lidar_launch)
+    ld.add_action(current_pose_publisher)
 
     return ld

@@ -9,6 +9,7 @@ from launch.launch_description_sources import (
     PythonLaunchDescriptionSource,
 )
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 
 
 def generate_launch_description():
@@ -81,8 +82,22 @@ def generate_launch_description():
     ld.add_action(declare_ros2_control_arg)
     ld.add_action(declare_dual_lidar_arg)
 
+    current_pose_publisher = Node(
+        package="robot_navigation",
+        executable="current_pose_publisher.py",
+        name="current_pose_publisher",
+        output="screen",
+        parameters=[
+            {"source_frame": "map"},
+            {"target_frame": "base_link"},
+            {"publish_rate": 10.0},
+            {"topic_name": "current_pose"},
+        ],
+    )
+
     ld.add_action(localization_nav2_sim_launch)
     ld.add_action(gzsim_omnibot_launch)
     ld.add_action(rosbridge_launch)
+    ld.add_action(current_pose_publisher)
 
     return ld
