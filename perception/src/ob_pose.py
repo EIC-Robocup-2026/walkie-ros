@@ -5,9 +5,9 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy
 from std_srvs.srv import SetBool
 
 from sensor_msgs.msg import Image, CameraInfo
-from vision_msgs.msg import Detection2DArray, Detection3DArray, Detection3D, ObjectHypothesisWithPose
+from vision_msgs.msg import Detection2DArray
 from visualization_msgs.msg import Marker, MarkerArray
-from geometry_msgs.msg import PointStamped
+from geometry_msgs.msg import PoseArray, Pose, PointStamped
 
 import tf2_ros
 import tf2_geometry_msgs 
@@ -16,9 +16,9 @@ import numpy as np
 
 class ObPoseNode(Node):
     def __init__(self):
-        super().__init__('ob_detection')
+        super().__init__('ob_pose')
 
-        self.is_active = False 
+        self.is_active = True 
         self.fx = self.fy = self.cx = self.cy = None
         self.latest_depth = None
         self.latest_header = None
@@ -34,7 +34,7 @@ class ObPoseNode(Node):
 
         self.create_subscription(Detection2DArray, '/yolo/detections_2d', self.yolo_callback, 10)
 
-        self.det3d_pub = self.create_publisher(Detection3DArray, 'ob_detection/detections_3d', 10)
+        self.pose_pub = self.create_publisher(PoseArray, 'ob_detection/poses', 10)        
         self.marker_pub = self.create_publisher(MarkerArray, 'ob_detection/markers', 10)
         
         self.create_service(SetBool, 'ob_detection/toggle', self.toggle_callback)
@@ -68,24 +68,13 @@ class ObPoseNode(Node):
         """
         pt_cam = PointStamped()
         pt_cam.header.frame_id = frame_id
-
-        # FIX: Set time to 0. This tells TF to use the LATEST available transform.
         pt_cam.header.stamp = rclpy.time.Time(seconds=0).to_msg()
-
         pt_cam.point.x = x_cam
         pt_cam.point.y = y_cam
         pt_cam.point.z = z_cam
 
         try:
-            # Use a small timeout just in case
             pt_map = self.tf_buffer.transform(pt_cam, 'map', timeout=rclpy.duration.Duration(seconds=0.1))
-            return pt_map.point.x, pt_map.point.y, pt_map.point.z
-        except Exception as e:
-            self.get_logger().warn(f"TF Failure: {e}")
-            return None
-
-        try:
-            pt_map = self.tf_buffer.transform(pt_cam, 'map', timeout=rclpy.duration.Duration(seconds=0.05))
             return pt_map.point.x, pt_map.point.y, pt_map.point.z
         except Exception as e:
             return None
@@ -94,9 +83,9 @@ class ObPoseNode(Node):
         if not self.is_active: return
         if self.latest_depth is None or self.fx is None: return
 
-        det3d_array = Detection3DArray()
-        det3d_array.header.frame_id = 'map' 
-        det3d_array.header.stamp = self.get_clock().now().to_msg()
+        pose_array = PoseArray()
+        pose_array.header.frame_id = 'map' 
+        pose_array.header.stamp = self.get_clock().now().to_msg()
         
         marker_array = MarkerArray()
         d = Marker(); d.action = Marker.DELETEALL; marker_array.markers.append(d)
@@ -105,8 +94,6 @@ class ObPoseNode(Node):
         for det2d in msg.detections:
             u = int(det2d.bbox.center.x)
             v = int(det2d.bbox.center.y)
-            label = det2d.results[0].hypothesis.class_id if det2d.results else "obj"
-            score = det2d.results[0].hypothesis.score if det2d.results else 1.0
 
             if 0 <= u < self.latest_depth.shape[1] and 0 <= v < self.latest_depth.shape[0]:
                 
@@ -126,35 +113,25 @@ class ObPoseNode(Node):
                         map_x, map_y, map_z = abs_pos
 
                         # 4. Pack Message
-                        det3d = Detection3D()
-                        det3d.header = det3d_array.header 
-                        
-                        hyp = ObjectHypothesisWithPose()
-                        hyp.hypothesis.class_id = label
-                        hyp.hypothesis.score = score
-                        
-                        hyp.pose.pose.position.x = map_x
-                        hyp.pose.pose.position.y = map_y
-                        hyp.pose.pose.position.z = map_z
-                        hyp.pose.pose.orientation.w = 1.0 
-                        
-                        det3d.results.append(hyp)
-                        det3d.bbox.center = hyp.pose.pose.position
-                        det3d.bbox.size.x = 0.2; det3d.bbox.size.y = 0.2; det3d.bbox.size.z = 0.2
-                        det3d_array.detections.append(det3d)
+                        pose = Pose()
+                        pose.position.x = map_x
+                        pose.position.y = map_y
+                        pose.position.z = map_z
+                        pose.orientation.w = 1.0
+                        pose_array.poses.append(pose)
 
                         # 5. Marker
                         m = Marker()
-                        m.header = det3d_array.header
+                        m.header = pose_array.header 
                         m.ns = "abs_detections"; m.id = count; m.type = Marker.SPHERE; m.action = Marker.ADD
-                        m.pose.position = hyp.pose.pose.position
+                        m.pose = pose 
                         m.scale.x = 0.2; m.scale.y = 0.2; m.scale.z = 0.2
                         m.color.a = 1.0; m.color.g = 1.0 
                         marker_array.markers.append(m)
                         count += 1
 
         if count > 0:
-            self.det3d_pub.publish(det3d_array)
+            self.pose_pub.publish(pose_array)
             self.marker_pub.publish(marker_array)
 
 def main():

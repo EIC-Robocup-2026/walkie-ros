@@ -4,8 +4,6 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from std_srvs.srv import SetBool
 from sensor_msgs.msg import Image, CameraInfo
-from vision_msgs.msg import Detection3DArray, Detection3D, ObjectHypothesisWithPose
-from geometry_msgs.msg import PointStamped
 from visualization_msgs.msg import Marker, MarkerArray
 import message_filters
 from cv_bridge import CvBridge
@@ -16,6 +14,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 import tf2_ros
 import tf2_geometry_msgs
+from geometry_msgs.msg import PoseArray, Pose, PointStamped
 
 class ObDetectionNode(Node):
     def __init__(self):
@@ -24,7 +23,7 @@ class ObDetectionNode(Node):
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
-        self.is_active = False
+        self.is_active = True
         self.conf_threshold = 0.55
         self.target_classes = [0, 39, 41, 45] # Person, Bottle, Cup, Bowl
         
@@ -58,7 +57,7 @@ class ObDetectionNode(Node):
             [self.img_sub, self.depth_sub], queue_size=10, slop=0.2)
         self.ts.registerCallback(self.sync_callback)
 
-        self.det_pub = self.create_publisher(Detection3DArray, 'ob_detection/detections', 10)
+        self.pose_pub = self.create_publisher(PoseArray, 'ob_detection/poses', 10)        
         self.marker_pub = self.create_publisher(MarkerArray, 'ob_detection/markers', 10)
         self.debug_pub = self.create_publisher(Image, 'ob_detection/debug_image', 10)
         
@@ -86,9 +85,9 @@ class ObDetectionNode(Node):
 
             results = self.model(cv_img, verbose=False)
             
-            det_array = Detection3DArray()
-            det_array.header.frame_id = 'map' 
-            det_array.header.stamp = img_msg.header.stamp
+            pose_array = PoseArray()
+            pose_array.header.frame_id = 'map' 
+            pose_array.header.stamp = self.get_clock().now().to_msg()
             
             marker_array = MarkerArray()
             marker_array.markers.append(Marker(action=Marker.DELETEALL))
@@ -127,21 +126,14 @@ class ObDetectionNode(Node):
                                 pt_map = self.tf_buffer.transform(
                                     pt_cam, 'map', timeout=rclpy.duration.Duration(seconds=0.05))
                                 
-                                det = Detection3D()
-                                det.header = det_array.header
-                                hyp = ObjectHypothesisWithPose()
-                                hyp.hypothesis.class_id = self.model.names[cls_id]
-                                hyp.hypothesis.score = conf
-                                hyp.pose.pose.position = pt_map.point
-                                hyp.pose.pose.orientation.w = 1.0
+                                pose = Pose()
+                                pose.position = pt_map.point
+                                pose.orientation.w = 1.0 # Default orientation (flat)
+                                pose_array.poses.append(pose)
 
-                                det.results.append(hyp)
-                                det.bbox.center.position = pt_map.point
-                                det.bbox.size.x = 0.2; det.bbox.size.y = 0.2; det.bbox.size.z = 0.2
-                                det_array.detections.append(det)
 
                                 m = Marker()
-                                m.header = det_array.header
+                                m.header = pose_array.header
                                 m.ns = "objects"; m.id = count; m.type = Marker.SPHERE
                                 m.action = Marker.ADD
                                 m.pose.position = pt_map.point
@@ -154,7 +146,7 @@ class ObDetectionNode(Node):
                                 pass 
 
             if count > 0:
-                self.det_pub.publish(det_array)
+                self.pose_pub.publish(pose_array)
                 self.marker_pub.publish(marker_array)
 
             annotated_frame = results[0].plot()
