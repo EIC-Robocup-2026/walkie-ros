@@ -6,8 +6,8 @@ servo-rate solving. Includes Pinocchio-based self-collision detection with
 step rejection to prevent arm-body and arm-arm collisions.
 """
 
-import os
 import logging
+import os
 from typing import Optional, Tuple
 
 import numpy as np
@@ -42,7 +42,7 @@ DEFAULT_IK_CONFIG = {
     "ik_damping": 1e-2,
     # Step size for each IK iteration (0 < step <= 1).
     # 1.0 = full Newton step. Lower values are more conservative.
-    "ik_step_size": 1.0,
+    "ik_step_size": 0.3,
     # Maximum number of iterations per solve call.
     "ik_max_iterations": 20,
     # Convergence tolerance (norm of 6D error vector)

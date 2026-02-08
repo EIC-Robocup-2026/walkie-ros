@@ -3,7 +3,7 @@
 targets directly to a ros2_control JointTrajectoryController.
 
 Subscribes to:
-    /target_pose (geometry_msgs/Pose) - Target end-effector pose (xyz + quaternion)
+    /target_pose (geometry_msgs/PoseStamped) - Target end-effector pose (xyz + quaternion)
     /joint_states (sensor_msgs/JointState) - Current joint states for IK warm-start
 
 Publishes to:
@@ -20,13 +20,12 @@ from typing import Optional
 
 import numpy as np
 import rclpy
+from builtin_interfaces.msg import Duration
+from geometry_msgs.msg import Pose, PoseStamped
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
-
-from geometry_msgs.msg import Pose
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from builtin_interfaces.msg import Duration
 
 # Add the parent directory to path so 'walkie_ik_servo' package can be imported
 # When installed: ik_servo_node.py is at lib/walkie_ik_servo/ik_servo_node.py
@@ -40,7 +39,7 @@ if pkg_dir not in sys.path:
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from walkie_ik_servo.ik_solver import WalkieArmIKSolver, DEFAULT_IK_CONFIG
+from walkie_ik_servo.ik_solver import DEFAULT_IK_CONFIG, WalkieArmIKSolver
 
 
 def pose_to_se3(pose: Pose) -> np.ndarray:
@@ -76,7 +75,7 @@ class IKDirectControlNode(Node):
     """ROS2 node bridging end-effector pose commands to ros2_control.
 
     Pipeline:
-        1. Receive target Pose (xyz + quaternion) on /target_pose
+        1. Receive target PoseStamped (xyz + quaternion) on /target_pose
         2. At configurable rate (default 50Hz), solve IK using Pinocchio
         3. Publish JointTrajectory with single waypoint to the controller
     """
@@ -153,7 +152,7 @@ class IKDirectControlNode(Node):
 
         # Subscribers
         self.pose_sub = self.create_subscription(
-            Pose,
+            PoseStamped,
             target_pose_topic,
             self._target_pose_callback,
             10,
@@ -178,7 +177,7 @@ class IKDirectControlNode(Node):
 
         self.get_logger().info(
             f"IK Direct Control Node started:\n"
-            f"  Subscribe:  {target_pose_topic} (Pose)\n"
+            f"  Subscribe:  {target_pose_topic} (PoseStamped)\n"
             f"  Subscribe:  {joint_states_topic} (JointState)\n"
             f"  Publish:    {command_topic} (JointTrajectory)\n"
             f"  Rate:       {self.publish_rate} Hz\n"
@@ -233,7 +232,7 @@ class IKDirectControlNode(Node):
         self.declare_parameter("filter_weights", [0.4, 0.3, 0.2, 0.1])
 
         # Self-collision detection
-        self.declare_parameter("collision_check_enabled", True)
+        self.declare_parameter("collision_check_enabled", False)
         self.declare_parameter("collision_safety_margin", -0.005)
         self.declare_parameter("collision_max_backtrack", 3)
 
@@ -286,10 +285,10 @@ class IKDirectControlNode(Node):
     # Subscriber callbacks
     # ------------------------------------------------------------------ #
 
-    def _target_pose_callback(self, msg: Pose) -> None:
+    def _target_pose_callback(self, msg: PoseStamped) -> None:
         """Store the latest target pose for the servo loop."""
         with self._lock:
-            self._target_pose = msg
+            self._target_pose = msg.pose
 
     def _joint_state_callback(self, msg: JointState) -> None:
         """Extract arm joint positions from JointState."""
