@@ -43,7 +43,7 @@ Description: This node runs the YOLOv8 model internally. It synchronizes RGB and
 
     Publishes:
 
-        /ob_detection/detections (vision_msgs/Detection3DArray): 3D Bounding boxes in camera frame.
+        /ob_detection/poses (geometry_msgs/PoseArra): Absolute 3D coordinates in map frame.
 
         /ob_detection/markers (visualization_msgs/MarkerArray): Visualization spheres for RViz.
 
@@ -72,7 +72,7 @@ Description: This node is designed to work with an external 2D detector. It take
 
     Publishes:
 
-        /ob_detection/detections_3d (vision_msgs/Detection3DArray): Absolute 3D coordinates in map frame.
+        /ob_detection/poses (geometry_msgs/PoseArra): Absolute 3D coordinates in map frame.
 
         /ob_detection/markers (visualization_msgs/MarkerArray): Green spheres at the object's global map location.
 
@@ -87,7 +87,7 @@ ros2 run perception ob_pose
 
 Service Usage (Toggle)
 
-Both nodes start in a PAUSED state (self.is_active = False). You must call the service to start detection:
+Both nodes start in a START state (self.is_active = True). You must call the service to start detection:
 Bash
 
 # Enable Detection
