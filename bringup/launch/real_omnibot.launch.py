@@ -5,7 +5,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.conditions import IfCondition
 from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.launch_description_sources import PythonLaunchDescriptionSource, AnyLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, Command
 from launch_ros.actions import Node
 from launch.event_handlers import OnProcessStart
@@ -15,6 +15,7 @@ from launch.actions import RegisterEventHandler
 def generate_launch_description():
     package_name = 'robot_bringup'
     package_dir = os.path.join(get_package_share_directory(package_name))
+    pkg_rosbridge_server = get_package_share_directory("rosbridge_server")
     description_package_name = 'walkie_description'
 
     default_robot = os.path.join(get_package_share_directory(description_package_name),
@@ -39,11 +40,26 @@ def generate_launch_description():
         remappings=[('/cmd_vel_out', '/cmd_vel')]
     )
 
+    # twist_stamped_frame_id = 'base_footprint'
+    # twist_stamper_node = Node(
+    #     package='robot_navigation',
+    #     executable='accel_stamp_node.py',
+    #     name='Accel_Stamp',
+    #     output='screen',
+    #     remappings=[
+    #             ('/cmd_vel_in', '/cmd_vel'),
+    #             ('/cmd_vel_out', '/omni_wheel_drive_controller/cmd_vel'),
+    #     ],
+    #     parameters=[
+    #         {'frame_id': twist_stamped_frame_id},
+    #     ]
+    # )
+
     twist_stamped_frame_id = 'base_footprint'
     twist_stamper_node = Node(
-        package='robot_navigation',
-        executable='accel_stamp_node.py',
-        name='Accel_Stamp',
+        package='twist_stamper',
+        executable='twist_stamper',
+        name='twist_stamper',
         output='screen',
         remappings=[
                 ('/cmd_vel_in', '/cmd_vel'),
@@ -138,6 +154,56 @@ def generate_launch_description():
         ],
     )
 
+    #Depth camera launch (RealsenseD415)
+    realsense_camera_node = Node(
+        package='realsense2_camera',
+        executable='realsense2_camera_node',
+        output='screen',
+        # Set the parameter pointcloud.enable to true
+        parameters=[{'pointcloud.enable': True},
+                    {'camera_name': 'bottom'},
+        ],
+    )
+
+    # ZED Camera launch (ZED2i)
+    # zed_camera_node = Node(
+    #     package='zed_wrapper',
+    #     executable='zed_wrapper_node',
+    #     output='screen',
+    #     parameters=[{
+    #         'camera_model': 'zed2i',
+    #         'base_frame': 'head_zed_camera_link', 
+    #         'publish_urdf': False,                 
+    #     }],
+    # )
+
+    # ZED Camera Launch
+    zed_camera_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(get_package_share_directory('zed_wrapper'),
+                         'launch', 'zed_camera.launch.py')
+        ),
+        launch_arguments={
+            'camera_model': 'zed2i',
+            'camera_name': 'zed',           
+            'base_frame': 'zed_camera_link', 
+            'publish_urdf': 'false',        
+            'publish_tf': 'false',           
+            'use_sim_time': use_sim_time    
+        }.items()
+    )
+    
+    rosbridge_launch = IncludeLaunchDescription(
+        AnyLaunchDescriptionSource(
+            os.path.join(
+                pkg_rosbridge_server, "launch", "rosbridge_websocket_launch.xml"
+            )
+        ),
+        launch_arguments={
+            "delay_between_messages": "0.0",
+        }.items(),
+    )
+
     ld = LaunchDescription()
     # Add launch arguments
     ld.add_action(robot_state_publisher_cmd)
@@ -149,5 +215,9 @@ def generate_launch_description():
     ld.add_action(dual_lidar_launch)
     ld.add_action(delayed_servo_controller_spawner) 
     ld.add_action(current_pose_publisher)
+    ld.add_action(realsense_camera_node)
+    ld.add_action(zed_camera_launch)
+    ld.add_action(rosbridge_launch)
+
 
     return ld
