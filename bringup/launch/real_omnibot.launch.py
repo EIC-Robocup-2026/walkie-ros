@@ -125,6 +125,19 @@ def generate_launch_description():
         )
     )
 
+    current_pose_publisher = Node(
+        package="robot_navigation",
+        executable="current_pose_publisher.py",
+        name="current_pose_publisher",
+        output="screen",
+        parameters=[
+            {"source_frame": "map"},
+            {"target_frame": "base_link"},
+            {"publish_rate": 10.0},
+            {"topic_name": "current_pose"},
+        ],
+    )
+
     ld = LaunchDescription()
     # Add launch arguments
     ld.add_action(robot_state_publisher_cmd)
@@ -135,5 +148,6 @@ def generate_launch_description():
     ld.add_action(delayed_joint_broad_spawner)
     ld.add_action(dual_lidar_launch)
     ld.add_action(delayed_servo_controller_spawner) 
+    ld.add_action(current_pose_publisher)
 
     return ld
