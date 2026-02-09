@@ -17,7 +17,7 @@ install(PROGRAMS
 )
 
 install(DIRECTORY
-  launch
+  # launch
   models
   DESTINATION share/${PROJECT_NAME}
 )
