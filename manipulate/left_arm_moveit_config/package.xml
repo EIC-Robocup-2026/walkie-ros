@@ -46,6 +46,8 @@
   <exec_depend>warehouse_ros_mongo</exec_depend>
   <exec_depend>xacro</exec_depend>
 
+  <depend>gripper_controllers</depend>
+  <depend>control_msgs</depend>
 
   <export>
       <build_type>ament_cmake</build_type>
