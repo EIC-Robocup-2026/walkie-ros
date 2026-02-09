@@ -27,14 +27,19 @@ class CirclePosePublisher(Node):
         self.declare_parameter("radius", 0.08)  # Circle radius in meters
         self.declare_parameter("publish_rate", 50.0)  # Hz
         self.declare_parameter("period", 4.0)  # Seconds per full revolution
-        self.declare_parameter("center_x", 0.39)  # Circle center X (forward)
-        self.declare_parameter("center_y", 0.25)  # Circle center Y (left)
-        self.declare_parameter("center_z", 0.70)  # Circle center Z (up)
+        # Circle center — defaults match the zero-config EE position in base_footprint
+        self.declare_parameter("center_x", 0.383)  # Circle center X (forward)
+        self.declare_parameter("center_y", 0.194)  # Circle center Y (left)
+        self.declare_parameter("center_z", 0.579)  # Circle center Z (up)
         self.declare_parameter("topic", "/target_pose")
         self.declare_parameter("frame_id", "base_footprint")
-        self.declare_parameter("roll", 0.0)  # Radians
+        # Orientation defaults match the zero-config EE orientation in base_footprint:
+        #   R ≈ [[ 0, 0, -1],    i.e. gripper points downward with 90-deg twist
+        #        [ 1, 0,  0],    RPY = (-pi/2, 0, pi/2)
+        #        [ 0,-1,  0]]
+        self.declare_parameter("roll", -1.5707963)  # -pi/2 radians
         self.declare_parameter("pitch", 0.0)  # Radians
-        self.declare_parameter("yaw", 0.0)  # Radians
+        self.declare_parameter("yaw", 1.5707963)  # pi/2 radians
 
         self.radius = float(self.get_parameter("radius").value)
         self.publish_rate = float(self.get_parameter("publish_rate").value)

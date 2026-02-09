@@ -20,6 +20,8 @@ from typing import Optional
 
 import numpy as np
 import rclpy
+import tf2_geometry_msgs  # noqa: F401 — registers PoseStamped transform type
+import tf2_ros
 from builtin_interfaces.msg import Duration
 from geometry_msgs.msg import Pose, PoseStamped
 from rclpy.node import Node
@@ -138,9 +140,26 @@ class IKDirectControlNode(Node):
         self.ik_solver = WalkieArmIKSolver(urdf_path, ik_config)
         self.get_logger().info("IK solver ready")
 
+        # IK solver reference frame (target poses are transformed into this frame)
+        self.ik_frame = (
+            self.get_parameter("ik_frame").get_parameter_value().string_value
+        )
+        self.tf_timeout = rclpy.duration.Duration(
+            seconds=self.get_parameter("tf_timeout").get_parameter_value().double_value
+        )
+
+        # Position-only IK mode
+        self.position_only = (
+            self.get_parameter("position_only").get_parameter_value().bool_value
+        )
+
+        # TF2 buffer & listener for frame transformations
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+
         # State
         self._current_q = None  # Current joint positions from /joint_states
-        self._target_pose = None  # Latest target pose
+        self._target_pose_stamped = None  # Latest target PoseStamped (with frame_id)
         self._lock = threading.Lock()
 
         # QoS for joint states (best effort for real-time)
@@ -182,6 +201,8 @@ class IKDirectControlNode(Node):
             f"  Publish:    {command_topic} (JointTrajectory)\n"
             f"  Rate:       {self.publish_rate} Hz\n"
             f"  Duration:   {self.trajectory_duration} s\n"
+            f"  IK frame:   {self.ik_frame}\n"
+            f"  Pos-only:   {'ON' if self.position_only else 'OFF'}\n"
             f"  Collision:  {'ON' if ik_config.get('collision_check_enabled', True) else 'OFF'}\n"
             f"  Joints:     {self.arm_joint_names}"
         )
@@ -219,6 +240,17 @@ class IKDirectControlNode(Node):
 
         # EE frame
         self.declare_parameter("ee_frame", "left_gripper_center")
+
+        # IK solver reference frame — target poses are transformed into this frame
+        # before solving. Must match the URDF root frame used by the reduced model.
+        self.declare_parameter("ik_frame", "base_footprint")
+        self.declare_parameter("tf_timeout", 0.1)  # seconds to wait for TF
+
+        # Position-only IK mode — when True, the solver tracks only the XYZ
+        # position of the target and preserves the current EE orientation.
+        # This avoids orientation conflicts when the target quaternion doesn't
+        # match the arm's natural kinematic orientation.
+        self.declare_parameter("position_only", False)
 
         # IK solver params (Jacobian-based damped least squares)
         self.declare_parameter("ik_translation_weight", 1.0)
@@ -286,9 +318,9 @@ class IKDirectControlNode(Node):
     # ------------------------------------------------------------------ #
 
     def _target_pose_callback(self, msg: PoseStamped) -> None:
-        """Store the latest target pose for the servo loop."""
+        """Store the latest target pose (with frame_id) for the servo loop."""
         with self._lock:
-            self._target_pose = msg.pose
+            self._target_pose_stamped = msg
 
     def _joint_state_callback(self, msg: JointState) -> None:
         """Extract arm joint positions from JointState."""
@@ -316,14 +348,44 @@ class IKDirectControlNode(Node):
     def _servo_loop(self) -> None:
         """Timer callback: solve IK and publish JointTrajectory if target is set."""
         with self._lock:
-            target_pose = self._target_pose
+            target_pose_stamped = self._target_pose_stamped
             current_q = self._current_q.copy() if self._current_q is not None else None
 
-        if target_pose is None:
+        if target_pose_stamped is None:
             return  # No target yet
 
+        # Transform target pose into the IK solver's reference frame if needed
+        source_frame = target_pose_stamped.header.frame_id
+        if source_frame and source_frame != self.ik_frame:
+            try:
+                target_pose_stamped = self.tf_buffer.transform(
+                    target_pose_stamped,
+                    self.ik_frame,
+                    timeout=self.tf_timeout,
+                )
+            except (
+                tf2_ros.LookupException,
+                tf2_ros.ConnectivityException,
+                tf2_ros.ExtrapolationException,
+            ) as e:
+                self.get_logger().warning(
+                    f"TF transform {source_frame} -> {self.ik_frame} failed: {e}",
+                    throttle_duration_sec=2.0,
+                )
+                return  # Skip this cycle
+
         # Convert Pose to SE3 matrix
-        target_se3 = pose_to_se3(target_pose)
+        target_se3 = pose_to_se3(target_pose_stamped.pose)
+
+        # Position-only mode: keep the target XYZ but replace orientation
+        # with the current EE orientation from FK so the solver doesn't
+        # fight to achieve an unreachable orientation.
+        if self.position_only:
+            # Use current_q if available; otherwise fall back to solver's
+            # warm-start (init_data) which is the last successful solution.
+            fk_q = current_q if current_q is not None else self.ik_solver.init_data
+            current_se3 = self.ik_solver.get_forward_kinematics(fk_q)
+            target_se3[:3, :3] = current_se3[:3, :3]
 
         # Solve IK
         try:
