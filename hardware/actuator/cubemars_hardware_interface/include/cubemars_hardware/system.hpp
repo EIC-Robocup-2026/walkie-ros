@@ -14,6 +14,7 @@
 #include "rclcpp/macros.hpp"
 #include "rclcpp_lifecycle/node_interfaces/lifecycle_node_interface.hpp"
 #include "rclcpp_lifecycle/state.hpp"
+
 #include "cubemars_hardware/visibility_control.h"
 #include "cubemars_hardware/can.hpp"
 
@@ -23,7 +24,7 @@ class CubeMarsSystemHardware : public hardware_interface::SystemInterface
 {
 public:
   RCLCPP_SHARED_PTR_DEFINITIONS(CubeMarsSystemHardware);
-  
+
   virtual ~CubeMarsSystemHardware();
 
   CUBEMARS_HARDWARE_PUBLIC
@@ -71,15 +72,19 @@ public:
     const rclcpp::Time & time, const rclcpp::Duration & period) override;
 
 private:
+  // Command interfaces
   std::vector<double> hw_commands_positions_;
   std::vector<double> hw_commands_velocities_;
   std::vector<double> hw_commands_accelerations_;
   std::vector<double> hw_commands_efforts_;
+
+  // State interfaces
   std::vector<double> hw_states_positions_;
   std::vector<double> hw_states_velocities_;
   std::vector<double> hw_states_efforts_;
   std::vector<double> hw_states_temperatures_;
 
+  // Motor parameters
   std::vector<double> erpm_conversions_;
   std::vector<double> torque_constants_;
   std::vector<double> internal_gear_ratios_;
@@ -89,10 +94,12 @@ private:
   std::vector<std::pair<std::int16_t, std::int16_t>> limits_;
   std::vector<bool> read_only_;
 
+  // CAN interface
   CanSocket can_;
   std::string can_itf_;
   std::vector<std::uint32_t> can_ids_;
 
+  // Control modes
   enum control_mode_t : std::uint8_t
   {
     CURRENT_LOOP = 1,
@@ -102,12 +109,17 @@ private:
     UNDEFINED
   };
 
-  // command mode switch variables
+  // Command mode switch variables
   std::vector<bool> stop_modes_;
   std::vector<control_mode_t> start_modes_;
 
-  // active control mode for each actuator
+  // Active control mode for each actuator
   std::vector<control_mode_t> control_mode_;
+
+  // Gripper grasp detection variables
+  std::vector<bool> grasp_detect_;      // Is grasp detection enabled for this joint?
+  std::vector<bool> grasp_detected_;    // Has a grasp been detected?
+  std::vector<double> target_position_; // Position to hold when grasp is detected
 };
 
 }  // namespace cubemars_hardware
