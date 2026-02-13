@@ -43,9 +43,7 @@
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>trac_ik_kinematics_plugin</exec_depend>
   <exec_depend>walkie_description</exec_depend>
-  <exec_depend>warehouse_ros_mongo</exec_depend>
   <exec_depend>xacro</exec_depend>
-
   <depend>gripper_controllers</depend>
   <depend>control_msgs</depend>
 

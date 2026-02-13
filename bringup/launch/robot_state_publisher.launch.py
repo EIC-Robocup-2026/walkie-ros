@@ -30,18 +30,23 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
     robot_model = LaunchConfiguration('robot_model')
     ros2_control = LaunchConfiguration('ros2_control', default='topic_base')
+    use_zed = LaunchConfiguration('use_zed', default='false')
 
     declare_robot_model = DeclareLaunchArgument(
         'robot_model', default_value=os.path.join(get_package_share_directory('robot_bringup'), 'urdf','tb3_custom','robot.urdf.xacro'),
         description='path of robot urdf file that going to use')
 
     robot_desc = ParameterValue(
-        Command(['xacro ', robot_model, ' ros2_control:=', ros2_control]),
+        Command(['xacro ', robot_model, ' ros2_control:=', ros2_control, ' use_zed:=', use_zed]),
         value_type=str
     )
     
     return LaunchDescription([
         declare_robot_model,
+        DeclareLaunchArgument(
+            'use_zed',
+            default_value='false',
+            description='Whether to use ZED camera'),
 
         DeclareLaunchArgument(
             'use_sim_time',

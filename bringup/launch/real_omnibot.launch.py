@@ -6,8 +6,9 @@ from launch import LaunchDescription
 from launch.conditions import IfCondition
 from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
 from launch.launch_description_sources import PythonLaunchDescriptionSource, AnyLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, Command
+from launch.substitutions import LaunchConfiguration, Command, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
 from launch.event_handlers import OnProcessStart
 from launch.actions import RegisterEventHandler
 
@@ -27,9 +28,16 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
     robot_model = LaunchConfiguration('robot_model', default=default_robot)
     ros2_control = LaunchConfiguration('ros2_control', default='real_robot')
+    use_zed = LaunchConfiguration('use_zed', default='true')
+
+    declare_use_zed = DeclareLaunchArgument(
+        'use_zed',
+        default_value='true',
+        description='Whether to use ZED camera'
+    )
 
     robot_description_content = Command(
-        ['xacro ', default_robot, ' ros2_control:=', ros2_control])
+        ['xacro ', default_robot, ' ros2_control:=', ros2_control, ' use_zed:=', use_zed])
 
     twist_mux_params = os.path.join(get_package_share_directory(
         package_name), 'config', 'twist_mux', 'twist_mux.yml')
@@ -79,6 +87,7 @@ def generate_launch_description():
             'use_sim_time': use_sim_time,
             'robot_model': robot_model,
             'ros2_control': ros2_control,
+            'use_zed': use_zed,
         }.items()
     )
 
@@ -180,8 +189,11 @@ def generate_launch_description():
     # ZED Camera Launch
     zed_camera_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(get_package_share_directory('zed_wrapper'),
-                         'launch', 'zed_camera.launch.py')
+            PathJoinSubstitution([
+                FindPackageShare('zed_wrapper'),
+                'launch',
+                'zed_camera.launch.py'
+            ])
         ),
         launch_arguments={
             'camera_model': 'zed2i',
@@ -190,7 +202,8 @@ def generate_launch_description():
             'publish_urdf': 'false',        
             'publish_tf': 'false',           
             'use_sim_time': use_sim_time    
-        }.items()
+        }.items(),
+        condition=IfCondition(use_zed)
     )
     
     rosbridge_launch = IncludeLaunchDescription(
@@ -206,6 +219,7 @@ def generate_launch_description():
 
     ld = LaunchDescription()
     # Add launch arguments
+    ld.add_action(declare_use_zed)
     ld.add_action(robot_state_publisher_cmd)
     ld.add_action(twist_mux)
     ld.add_action(twist_stamper_node)

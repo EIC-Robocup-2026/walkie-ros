@@ -31,13 +31,14 @@ def generate_launch_description():
     robot_model = LaunchConfiguration('robot_model')
     ros2_control = LaunchConfiguration('ros2_control', default='gazebo')
     dual_lidar = LaunchConfiguration('dual_lidar', default='True')
+    use_zed = LaunchConfiguration('use_zed', default='false')
 
     declare_robot_model = DeclareLaunchArgument(
         'robot_model', default_value=os.path.join(get_package_share_directory('robot_simulation'), 'urdf','tb3_custom','robot.urdf.xacro'),
         description='path of robot urdf file that going to use')
 
     robot_desc = ParameterValue(
-        Command(['xacro ', robot_model, ' ros2_control:=', ros2_control, ' dual_lidar:=', dual_lidar]),
+        Command(['xacro ', robot_model, ' ros2_control:=', ros2_control, ' dual_lidar:=', dual_lidar, ' use_zed:=', use_zed]),
         value_type=str
     )
     
