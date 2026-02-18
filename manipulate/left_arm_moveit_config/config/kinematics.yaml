@@ -2,9 +2,46 @@
 #   kinematics_solver: kdl_kinematics_plugin/KDLKinematicsPlugin
 #   kinematics_solver_search_resolution: 0.005
 #   kinematics_solver_timeout: 0.005
-  
+
 left_arm:
   kinematics_solver: trac_ik_kinematics_plugin/TRAC_IKKinematicsPlugin
   kinematics_solver_timeout: 1.0
   solve_type: Speed # Optional: "Speed", "Distance", or "Manip1"
+  position_only_ik: false
+
+# left_arm:
+#   kinematics_solver: bio_ik/BioIKKinematicsPlugin
+#   kinematics_solver_search_resolution: 0.005
+#   kinematics_solver_timeout: 0.005
+#   kinematics_solver_attempts: 1
+
+# left_arm:
+#   kinematics_solver: pick_ik/PickIkPlugin
+#   kinematics_solver_timeout: 0.05
+#   kinematics_solver_attempts: 10
+#   mode: global
+#   stop_optimization_on_valid_solution: true
+#   position_scale: 1.0
+#   rotation_scale: 0.5
+#   position_threshold: 0.001
+#   orientation_threshold: 0.01
+#   cost_threshold: 0.001
+#   minimal_displacement_weight: 0.0
+#   gd_step_size: 0.0001
+
+left_arm:
+  kinematics_solver: pick_ik/PickIkPlugin
+  kinematics_solver_timeout: 0.05
+  kinematics_solver_attempts: 10
+  mode: global # Changed from 'global' to 'local'
+  stop_optimization_on_valid_solution: false # Allow it to optimize for distance
+  position_scale: 1.0
+  rotation_scale: 0.5
+  position_threshold: 0.001
+  orientation_threshold: 0.01
+  cost_threshold: 0.0001 # Tightened to ensure it looks for a better cost
+
+  # --- THE KEY CHANGES ---
+  # minimal_displacement_weight: 10.0 # High weight forces it to stay near current pose
+  gd_step_size: 0.0001
   # position_only_ik: true

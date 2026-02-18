@@ -14,7 +14,7 @@ from launch.actions import RegisterEventHandler
 
 
 def generate_launch_description():
-    package_name = 'robot_bringup'
+    package_name = "robot_bringup"
     package_dir = os.path.join(get_package_share_directory(package_name))
     pkg_rosbridge_server = get_package_share_directory("rosbridge_server")
     description_package_name = 'walkie_description'
@@ -39,13 +39,17 @@ def generate_launch_description():
     robot_description_content = Command(
         ['xacro ', default_robot, ' ros2_control:=', ros2_control, ' use_zed:=', use_zed])
 
-    twist_mux_params = os.path.join(get_package_share_directory(
-        package_name), 'config', 'twist_mux', 'twist_mux.yml')
+    twist_mux_params = os.path.join(
+        get_package_share_directory(package_name),
+        "config",
+        "twist_mux",
+        "twist_mux.yml",
+    )
     twist_mux = Node(
         package="twist_mux",
         executable="twist_mux",
         parameters=[twist_mux_params],
-        remappings=[('/cmd_vel_out', '/cmd_vel')]
+        remappings=[("/cmd_vel_out", "/cmd_vel")],
     )
 
     # twist_stamped_frame_id = 'base_footprint'
@@ -70,18 +74,21 @@ def generate_launch_description():
         name='twist_stamper',
         output='screen',
         remappings=[
-                ('/cmd_vel_in', '/cmd_vel'),
-                ('/cmd_vel_out', '/omni_wheel_drive_controller/cmd_vel'),
+            ("/cmd_vel_in", "/cmd_vel"),
+            ("/cmd_vel_out", "/omni_wheel_drive_controller/cmd_vel"),
         ],
         parameters=[
-            {'frame_id': twist_stamped_frame_id},
-        ]
+            {"frame_id": twist_stamped_frame_id},
+        ],
     )
 
     robot_state_publisher_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(get_package_share_directory(package_name),
-                         'launch', 'robot_state_publisher.launch.py')
+            os.path.join(
+                get_package_share_directory(package_name),
+                "launch",
+                "robot_state_publisher.launch.py",
+            )
         ),
         launch_arguments={
             'use_sim_time': use_sim_time,
@@ -91,16 +98,19 @@ def generate_launch_description():
         }.items()
     )
 
-    controllers_config = os.path.join(get_package_share_directory(description_package_name),
-                                      'config',
-                                      'ros2_controller',
-                                      'real_controllers.yaml')
+    controllers_config = os.path.join(
+        get_package_share_directory(description_package_name),
+        "config",
+        "ros2_controller",
+        "real_controllers.yaml",
+    )
     controller_manager_spawner = Node(
         package="controller_manager",
         executable="ros2_control_node",
-        parameters=[{"robot_description", robot_description_content},
-                    controllers_config
-                    ],
+        parameters=[
+            {"robot_description", robot_description_content},
+            controllers_config,
+        ],
     )
 
     omni_controller_spawner = Node(
@@ -132,8 +142,11 @@ def generate_launch_description():
     # Dual lidar launch (Hokuyo + Lakibeam)
     dual_lidar_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(get_package_share_directory(package_name),
-                         'launch', 'dual_lidar_hokuyo_lakibeam.launch.py')
+            os.path.join(
+                get_package_share_directory(package_name),
+                "launch",
+                "dual_lidar_hokuyo_lakibeam.launch.py",
+            )
         ),
     )
 

@@ -1,0 +1,73 @@
+ik_servo_node:
+  ros__parameters:
+    # Path to the URDF file (relative to package share, or absolute)
+    urdf_path: "urdf/gz_walkie_1arm.urdf"
+
+    # Topic names
+    target_pose_topic: "/target_pose"
+    joint_states_topic: "/joint_states"
+
+    # Direct ros2_control parameters
+    command_topic: "/left_arm_controller/joint_trajectory"
+    publish_rate: 50.0           # Hz, IK solve + publish rate
+    trajectory_duration: 0.02    # seconds, time_from_start for each waypoint
+
+    # 7-DOF left arm joint names (order matters: matches URDF joint ordering)
+    arm_joint_names:
+      - "left_joint1"
+      - "left_joint2"
+      - "left_joint3"
+      - "left_joint4"
+      - "left_joint5"
+      - "left_joint6"
+      - "left_joint7"
+
+    # End-effector frame name in the URDF
+    ee_frame: "left_gripper_center"
+
+    # IK solver reference frame — incoming target poses are transformed
+    # from their frame_id into this frame before solving.
+    # Must match the root frame used by the Pinocchio reduced model (typically base_link).
+    ik_frame: "base_footprint"
+    tf_timeout: 0.1  # seconds to wait for TF lookup
+
+    # Position-only IK mode — when true, the solver ignores the target
+    # orientation and preserves the current EE orientation, solving only
+    # for XYZ position. This avoids convergence issues when the target
+    # quaternion doesn't match the arm's natural kinematic orientation.
+    position_only: true
+
+    # IK solver parameters (Jacobian-based damped least squares)
+    #   translation_weight: scales position error in the 6D task-space error
+    #   rotation_weight:    scales orientation error in the 6D task-space error
+    #     Ratio matters: higher translation_weight => prioritize position over orientation
+    ik_translation_weight: 1.0
+    ik_rotation_weight: 0.3
+
+    # Damping factor (lambda) for damped least squares
+    #   Higher = more stable near singularities, slower convergence
+    #   Lower  = faster convergence, less stable near singularities
+    ik_damping: 0.01
+
+    # Step size per iteration (0 < step <= 1)
+    #   1.0 = full Newton step, lower = more conservative
+    ik_step_size: 1.0
+
+    # Max iterations per solve_ik() call
+    ik_max_iterations: 20
+
+    # Convergence tolerance (weighted 6D error norm)
+    ik_tolerance: 0.001
+
+    # Smoothing filter weights (most recent sample first)
+    # Must sum to 1.0
+    filter_weights:
+      - 0.4
+      - 0.3
+      - 0.2
+      - 0.1
+
+    # Self-collision detection
+    collision_check_enabled: false
+    collision_safety_margin: -0.010  # meters, negative = allow slight penetration
+    collision_max_backtrack: 3       # max step halvings when collision detected
