@@ -44,3 +44,4 @@ left_arm:
   # --- THE KEY CHANGES ---
   # minimal_displacement_weight: 10.0 # High weight forces it to stay near current pose
   gd_step_size: 0.0001
+  # position_only_ik: true
