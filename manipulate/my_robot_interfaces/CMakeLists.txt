@@ -14,8 +14,10 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GetPosition.srv"
   "action/GoToPose.action"
   "action/GoToPoseRelative.action"
+  "action/GoToPoseQuaternion.action"
   "action/ControlGripper.action"
   "action/GoToHome.action"
+  "action/SetJointPosition.action"
  )
 
 ament_export_dependencies(rosidl_default_runtime)

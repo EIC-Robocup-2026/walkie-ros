@@ -16,6 +16,8 @@
 #include <my_robot_interfaces/action/go_to_pose_relative.hpp>
 #include <my_robot_interfaces/action/control_gripper.hpp>
 #include <my_robot_interfaces/action/go_to_home.hpp>
+#include <my_robot_interfaces/action/go_to_pose_quaternion.hpp>
+#include <my_robot_interfaces/action/set_joint_position.hpp>
 #include <control_msgs/action/follow_joint_trajectory.hpp>
 #include <moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>
 #include <moveit/robot_state/robot_state.hpp>
@@ -31,6 +33,11 @@ using GoalHandleGoToPose = rclcpp_action::ServerGoalHandle<GoToPose>;
 using GoalHandleGoToPoseRelative = rclcpp_action::ServerGoalHandle<GoToPoseRelative>;
 using GoalHandleControlGripper = rclcpp_action::ServerGoalHandle<ControlGripper>;
 using GoalHandleGoToHome = rclcpp_action::ServerGoalHandle<GoToHome>;
+using GoToPoseQuaternion = my_robot_interfaces::action::GoToPoseQuaternion;
+using GoalHandleGoToPoseQuaternion = rclcpp_action::ServerGoalHandle<GoToPoseQuaternion>;
+using SetJointPosition = my_robot_interfaces::action::SetJointPosition;
+using GoalHandleSetJointPosition = rclcpp_action::ServerGoalHandle<SetJointPosition>;
+
 using namespace std::placeholders;
 
 class Commander
@@ -54,8 +61,8 @@ public:
 
 
         // Set scaling
-        left_arm_->setMaxVelocityScalingFactor(1.0);
-        left_arm_->setMaxAccelerationScalingFactor(1.0);
+        left_arm_->setMaxVelocityScalingFactor(0.1);
+        left_arm_->setMaxAccelerationScalingFactor(0.1);
 
         left_arm_->setPlanningTime(1.0); 
         left_gripper_->setPlanningTime(1.0);
@@ -96,7 +103,21 @@ public:
             std::bind(&Commander::handle_goal_home, this, _1, _2),
             std::bind(&Commander::handle_cancel_home, this, _1),
             std::bind(&Commander::handle_accepted_home, this, _1));
-            
+        
+        go_to_pose_quat_server_ = rclcpp_action::create_server<GoToPoseQuaternion>(
+            node_,
+            "go_to_pose_quat",
+            std::bind(&Commander::handle_goal_pose_quat, this, _1, _2),
+            std::bind(&Commander::handle_cancel_pose_quat, this, _1),
+            std::bind(&Commander::handle_accepted_pose_quat, this, _1));
+
+        set_joint_position_server_ = rclcpp_action::create_server<SetJointPosition>(
+            node_,
+            "set_joint_position",
+            std::bind(&Commander::handle_goal_set_joint_position, this, _1, _2),
+            std::bind(&Commander::handle_cancel_set_joint_position, this, _1),
+            std::bind(&Commander::handle_accepted_set_joint_position, this, _1));
+
         RCLCPP_INFO(node_->get_logger(), "Commander Node Initialized (Left Arm Only)");
     }
     
@@ -536,6 +557,156 @@ public:
         }
     }
 
+     // ========== NEW: Quaternion-Based Go To Pose ==========
+
+    rclcpp_action::GoalResponse handle_goal_pose_quat(
+        const rclcpp_action::GoalUUID & uuid, 
+        std::shared_ptr<const GoToPoseQuaternion::Goal> goal) 
+    {
+        (void)uuid;
+        if (!getGroup(goal->group_name)) {
+            RCLCPP_ERROR(node_->get_logger(), "Invalid Group Name: %s", goal->group_name.c_str());
+            return rclcpp_action::GoalResponse::REJECT;
+        }
+        return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+    }
+
+    rclcpp_action::CancelResponse handle_cancel_pose_quat(
+        const std::shared_ptr<GoalHandleGoToPoseQuaternion> goal_handle) 
+    {
+        RCLCPP_INFO(node_->get_logger(), "Received request to cancel GoToPoseQuaternion");
+        (void)goal_handle;
+        
+        if (left_arm_) {
+            left_arm_->stop();
+        }
+        
+        return rclcpp_action::CancelResponse::ACCEPT;
+    }
+
+    void handle_accepted_pose_quat(const std::shared_ptr<GoalHandleGoToPoseQuaternion> goal_handle) {
+        std::thread{std::bind(&Commander::execute_go_to_pose_quat, this, goal_handle)}.detach();
+    }
+
+    void execute_go_to_pose_quat(const std::shared_ptr<GoalHandleGoToPoseQuaternion> goal_handle) {
+        auto result = std::make_shared<GoToPoseQuaternion::Result>();
+        const auto goal = goal_handle->get_goal();
+        auto group = getGroup(goal->group_name);
+
+        if (!group) {
+            result->success = false;
+            result->status = "Invalid Group";
+            goal_handle->abort(result);
+            return;
+        }
+
+        // 1. Setup
+        group->setStartStateToCurrentState();
+        group->setPoseReferenceFrame("base_footprint");
+        group->setGoalTolerance(0.01);
+
+        // 2. Create Target Pose with Quaternion
+        geometry_msgs::msg::Pose target_pose;
+        target_pose.position.x = goal->x;
+        target_pose.position.y = goal->y;
+        target_pose.position.z = goal->z;
+        target_pose.orientation.x = goal->qx;
+        target_pose.orientation.y = goal->qy;
+        target_pose.orientation.z = goal->qz;
+        target_pose.orientation.w = goal->qw;
+
+        // Normalize quaternion (important!)
+        tf2::Quaternion q(goal->qx, goal->qy, goal->qz, goal->qw);
+        q.normalize();
+        target_pose.orientation = tf2::toMsg(q);
+
+        RCLCPP_INFO(node_->get_logger(), 
+            "Planning to X:%.2f Y:%.2f Z:%.2f | Quat: [%.2f, %.2f, %.2f, %.2f]", 
+            goal->x, goal->y, goal->z, q.x(), q.y(), q.z(), q.w());
+
+        // 3. Plan
+        bool plan_success = false;
+        MoveGroupInterface::Plan plan;
+
+        if (goal->cartesian_path) {
+            std::vector<geometry_msgs::msg::Pose> waypoints = {target_pose};
+            moveit_msgs::msg::RobotTrajectory trajectory;
+            double fraction = group->computeCartesianPath(waypoints, 0.01, trajectory);
+            
+            if (fraction > 0.9) {
+                robot_trajectory::RobotTrajectory rt(
+                    group->getCurrentState()->getRobotModel(), 
+                    group->getName()
+                );
+                rt.setRobotTrajectoryMsg(*group->getCurrentState(), trajectory);
+                
+                trajectory_processing::TimeOptimalTrajectoryGeneration totg;
+                if (totg.computeTimeStamps(rt, 1.0, 1.0)) {
+                    rt.getRobotTrajectoryMsg(plan.trajectory);
+                    plan_success = true;
+                }
+            } else {
+                RCLCPP_WARN(node_->get_logger(), "Cartesian path only %.1f%% complete", fraction * 100.0);
+            }
+        } else {
+            group->setPoseTarget(target_pose);
+            plan_success = (group->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+        }
+
+        // 4. Check for Cancel
+        if (goal_handle->is_canceling()) {
+            RCLCPP_WARN(node_->get_logger(), "Goal Canceled during planning phase");
+            result->success = false;
+            result->status = "Canceled";
+            goal_handle->canceled(result);
+            return;
+        }
+
+        // 5. Execute
+        if (plan_success) {
+            auto err = group->execute(plan);
+            if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+                result->success = true;
+                result->status = "Success";
+                goal_handle->succeed(result);
+            } else {
+                result->success = false;
+                result->status = "Execution Failed";
+                goal_handle->abort(result);
+            }
+        } else {
+            result->success = false;
+            result->status = "Planning Failed";
+            goal_handle->abort(result);
+        }
+    }
+
+    // ========== HELPER: Convert RPY to Quaternion (for compatibility) ==========
+    
+    bool goToPoseTargetQuat(
+        std::shared_ptr<MoveGroupInterface> group, 
+        double x, double y, double z, 
+        double qx, double qy, double qz, double qw,
+        bool cartesian_path)
+    {
+        if (!group) return false;
+
+        // Normalize quaternion
+        tf2::Quaternion q(qx, qy, qz, qw);
+        q.normalize();
+        
+        // Create Target Pose
+        geometry_msgs::msg::Pose target_pose;
+        target_pose.position.x = x;
+        target_pose.position.y = y;
+        target_pose.position.z = z;
+        target_pose.orientation = tf2::toMsg(q);
+        
+        RCLCPP_INFO(node_->get_logger(), "Target -> X:%.2f Y:%.2f Z:%.2f", x, y, z);
+        
+        return executeTarget(group, target_pose, cartesian_path);
+    }
+
     // --- Gripper ---
 
     rclcpp_action::GoalResponse handle_goal_gripper(const rclcpp_action::GoalUUID & uuid, std::shared_ptr<const ControlGripper::Goal> goal) {
@@ -709,6 +880,108 @@ public:
         }
     }
 
+    // ========== NEW: SetJointPosition Action ==========
+
+    rclcpp_action::GoalResponse handle_goal_set_joint_position(
+        const rclcpp_action::GoalUUID & uuid, 
+        std::shared_ptr<const SetJointPosition::Goal> goal) 
+    {
+        (void)uuid;
+        
+        auto group = getGroup(goal->group_name);
+        if (!group) {
+            RCLCPP_ERROR(node_->get_logger(), "Invalid Group Name: %s", goal->group_name.c_str());
+            return rclcpp_action::GoalResponse::REJECT;
+        }
+
+        // Validate number of joints
+        size_t expected_joints = group->getVariableCount();
+        if (goal->joint_positions.size() != expected_joints) {
+            RCLCPP_ERROR(node_->get_logger(), 
+                "Joint count mismatch! Expected %zu joints, got %zu", 
+                expected_joints, goal->joint_positions.size());
+            return rclcpp_action::GoalResponse::REJECT;
+        }
+
+        return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+    }
+
+    rclcpp_action::CancelResponse handle_cancel_set_joint_position(
+        const std::shared_ptr<GoalHandleSetJointPosition> goal_handle) 
+    {
+        RCLCPP_INFO(node_->get_logger(), "Received request to cancel SetJointPosition");
+        (void)goal_handle;
+        
+        if (left_arm_) {
+            left_arm_->stop();
+        }
+        
+        return rclcpp_action::CancelResponse::ACCEPT;
+    }
+
+    void handle_accepted_set_joint_position(const std::shared_ptr<GoalHandleSetJointPosition> goal_handle) {
+        std::thread{std::bind(&Commander::execute_set_joint_position, this, goal_handle)}.detach();
+    }
+
+    void execute_set_joint_position(const std::shared_ptr<GoalHandleSetJointPosition> goal_handle) {
+        auto result = std::make_shared<SetJointPosition::Result>();
+        const auto goal = goal_handle->get_goal();
+        auto group = getGroup(goal->group_name);
+
+        if (!group) {
+            result->success = false;
+            result->status = "Invalid Group";
+            goal_handle->abort(result);
+            return;
+        }
+
+        // 1. Setup
+        group->setStartStateToCurrentState();
+        group->setGoalTolerance(0.01);
+
+        // 2. Set Joint Targets
+        RCLCPP_INFO(node_->get_logger(), "Setting joint positions for %s:", goal->group_name.c_str());
+        for (size_t i = 0; i < goal->joint_positions.size(); ++i) {
+            RCLCPP_INFO(node_->get_logger(), "  Joint %zu: %.3f rad", i, goal->joint_positions[i]);
+        }
+
+        group->setJointValueTarget(goal->joint_positions);
+
+        // 3. Plan
+        MoveGroupInterface::Plan plan;
+        bool plan_success = (group->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+
+        // 4. Check for Cancel
+        if (goal_handle->is_canceling()) {
+            RCLCPP_WARN(node_->get_logger(), "SetJointPosition canceled during planning");
+            result->success = false;
+            result->status = "Canceled";
+            goal_handle->canceled(result);
+            return;
+        }
+
+        // 5. Execute
+        if (plan_success) {
+            auto err = group->execute(plan);
+            if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+                result->success = true;
+                result->status = "Success";
+                goal_handle->succeed(result);
+                RCLCPP_INFO(node_->get_logger(), "SetJointPosition completed successfully");
+            } else {
+                result->success = false;
+                result->status = "Execution Failed";
+                goal_handle->abort(result);
+                RCLCPP_ERROR(node_->get_logger(), "SetJointPosition execution failed");
+            }
+        } else {
+            result->success = false;
+            result->status = "Planning Failed";
+            goal_handle->abort(result);
+            RCLCPP_ERROR(node_->get_logger(), "SetJointPosition planning failed");
+        }
+    }
+
 private:
    
     std::shared_ptr<rclcpp::Node> node_;
@@ -729,6 +1002,8 @@ private:
     rclcpp_action::Server<GoToPoseRelative>::SharedPtr go_to_pose_relative_server_;
     rclcpp_action::Server<ControlGripper>::SharedPtr control_gripper_server_;
     rclcpp_action::Server<GoToHome>::SharedPtr go_to_home_server_;
+    rclcpp_action::Server<GoToPoseQuaternion>::SharedPtr go_to_pose_quat_server_;
+    rclcpp_action::Server<SetJointPosition>::SharedPtr set_joint_position_server_;
 };
 
 int main(int argc, char **argv)

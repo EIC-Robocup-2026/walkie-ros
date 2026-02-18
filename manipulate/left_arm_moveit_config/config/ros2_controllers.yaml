@@ -1,16 +1,13 @@
-# This config file is used by ros2_control
 controller_manager:
   ros__parameters:
-    update_rate: 49 # Hz
-
+    update_rate: 20
+    
     left_arm_controller:
       type: joint_trajectory_controller/JointTrajectoryController
-
-
+    
     left_hand_controller:
-      type: joint_trajectory_controller/JointTrajectoryController
-
-
+      type: position_controllers/GripperActionController  # Position-based
+    
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
 
@@ -30,13 +27,20 @@ left_arm_controller:
       - position
       - velocity
     allow_nonzero_velocity_at_trajectory_end: true
+
 left_hand_controller:
   ros__parameters:
-    joints:
-      - left_gripper_worm_gear_joint
-    command_interfaces:
-      - position
-    state_interfaces:
-      - position
-      - velocity
-    allow_nonzero_velocity_at_trajectory_end: true
+    joint: left_gripper_worm_gear_joint
+    
+    # Control parameters
+    goal_tolerance: 0.01
+    max_effort: 100.0
+    max_velocity: 0.1
+    
+    # Stalling detection (useful for grasping)
+    allow_stalling: true
+    stall_velocity_threshold: 0.001
+    stall_timeout: 1.0
+    
+    # Action monitoring
+    action_monitor_rate: 20.0

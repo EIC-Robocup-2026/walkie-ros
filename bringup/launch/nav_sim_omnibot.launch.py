@@ -21,7 +21,7 @@ def generate_launch_description():
     default_robot = os.path.join(
         pkg_walkie_description,
         "robots",
-        "gz_walkie.urdf.xacro",
+        "gz_walkie_1arm.urdf.xacro",
     )
 
     robot_model = LaunchConfiguration("robot_model")

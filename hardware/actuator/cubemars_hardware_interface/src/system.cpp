@@ -44,6 +44,11 @@ hardware_interface::CallbackReturn CubeMarsSystemHardware::on_init(
   control_mode_.resize(info_.joints.size(), control_mode_t::UNDEFINED);
   internal_gear_ratios_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN());
   external_gear_ratios_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN());
+  
+  // Initialize gripper-specific variables
+  grasp_detect_.resize(info_.joints.size(), false);
+  grasp_detected_.resize(info_.joints.size(), false);
+  target_position_.resize(info_.joints.size(), std::numeric_limits<double>::quiet_NaN());
 
   for (std::size_t i = 0; i < info_.joints.size(); i++)
   {
@@ -129,6 +134,20 @@ hardware_interface::CallbackReturn CubeMarsSystemHardware::on_init(
     else
     {
       read_only_.emplace_back(false);
+    }
+
+    // Check if this joint has grasp detection enabled (for gripper)
+    if (joint.parameters.count("grasp_detect") != 0 && std::stoi(joint.parameters.at("grasp_detect")) == 1)
+    {
+      grasp_detect_[i] = true;
+      RCLCPP_INFO(
+        rclcpp::get_logger("CubeMarsSystemHardware"),
+        "Grasp detection enabled for joint %s with torque limit %.3f Nm", 
+        joint.name.c_str(), trq_limits_[i]);
+    }
+    else
+    {
+      grasp_detect_[i] = false;
     }
   }
 
@@ -286,6 +305,9 @@ hardware_interface::return_type CubeMarsSystemHardware::perform_command_mode_swi
       hw_commands_efforts_[i] = std::numeric_limits<double>::quiet_NaN();
       hw_commands_velocities_[i] = std::numeric_limits<double>::quiet_NaN();
       hw_commands_positions_[i] = std::numeric_limits<double>::quiet_NaN();
+      // Reset grasp detection when stopping
+      grasp_detected_[i] = false;
+      target_position_[i] = std::numeric_limits<double>::quiet_NaN();
     }
     // switch control mode
     control_mode_[i] = start_modes_[i];
@@ -353,12 +375,6 @@ hardware_interface::return_type CubeMarsSystemHardware::read(
       int i = std::distance(can_ids_.begin(), it);
       all_ids[i] = true;
       pos_int = read_data[0] << 8 | read_data[1];
-      // if (std::abs(pos_int) >= 32000)
-      // {
-      //   RCLCPP_INFO(
-      //     rclcpp::get_logger("CubeMarsSystemHardware"),
-      //     "Position has reached maximum possible value.");
-      // }
       hw_states_positions_[i] = pos_int;
       hw_states_velocities_[i] = std::int16_t (read_data[2] << 8 | read_data[3]);
       hw_states_efforts_[i] = std::int16_t (read_data[4] << 8 | read_data[5]);
@@ -383,10 +399,44 @@ hardware_interface::return_type CubeMarsSystemHardware::read(
       hw_states_efforts_[i] = hw_states_efforts_[i] * 0.01 * torque_constants_[i] *
         internal_gear_ratios_[i] * external_gear_ratios_[i];
       hw_states_temperatures_[i] = read_data[6];
-      if (trq_limits_[i] != 0 && hw_states_efforts_[i] > trq_limits_[i])
+      
+      // Grasp detection for gripper
+      if (grasp_detect_[i] && trq_limits_[i] > 0)
+      {
+        // Check if torque exceeds threshold
+        if (std::abs(hw_states_efforts_[i]) >= trq_limits_[i])
+        {
+          if (!grasp_detected_[i])
+          {
+            RCLCPP_INFO(
+              rclcpp::get_logger("CubeMarsSystemHardware"),
+              "Grasp detected on joint %lu! Torque: %.3f Nm (limit: %.3f Nm)", 
+              i, hw_states_efforts_[i], trq_limits_[i]);
+            grasp_detected_[i] = true;
+            // Store current position as the grasp position
+            target_position_[i] = hw_states_positions_[i];
+          }
+        }
+        else
+        {
+          // Reset grasp detection if torque drops below threshold
+          // Use 0.5 (50%) for worm gear - balance between stability and release
+          if (grasp_detected_[i] && std::abs(hw_states_efforts_[i]) < trq_limits_[i] * 0.9)
+          {
+            RCLCPP_INFO(
+              rclcpp::get_logger("CubeMarsSystemHardware"),
+              "Grasp released on joint %lu (torque: %.3f Nm)", i, hw_states_efforts_[i]);
+            grasp_detected_[i] = false;
+            target_position_[i] = std::numeric_limits<double>::quiet_NaN();
+          }
+        }
+        // Note: Do NOT return ERROR for grasp detection - this is normal operation
+      }
+      // Regular torque limit check for non-gripper joints (safety shutdown)
+      else if (trq_limits_[i] != 0 && std::abs(hw_states_efforts_[i]) > trq_limits_[i])
       {
         RCLCPP_ERROR(rclcpp::get_logger("CubeMarsSystemHardware"),
-          "Joint %lu went over torque limit.", i);
+          "Joint %lu went over torque limit - SAFETY SHUTDOWN!", i);
         
         // disable motor
         std::uint8_t data[4] = {0, 0, 0, 0};
@@ -394,17 +444,13 @@ hardware_interface::return_type CubeMarsSystemHardware::read(
         
         return hardware_interface::return_type::ERROR;
       }
+      
       if (read_only_[i])
       {
-        // RCLCPP_INFO(
-        //   rclcpp::get_logger("CubeMarsSystemHardware"),
-        //   "read states joint %lu: pos %f, spd %f, eff %f, temp %f",
-        //   i, hw_states_positions_[i], hw_states_velocities_[i], hw_states_efforts_[i], hw_states_temperatures_[i]);
         RCLCPP_INFO(
           rclcpp::get_logger("CubeMarsSystemHardware"),
           "Joint %lu: pos: %f",
           i, hw_states_positions_[i]);
-
       }
     }
   }
@@ -415,6 +461,7 @@ hardware_interface::return_type CubeMarsSystemHardware::read(
 hardware_interface::return_type CubeMarsSystemHardware::write(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
+  static rclcpp::Clock steady_clock(RCL_STEADY_TIME);
   for (std::size_t i = 0; i < info_.joints.size(); i++)
   {
     if (!read_only_[i])
@@ -423,16 +470,27 @@ hardware_interface::return_type CubeMarsSystemHardware::write(
       {
         case UNDEFINED:
         {
-            // RCLCPP_INFO(
-            //   rclcpp::get_logger("CubeMarsSystemHardware"),
-            //   "Nothing is using the hardware interface!");
             break;
         }
         case CURRENT_LOOP:
         {
           if (!std::isnan(hw_commands_efforts_[i]))
           {
-            std::int32_t current = (hw_commands_efforts_[i] / (internal_gear_ratios_[i] * external_gear_ratios_[i])) * 1000 / torque_constants_[i];
+            // For gripper with grasp detection, zero current when grasp is detected
+            double command_effort = hw_commands_efforts_[i];
+            if (grasp_detect_[i] && grasp_detected_[i])
+            {
+              // Set current to zero to stop applying force
+              command_effort = 0.0;
+              RCLCPP_INFO_THROTTLE(
+                rclcpp::get_logger("CubeMarsSystemHardware"),
+                steady_clock,
+                1000,  // Log every 1 second
+                "Gripper joint %lu holding grasp - zeroing current (commanded effort: %.3f Nm)", 
+                i, hw_commands_efforts_[i]);
+            }
+            
+            std::int32_t current = (command_effort / (internal_gear_ratios_[i] * external_gear_ratios_[i])) * 1000 / torque_constants_[i];
             if (std::abs(current) >= 60000)
             {
               RCLCPP_ERROR(
@@ -440,9 +498,6 @@ hardware_interface::return_type CubeMarsSystemHardware::write(
                 "current command is over maximal allowed value of 60000: %d", current);
               return hardware_interface::return_type::ERROR;
             }
-            // RCLCPP_INFO(
-            //   rclcpp::get_logger("CubeMarsSystemHardware"),
-            //   "current command for joint %lu: %d", i, current);
 
             std::uint8_t data[4];
             data[0] = current >> 24;
@@ -458,7 +513,21 @@ hardware_interface::return_type CubeMarsSystemHardware::write(
         {
           if (!std::isnan(hw_commands_velocities_[i]))
           {
-            std::int32_t speed = (hw_commands_velocities_[i] * external_gear_ratios_[i]) * erpm_conversions_[i];
+            // For gripper with grasp detection, zero velocity when grasp is detected
+            double command_velocity = hw_commands_velocities_[i];
+            if (grasp_detect_[i] && grasp_detected_[i])
+            {
+              // Set velocity to zero to stop moving
+              command_velocity = 0.0;
+              RCLCPP_INFO_THROTTLE(
+                rclcpp::get_logger("CubeMarsSystemHardware"),
+                steady_clock,
+                1000,  // Log every 1 second
+                "Gripper joint %lu holding grasp - zeroing velocity (commanded: %.3f rad/s)", 
+                i, hw_commands_velocities_[i]);
+            }
+            
+            std::int32_t speed = (command_velocity * external_gear_ratios_[i]) * erpm_conversions_[i];
             if (std::abs(speed) >= 100000)
             {
               RCLCPP_ERROR(
@@ -466,9 +535,6 @@ hardware_interface::return_type CubeMarsSystemHardware::write(
                 "speed command is over maximal allowed value of 100000: %d", speed);
               return hardware_interface::return_type::ERROR;
             }
-            // RCLCPP_INFO(
-            //   rclcpp::get_logger("CubeMarsSystemHardware"),
-            //   "speed command for joint %lu: %d", i, speed);
 
             std::uint8_t data[4];
             data[0] = speed >> 24;
@@ -484,17 +550,30 @@ hardware_interface::return_type CubeMarsSystemHardware::write(
         {
           if (!std::isnan(hw_commands_positions_[i]))
           {
-            std::int32_t position = ((hw_commands_positions_[i] + enc_offs_[i]) * external_gear_ratios_[i]) * 10000 * 180 / M_PI;
+            // For gripper with grasp detection, hold position if grasp is detected
+            double command_position = hw_commands_positions_[i];
+            if (grasp_detect_[i] && grasp_detected_[i])
+            {
+              // Send CURRENT position (not commanded) to stop motor from fighting
+              // This prevents PID oscillation on worm gear grippers
+              command_position = target_position_[i];
+              
+              RCLCPP_INFO_THROTTLE(
+                rclcpp::get_logger("CubeMarsSystemHardware"),
+                steady_clock,
+                1000,  // Log every 1 second
+                "Gripper joint %lu holding grasp: pos=%.3f (commanded=%.3f), torque=%.3f Nm", 
+                i, command_position, hw_commands_positions_[i], hw_states_efforts_[i]);
+            }
+            
+            std::int32_t position = ((command_position + enc_offs_[i]) * external_gear_ratios_[i]) * 10000 * 180 / M_PI;
             if (std::abs(position) >= 360000000)
             {
               RCLCPP_ERROR(
                 rclcpp::get_logger("CubeMarsSystemHardware"),
-                "speed command is over maximal allowed value of 360000000: %d", position);
+                "position command is over maximal allowed value of 360000000: %d", position);
               return hardware_interface::return_type::ERROR;
             }
-            // RCLCPP_INFO(
-            //   rclcpp::get_logger("CubeMarsSystemHardware"),
-            //   "position command for joint %lu: %d", i, position);
 
             std::uint8_t data[4];
             data[0] = position >> 24;
@@ -505,11 +584,28 @@ hardware_interface::return_type CubeMarsSystemHardware::write(
             can_.write_message(can_ids_[i] | POSITION_LOOP << 8, data, 4);
           }
           break;
+        }
         case POSITION_SPEED_LOOP:
         {
           if (!std::isnan(hw_commands_positions_[i]))
           {
-            std::int32_t position = ((hw_commands_positions_[i] + enc_offs_[i]) * external_gear_ratios_[i]) * 10000 * 180 / M_PI;
+            // For gripper with grasp detection, hold position if grasp is detected
+            double command_position = hw_commands_positions_[i];
+            if (grasp_detect_[i] && grasp_detected_[i])
+            {
+              // Send CURRENT position (not commanded) to stop motor from fighting
+              // This prevents PID oscillation on worm gear grippers
+              command_position = target_position_[i];
+              
+              RCLCPP_INFO_THROTTLE(
+                rclcpp::get_logger("CubeMarsSystemHardware"),
+                steady_clock,
+                1000,  // Log every 1 second
+                "Gripper joint %lu holding grasp: pos=%.3f (commanded=%.3f), torque=%.3f Nm", 
+                i, command_position, hw_commands_positions_[i], hw_states_efforts_[i]);
+            }
+            
+            std::int32_t position = ((command_position + enc_offs_[i]) * external_gear_ratios_[i]) * 10000 * 180 / M_PI;
             std::int16_t vel = limits_[i].first;
             std::int16_t acc = limits_[i].second;
             if (std::abs(position) >= 360000000)
@@ -519,10 +615,6 @@ hardware_interface::return_type CubeMarsSystemHardware::write(
                 "position command is over maximal allowed value of 360000000: %d", position);
               return hardware_interface::return_type::ERROR;
             }
-            // RCLCPP_INFO(
-            //   rclcpp::get_logger("CubeMarsSystemHardware"),
-            //   "command for joint %lu: pos %d, vel %d, acc %d",
-            //   i, position, vel, acc);
 
             std::uint8_t data[8];
             data[0] = position >> 24;
@@ -538,7 +630,6 @@ hardware_interface::return_type CubeMarsSystemHardware::write(
           }
           break;
         }
-      }
       }
     }
   }

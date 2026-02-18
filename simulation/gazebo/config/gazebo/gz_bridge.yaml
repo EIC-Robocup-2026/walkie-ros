@@ -99,6 +99,47 @@
   ros_type_name: "sensor_msgs/msg/Image"
   gz_type_name: "gz.msgs.Image"
   direction: GZ_TO_ROS
+
+# ----------------------------
+# ZED Camera (head servo) sensors
+# ----------------------------
+
+# '/zed/zed_node/rgb/color/rect/image': self._handle_rgb,
+# '/zed/zed_node/depth/depth_registered': self._handle_depth,
+# '/zed/zed_node/point_cloud/cloud_registered': self._handle_pc
+
+# Head left RGB camera
+- ros_topic_name: "/zed/zed_node/rgb/color/rect/image"
+  gz_topic_name: "/head/rgb/image"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/zed/zed_node/rgb/color/rect/image/camera_info"
+  gz_topic_name: "/head/rgb/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "gz.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+# Head depth camera
+- ros_topic_name: "/zed/zed_node/depth/depth_registered"
+  gz_topic_name: "/head/depth/image"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/zed/zed_node/depth/depth_registered/camera_info"
+  gz_topic_name: "/head/depth/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "gz.msgs.CameraInfo"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "/zed/zed_node/point_cloud/cloud_registered"
+  gz_topic_name: "/head/depth/points"
+  ros_type_name: "sensor_msgs/msg/PointCloud2"
+  gz_type_name: "gz.msgs.PointCloudPacked"
+  direction: GZ_TO_ROS
+
 # # gz topic published by DiffDrive plugin
 # - ros_topic_name: "odom"
 #   gz_topic_name: "odom"
