@@ -36,6 +36,10 @@ def generate_launch_description():
         description='Whether to use ZED camera'
     )
 
+    custom_zed_params_path = os.path.join(get_package_share_directory(package_name),
+        'config', 'camera',
+        'zed2i.yaml')
+
     robot_description_content = Command(
         ['xacro ', default_robot, ' ros2_control:=', ros2_control, ' use_zed:=', use_zed])
 
@@ -138,7 +142,8 @@ def generate_launch_description():
             'base_frame': 'zed_head_camera_link',
             'publish_urdf': 'false',
             'publish_tf': 'false',
-            'use_sim_time': use_sim_time
+            'use_sim_time': use_sim_time,
+            'ros_params_override_path': custom_zed_params_path
         }.items(),
         condition=IfCondition(use_zed)
     )

@@ -30,6 +30,10 @@ def generate_launch_description():
     ros2_control = LaunchConfiguration('ros2_control', default='real_robot')
     use_zed = LaunchConfiguration('use_zed', default='true')
 
+    custom_zed_params_path = os.path.join(get_package_share_directory(package_name),
+        'config', 'camera',
+        'zed2i.yaml')
+
     declare_use_zed = DeclareLaunchArgument(
         'use_zed',
         default_value='true',
@@ -187,18 +191,6 @@ def generate_launch_description():
         ],
     )
 
-    # ZED Camera launch (ZED2i)
-    # zed_camera_node = Node(
-    #     package='zed_wrapper',
-    #     executable='zed_wrapper_node',
-    #     output='screen',
-    #     parameters=[{
-    #         'camera_model': 'zed2i',
-    #         'base_frame': 'head_zed_camera_link', 
-    #         'publish_urdf': False,                 
-    #     }],
-    # )
-
     # ZED Camera Launch
     zed_camera_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -210,15 +202,16 @@ def generate_launch_description():
         ),
         launch_arguments={
             'camera_model': 'zed2i',
-            'camera_name': 'zed',           
-            'base_frame': 'zed_camera_link', 
-            'publish_urdf': 'false',        
-            'publish_tf': 'false',           
-            'use_sim_time': use_sim_time    
+            'camera_name': 'zed',
+            'base_frame': 'zed_camera_link',
+            'publish_urdf': 'false',
+            'publish_tf': 'false',
+            'use_sim_time': use_sim_time,
+            'ros_params_override_path': custom_zed_params_path
         }.items(),
         condition=IfCondition(use_zed)
     )
-    
+
     rosbridge_launch = IncludeLaunchDescription(
         AnyLaunchDescriptionSource(
             os.path.join(
@@ -240,7 +233,7 @@ def generate_launch_description():
     ld.add_action(delayed_omni_controller_spawner)
     ld.add_action(delayed_joint_broad_spawner)
     ld.add_action(dual_lidar_launch)
-    ld.add_action(delayed_servo_controller_spawner) 
+    ld.add_action(delayed_servo_controller_spawner)
     ld.add_action(current_pose_publisher)
     ld.add_action(realsense_camera_node)
     ld.add_action(zed_camera_launch)
