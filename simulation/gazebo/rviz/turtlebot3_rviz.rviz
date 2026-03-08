@@ -13,8 +13,11 @@ Panels:
         - /Map1/Update Topic1
         - /MarkerArray1/Topic1
         - /Image1
+        - /Image2
+        - /PointCloud22
+        - /PointCloud22/Status1
       Splitter Ratio: 0.5833333134651184
-    Tree Height: 527
+    Tree Height: 454
   - Class: rviz_common/Selection
     Name: Selection
   - Class: rviz_common/Tool Properties
@@ -482,16 +485,12 @@ Visualization Manager:
           Alpha: 1
           Show Axes: false
           Show Trail: false
-        zed_head_camera_link:
+        zed_head_camera_center:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        zed_head_camera_mount_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        zed_head_depth_frame:
+        zed_head_camera_link:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -499,7 +498,7 @@ Visualization Manager:
           Alpha: 1
           Show Axes: false
           Show Trail: false
-        zed_head_left_camera_optical_frame:
+        zed_head_left_camera_frame_optical:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -507,7 +506,7 @@ Visualization Manager:
           Alpha: 1
           Show Axes: false
           Show Trail: false
-        zed_head_right_camera_optical_frame:
+        zed_head_right_camera_frame_optical:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -578,19 +577,17 @@ Visualization Manager:
           Value: true
         top_imu_link:
           Value: true
+        zed_head_camera_center:
+          Value: true
         zed_head_camera_link:
-          Value: true
-        zed_head_camera_mount_link:
-          Value: true
-        zed_head_depth_frame:
           Value: true
         zed_head_left_camera_frame:
           Value: true
-        zed_head_left_camera_optical_frame:
+        zed_head_left_camera_frame_optical:
           Value: true
         zed_head_right_camera_frame:
           Value: true
-        zed_head_right_camera_optical_frame:
+        zed_head_right_camera_frame_optical:
           Value: true
       Marker Scale: 0.4000000059604645
       Name: TF
@@ -628,15 +625,13 @@ Visualization Manager:
                   {}
                 head_servobase_link:
                   head_servo_link:
-                    zed_head_camera_mount_link:
-                      zed_head_camera_link:
+                    zed_head_camera_link:
+                      zed_head_camera_center:
                         zed_head_left_camera_frame:
-                          zed_head_depth_frame:
-                            {}
-                          zed_head_left_camera_optical_frame:
+                          zed_head_left_camera_frame_optical:
                             {}
                         zed_head_right_camera_frame:
-                          zed_head_right_camera_optical_frame:
+                          zed_head_right_camera_frame_optical:
                             {}
                 left_arm_base:
                   {}
@@ -851,7 +846,7 @@ Visualization Manager:
       Use rainbow: true
       Value: true
     - Class: rviz_default_plugins/Image
-      Enabled: true
+      Enabled: false
       Max Value: 1
       Median window: 5
       Min Value: 0
@@ -863,6 +858,53 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /head/rgb/image
+      Value: false
+    - Class: rviz_default_plugins/Image
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Name: Image
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /zed/zed_node/rgb/color/rect/image
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: RGB8
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: PointCloud2
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.009999999776482582
+      Style: Flat Squares
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /zed/zed_node/point_cloud/cloud_registered
+      Use Fixed Frame: true
+      Use rainbow: true
       Value: true
   Enabled: true
   Global Options:
@@ -902,7 +944,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/XYOrbit
-      Distance: 2.9174277782440186
+      Distance: 8.331399917602539
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -917,15 +959,15 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.09979637712240219
+      Pitch: 0.2197963148355484
       Target Frame: base_link
       Value: XYOrbit (rviz_default_plugins)
-      Yaw: 0.4518339931964874
+      Yaw: 2.7568342685699463
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 1133
+  Height: 1011
   Help:
     collapsed: false
   Hide Left Dock: false
@@ -934,13 +976,13 @@ Window Geometry:
     collapsed: false
   Navigation 2:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd0000000400000000000001870000040ffc020000000bfb0000001200530065006c0065006300740069006f006e00000001e10000009b0000005d00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c006100790073010000003f00000339000000cc00fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261fb0000001e005200650061006c00730065006e0073006500430061006d00650072006100000002c6000000c10000000000000000fb0000000800480065006c00700000000328000000b60000006f00fffffffb0000000a0049006d006100670065010000037e000000d00000001700ffffff000000010000013a0000040ffc0200000004fb0000000a00560069006500770073010000003f000001c6000000a900fffffffb00000018004e0061007600690067006100740069006f006e00200032010000020b00000243000001f800fffffffb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e10000019700000003000004420000003efc0100000002fb0000000800540069006d00650100000000000004420000000000000000fb0000000800540069006d00650100000000000004500000000000000000000004b30000040f00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd00000004000000000000018700000395fc020000000cfb0000001200530065006c0065006300740069006f006e00000001e10000009b0000005d00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007302000001ed000001df00000185000000a3fb000000120056006900650077007300200054006f006f02000001df000002110000018500000122fb000000200054006f006f006c002000500072006f0070006500720074006900650073003203000002880000011d000002210000017afb000000100044006900730070006c006100790073010000003f000002f0000000cc00fffffffb0000002000730065006c0065006300740069006f006e00200062007500660066006500720200000138000000aa0000023a00000294fb00000014005700690064006500530074006500720065006f02000000e6000000d2000003ee0000030bfb0000000c004b0069006e0065006300740200000186000001060000030c00000261fb0000001e005200650061006c00730065006e0073006500430061006d00650072006100000002c6000000c10000000000000000fb0000000800480065006c00700000000328000000b60000006f00fffffffb0000000a0049006d00610067006501000003350000009f0000001700fffffffb0000000a0049006d0061006700650000000305000000cf0000001700ffffff000000010000013a00000395fc0200000004fb0000000a00560069006500770073010000003f00000190000000a900fffffffb00000018004e0061007600690067006100740069006f006e0020003201000001d5000001ff000001f800fffffffb0000001e0054006f006f006c002000500072006f00700065007200740069006500730100000041000000780000000000000000fb0000001200530065006c0065006300740069006f006e010000025a000000b200000000000000000000000200000490000000a9fc0100000001fb0000000a00560069006500770073030000004e00000080000002e10000019700000003000004420000003efc0100000002fb0000000800540069006d00650100000000000004420000000000000000fb0000000800540069006d00650100000000000004500000000000000000000004710000039500000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Selection:
     collapsed: false
   Tool Properties:
     collapsed: false
   Views:
     collapsed: false
-  Width: 1920
+  Width: 1854
   X: 66
-  Y: 42
+  Y: 32
