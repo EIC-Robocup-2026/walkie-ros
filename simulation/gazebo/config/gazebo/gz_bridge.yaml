@@ -104,38 +104,38 @@
 # ZED Camera (head servo) sensors
 # ----------------------------
 
-# '/zed/zed_node/rgb/color/rect/image': self._handle_rgb,
-# '/zed/zed_node/depth/depth_registered': self._handle_depth,
-# '/zed/zed_node/point_cloud/cloud_registered': self._handle_pc
+# '/zed_head/zed_node/rgb/color/rect/image': self._handle_rgb,
+# '/zed_head/zed_node/depth/depth_registered': self._handle_depth,
+# '/zed_head/zed_node/point_cloud/cloud_registered': self._handle_pc
 
 # Head left RGB camera
-- ros_topic_name: "/zed/zed_node/rgb/color/rect/image"
+- ros_topic_name: "/zed_head/zed_node/rgb/color/rect/image"
   gz_topic_name: "/head/rgb/image"
   ros_type_name: "sensor_msgs/msg/Image"
   gz_type_name: "gz.msgs.Image"
   direction: GZ_TO_ROS
 
-- ros_topic_name: "/zed/zed_node/rgb/color/rect/image/camera_info"
+- ros_topic_name: "/zed_head/zed_node/rgb/color/rect/image/camera_info"
   gz_topic_name: "/head/rgb/camera_info"
   ros_type_name: "sensor_msgs/msg/CameraInfo"
   gz_type_name: "gz.msgs.CameraInfo"
   direction: GZ_TO_ROS
 
 # Head depth camera
-- ros_topic_name: "/zed/zed_node/depth/depth_registered"
-  gz_topic_name: "/head/depth/image"
+- ros_topic_name: "/zed_head/zed_node/depth/depth_registered"
+  gz_topic_name: "/head/rgbd/depth_image"
   ros_type_name: "sensor_msgs/msg/Image"
   gz_type_name: "gz.msgs.Image"
   direction: GZ_TO_ROS
 
-- ros_topic_name: "/zed/zed_node/depth/depth_registered/camera_info"
-  gz_topic_name: "/head/depth/camera_info"
+- ros_topic_name: "/zed_head/zed_node/depth/depth_registered/camera_info"
+  gz_topic_name: "/head/rgbd/depth_image/CameraInfo"
   ros_type_name: "sensor_msgs/msg/CameraInfo"
   gz_type_name: "gz.msgs.CameraInfo"
   direction: GZ_TO_ROS
 
-- ros_topic_name: "/zed/zed_node/point_cloud/cloud_registered"
-  gz_topic_name: "/head/depth/points"
+- ros_topic_name: "/zed_head/zed_node/point_cloud/cloud_registered"
+  gz_topic_name: "/head/rgbd/points"
   ros_type_name: "sensor_msgs/msg/PointCloud2"
   gz_type_name: "gz.msgs.PointCloudPacked"
   direction: GZ_TO_ROS
