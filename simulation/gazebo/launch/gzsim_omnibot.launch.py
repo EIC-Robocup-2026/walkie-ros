@@ -29,7 +29,7 @@ def generate_launch_description():
     default_robot = os.path.join(
         get_package_share_directory(description_package_name),
         "robots",
-        "gz_walkie_1arm.urdf.xacro",
+        "gz_walkie.urdf.xacro",
     )
 
     # Launch configuration variables
