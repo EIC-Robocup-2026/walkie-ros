@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # Get the directory where the script is located
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -37,5 +38,11 @@ then
     ros2 run rmw_zenoh_cpp rmw_zenohd >/dev/null 2>&1 &
 fi
 
-# Launch the simulation
-ros2 launch robot_bringup nav_sim_omnibot.launch.py
+# Check if Foxglove ROS Bridge is already running
+if ! pgrep -f "foxglove_bridge" > /dev/null
+then
+    # Start the Foxglove ROS Bridge in the background on port 8765
+    ros2 run foxglove_bridge foxglove_bridge foxglove_bridge_launch.xml >/dev/null 2>&1 &
+fi
+
+ros2 launch robot_bringup isaac_omnibot.launch.py
