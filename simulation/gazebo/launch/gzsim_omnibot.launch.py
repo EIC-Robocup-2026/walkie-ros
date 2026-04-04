@@ -98,26 +98,15 @@ def generate_launch_description():
         "twist_mux",
         "twist_mux.yml",
     )
+
     twist_mux = Node(
         package="twist_mux",
         executable="twist_mux",
-        parameters=[twist_mux_params, {"use_sim_time": True}],
-        remappings=[("/cmd_vel_out", "/cmd_vel")],
-    )
-
-    twist_stamped_frame_id = "base_footprint"
-    twist_stamper_node = Node(
-        package="twist_stamper",
-        executable="twist_stamper",
-        name="twist_stamper",
-        output="screen",
-        remappings=[
-            ("/cmd_vel_in", "/cmd_vel"),
-            ("/cmd_vel_out", "/omni_wheel_drive_controller/cmd_vel"),
-        ],
         parameters=[
-            {"frame_id": twist_stamped_frame_id},
+            twist_mux_params,
+            {"use_sim_time": True},
         ],
+        remappings=[("/cmd_vel_out", "/omni_wheel_drive_controller/cmd_vel")],
     )
 
     robot_state_publisher_cmd = IncludeLaunchDescription(
@@ -211,7 +200,6 @@ def generate_launch_description():
     ld.add_action(spawn_entity_node)
 
     ld.add_action(twist_mux)
-    ld.add_action(twist_stamper_node)
     ld.add_action(delayed_spawners)
     # ld.add_action(forward_velocity_spawner)
     # ld.add_action(omni_controller_spawner)
