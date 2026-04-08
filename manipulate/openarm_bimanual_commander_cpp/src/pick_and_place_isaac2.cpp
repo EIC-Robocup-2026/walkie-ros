@@ -285,57 +285,9 @@ public:
 
     // ── grasp approach helper ─────────────────────────────────────────────
 
-    static constexpr double D_PREGRASP = 0.262;  // stand-off before contact
-    static constexpr double D_GRASP    = 0.155;  // at-contact distance
-
-    struct GraspApproach {
-        double pre_x, pre_y;    // pre-grasp position (XY)
-        double grasp_x, grasp_y;
-        double roll;            // EEF roll for this approach direction
-        double pitch;           // -π/2 (horizontal side grasp)
-        bool   from_left;       // true = left-side, false = right-side
-    };
-
-    // Decide approach side by comparing bottle Y to openarm_left_link4 Y:
-    //   bottle.y >= link4.y  →  bottle is on the outer/left side  → approach from LEFT  (yaw + π/2)
-    //   bottle.y <  link4.y  →  bottle is on the inner/right side → approach from RIGHT (yaw - π/2)
-    GraspApproach computeGraspApproach(
-        double bx, double by, const std::string & base_frame)
-    {
-        // Look up link4 to find the arm's elbow Y position
-        double link4_y = 0.0;
-        try {
-            auto tf = tf_buffer_->lookupTransform(
-                base_frame, "openarm_left_link4", tf2::TimePointZero);
-            link4_y = tf.transform.translation.y;
-        } catch (const tf2::TransformException & ex) {
-            RCLCPP_WARN(this->get_logger(),
-                        "Cannot lookup openarm_left_link4: %s — defaulting to left-side approach",
-                        ex.what());
-        }
-
-        const double yaw_to_obj  = std::atan2(by, bx);
-        const bool   from_left   = (by >= link4_y);
-        const double approach_angle = from_left
-            ? yaw_to_obj + M_PI / 2.0   // left side: 90° left of robot→object axis
-            : yaw_to_obj - M_PI / 2.0;  // right side: 90° right of robot→object axis
-
-        RCLCPP_INFO(this->get_logger(),
-                    "Bottle Y=%.3f  link4 Y=%.3f  → %s approach  (angle=%.2f rad, roll=%.2f rad)",
-                    by, link4_y,
-                    from_left ? "LEFT-side" : "RIGHT-side",
-                    approach_angle, approach_angle);
-
-        GraspApproach g;
-        g.pre_x    = bx + D_PREGRASP * std::cos(approach_angle);
-        g.pre_y    = by + D_PREGRASP * std::sin(approach_angle);
-        g.grasp_x  = bx + D_GRASP    * std::cos(approach_angle);
-        g.grasp_y  = by + D_GRASP    * std::sin(approach_angle);
-        g.roll     = approach_angle;
-        g.pitch    = -M_PI / 2.0;
-        g.from_left = from_left;
-        return g;
-    }
+    // Approach offsets (metres from object centre to gripper tip).
+    // Fixed RPY -3.14,-1.57,0 → approach from +Y side.
+    static constexpr double D_PREGRASP = 0.155;
 
     // ── marker visualization ──────────────────────────────────────────────
 
@@ -425,7 +377,7 @@ public:
 
     void publishTargetMarkers(
         const std::string & frame,
-        const GraspApproach & ga,
+        double pre_x, double gras_x, double pick_y, double pick_z, double lift_z,
         double bx, double by, double bz,
         double c2x, double c2y, double c2z,
         double c3x, double c3y, double c3z)
@@ -437,16 +389,13 @@ public:
         addTargetMarker(arr, id, frame, bx, by, bz,
                         1.0f, 1.0f, 1.0f, "Bottle");
 
-        // ── Left arm pick ──────────────────────────────────────────────────
-        addTargetMarker(arr, id, frame, ga.pre_x,   ga.pre_y,   bz + 0.075,
+        // ── Left arm pick ─────────────────────────────────────────────────
+        addTargetMarker(arr, id, frame, pre_x,  pick_y, pick_z,
                         1.0f, 1.0f, 0.0f, "L Pre-grasp");
-        addTargetMarker(arr, id, frame, ga.grasp_x, ga.grasp_y, bz + 0.075,
+        addTargetMarker(arr, id, frame, gras_x, pick_y, pick_z,
                         0.0f, 1.0f, 0.2f, "L Grasp");
-        addTargetMarker(arr, id, frame, ga.grasp_x, ga.grasp_y, bz + 0.16,
+        addTargetMarker(arr, id, frame, gras_x, pick_y, lift_z,
                         0.0f, 0.8f, 1.0f, "L Lift");
-        // Arrow showing approach direction
-        addApproachArrow(arr, id, frame, ga.grasp_x, ga.grasp_y, bz + 0.075,
-                         ga.roll, 1.0f, 1.0f, 0.0f);
 
         // ── Left arm place ─────────────────────────────────────────────────
         addTargetMarker(arr, id, frame, c2x, c2y - 0.285, c2z + 0.6,
@@ -494,10 +443,14 @@ public:
                     "Bottle=(%.2f,%.2f,%.2f)  Cube=(%.2f,%.2f,%.2f)",
                     bx, by, bz, cx, cy, cz);
 
-        // Compute approach side based on bottle Y vs openarm_left_link4 Y
-        auto ga = computeGraspApproach(bx, by, base_frame);
+        const double gras_x = bx;
+        const double pre_x  = gras_x - D_PREGRASP;
+        const double pick_y = by;
+        const double pick_z = bz;
+        const double lift_z = bz + 0.16;
 
-        publishTargetMarkers(base_frame, ga,
+        publishTargetMarkers(base_frame,
+                             pre_x, gras_x, pick_y, pick_z, lift_z,
                              bx, by, bz,
                              c2x, c2y, c2z, c3x, c3y, c3z);
 
@@ -514,14 +467,14 @@ public:
         goHandsUp(l_arm);
         std::this_thread::sleep_for(150ms);
 
-        // 1. Pick from SM_BottleA — roll chosen based on bottle position vs link4
-        moveTo(l_arm, ga.pre_x,   ga.pre_y,   bz + 0.075, ga.roll, ga.pitch, 0.0, false, "L Pre-grasp");
+        // 1. Pick from SM_BottleA
+        moveTo(l_arm, pre_x,  pick_y, pick_z, -3.14, -1.57, 0.0, false, "L Pre-grasp");
         std::this_thread::sleep_for(150ms);
-        moveTo(l_arm, ga.grasp_x, ga.grasp_y, bz + 0.075, ga.roll, ga.pitch, 0.0, true,  "L Grasp");
+        moveTo(l_arm, gras_x, pick_y, pick_z, -3.14, -1.57, 0.0, true,  "L Grasp");
         std::this_thread::sleep_for(150ms);
         sendGripper(l_gripper, GRIPPER_CLOSE);
         std::this_thread::sleep_for(500ms);
-        moveTo(l_arm, ga.grasp_x, ga.grasp_y, bz + 0.16,  ga.roll, ga.pitch, 0.0, true,  "L Lift");
+        moveTo(l_arm, gras_x, pick_y, lift_z, -3.14, -1.57, 0.0, true,  "L Lift");
         std::this_thread::sleep_for(150ms);
 
         // Reach up with object in hand before moving to place
