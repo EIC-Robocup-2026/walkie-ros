@@ -42,7 +42,7 @@ public:
             depth_topic, qos, std::bind(&ObPoseServiceCpp::depth_callback, this, _1));
 
         srv_ = this->create_service<perception::srv::GetObPose>(
-            "compute_3d_poses", std::bind(&ObPoseServiceCpp::handle_service, this, _1, _2));
+            "get_3d_poses", std::bind(&ObPoseServiceCpp::handle_service, this, _1, _2));
 
         RCLCPP_INFO(this->get_logger(), "Service Ready. Listening to: %s", depth_topic.c_str());
     }
