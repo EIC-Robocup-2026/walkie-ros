@@ -1,12 +1,13 @@
 // pick_and_place_isaac2.cpp
 // Uses the bimanual_commander action servers to perform a pick-and-place task.
 // Runs in parallel with commander_template.cpp (the action server).
-// Mock variant: object positions are ROS parameters instead of Isaac TF frames.
+// Object positions are read from Isaac Sim TF frames published on /isaac_tf.
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
+#include <tf2_msgs/msg/tf_message.hpp>
 #include <moveit/planning_scene_interface/planning_scene_interface.hpp>
 #include <moveit_msgs/msg/collision_object.hpp>
 #include <shape_msgs/msg/solid_primitive.hpp>
@@ -47,23 +48,17 @@ public:
     PickAndPlaceMock(const rclcpp::NodeOptions & options)
     : Node("pick_and_place_mock", options)
     {
-        // Declare mock object positions (metres, in base_footprint frame).
-        // Override at runtime: ros2 run ... --ros-args -p bottle_x:=0.6
-        this->declare_parameter("bottle_x",  0.54);
-        this->declare_parameter("bottle_y",  0.056);
-        this->declare_parameter("bottle_z",  0.75);
-        this->declare_parameter("cube_x",    0.617);
-        this->declare_parameter("cube_y",    0.0);
-        this->declare_parameter("cube_z",    0.325);
-        this->declare_parameter("cube02_x",  0.083);
-        this->declare_parameter("cube02_y",  0.7255);
-        this->declare_parameter("cube02_z",  0.30);
-        this->declare_parameter("cube03_x",  0.083);
-        this->declare_parameter("cube03_y", -0.725);
-        this->declare_parameter("cube03_z",  0.30);
-
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+        // Standard /tf listener (robot joints, base_footprint, etc.)
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+        // Isaac Sim publishes scene objects on /isaac_tf — feed them into the same buffer
+        isaac_tf_sub_ = this->create_subscription<tf2_msgs::msg::TFMessage>(
+            "/isaac_tf", 10,
+            [this](const tf2_msgs::msg::TFMessage::SharedPtr msg) {
+                for (const auto & tf : msg->transforms) {
+                    tf_buffer_->setTransform(tf, "isaac_tf", false);
+                }
+            });
 
         pose_client_    = rclcpp_action::create_client<GoToPose>(this, "go_to_pose");
         gripper_client_ = rclcpp_action::create_client<SetJointPosition>(this, "set_joint_position");
@@ -128,7 +123,10 @@ public:
                                         CUBE03_SIZE_X, CUBE03_SIZE_Y, CUBE03_SIZE_Z);
 
         planning_scene_->applyCollisionObjects({start_table, table_2, table_3});
-        RCLCPP_INFO(this->get_logger(), "Added collision objects from mock parameters.");
+        RCLCPP_INFO(this->get_logger(),
+                    "Added collision objects: table_start @ (%.2f,%.2f,%.2f)  "
+                    "table_2 @ (%.2f,%.2f,%.2f)  table_3 @ (%.2f,%.2f,%.2f)",
+                    cx, cy, cz, c2x, c2y, c2z, c3x, c3y, c3z);
     }
 
     // ── utilities ────────────────────────────────────────────────────────
@@ -285,9 +283,93 @@ public:
 
     // ── grasp approach helper ─────────────────────────────────────────────
 
-    // Approach offsets (metres from object centre to gripper tip).
-    // Fixed RPY -3.14,-1.57,0 → approach from +Y side.
-    static constexpr double D_PREGRASP = 0.155;
+    static constexpr double HAND_OFFSET = 0.181; // link7 → hand tip along approach axis
+    static constexpr double D_PREGRASP  = 0.11;  // additional stand-off before contact
+    static constexpr double D_GRASP     =-0.015; // hand tip 0.05 m past bottle centre (closer)
+
+    struct GraspApproach {
+        double pre_x, pre_y;    // pre-grasp position (XY)
+        double grasp_x, grasp_y;
+        double roll;            // EEF roll for this approach direction
+        double pitch;           // -π/2 (horizontal side grasp)
+        double yaw;             // yaw angle for base rotation
+        bool   from_left;       // true = left-side, false = right-side
+    };
+
+    // Build a GraspApproach from a given approach_angle (world XY angle the gripper comes FROM).
+    // All positions target link7 (EEF); hand tip is HAND_OFFSET further along the axis.
+    GraspApproach makeApproach(double bx, double by, double approach_angle) const
+    {
+        const double total_pre   = HAND_OFFSET + D_PREGRASP;
+        const double total_grasp = HAND_OFFSET + D_GRASP;
+
+        GraspApproach g;
+        g.pre_x   = bx + total_pre   * std::cos(approach_angle);
+        g.pre_y   = by + total_pre   * std::sin(approach_angle);
+        g.grasp_x = bx + total_grasp * std::cos(approach_angle);
+        g.grasp_y = by + total_grasp * std::sin(approach_angle);
+        
+        // An equivalent orientation to (π, -π/2, approach_angle+π) is (0, -π/2, approach_angle).
+        // Using Roll=0 keeps the wrist joint comfortably away from its 180° limit.
+        g.roll  = 0.0;
+        g.pitch = -M_PI / 2.0;
+        double yaw = approach_angle;
+        while (yaw > M_PI)  yaw -= 2.0 * M_PI;
+        while (yaw < -M_PI) yaw += 2.0 * M_PI;
+        g.yaw   = yaw;
+        g.from_left = true;  // informational only
+        return g;
+    }
+
+    // Try candidate approach angles around the bottle and return the first one where
+    // MoveIt can plan a path to the pre-grasp pose.  Candidates are ordered so the
+    // preferred side (left/+Y for the left arm) is probed first.
+    // Returns false only if every candidate fails.
+    bool findBestGraspApproach(
+        const std::string & group,
+        double sx, double sy,
+        double bx, double by, double bz,
+        GraspApproach & best)
+    {
+        const double yaw_to_obj = std::atan2(by - sy, bx - sx);
+
+        // Candidate offsets from the robot→bottle axis, ordered by preference.
+        // Prioritize straight-on, then sweep outwards symmetrically to find a good angle.
+        static const std::vector<double> OFFSETS = {
+             M_PI,                // 180° (straight from front)
+             M_PI * 5.0 / 6.0,    // 150°
+            -M_PI * 5.0 / 6.0,    // -150°
+             M_PI * 3.0 / 4.0,    // 135°
+            -M_PI * 3.0 / 4.0,    // -135°
+             M_PI * 2.0 / 3.0,    // 120°
+            -M_PI * 2.0 / 3.0,    // -120°
+             M_PI / 2.0,          //  90° (from left)
+            -M_PI / 2.0,          // -90° (from right)
+        };
+
+        for (double offset : OFFSETS) {
+            const double approach_angle = yaw_to_obj + offset;
+            GraspApproach ga = makeApproach(bx, by, approach_angle);
+
+            RCLCPP_INFO(this->get_logger(),
+                        "Probing approach_angle=%.2f rad (offset=%.2f)  "
+                        "link7 pre=(%.3f,%.3f)  roll=%.3f",
+                        approach_angle, offset, ga.pre_x, ga.pre_y, ga.roll);
+
+            // Single planning attempt — arm does NOT move on failure
+            if (moveToOnce(group, ga.pre_x, ga.pre_y, bz, ga.roll, ga.pitch, ga.yaw,
+                           false, "probe pre-grasp")) {
+                RCLCPP_INFO(this->get_logger(),
+                            "Found reachable approach at offset=%.2f rad  roll=%.3f",
+                            offset, ga.roll);
+                best = ga;
+                return true;
+            }
+            RCLCPP_WARN(this->get_logger(), "Offset %.2f unreachable, trying next.", offset);
+        }
+        RCLCPP_ERROR(this->get_logger(), "No reachable approach found for bottle (%.3f,%.3f)", bx, by);
+        return false;
+    }
 
     // ── marker visualization ──────────────────────────────────────────────
 
@@ -377,7 +459,7 @@ public:
 
     void publishTargetMarkers(
         const std::string & frame,
-        double pre_x, double gras_x, double pick_y, double pick_z, double lift_z,
+        const GraspApproach & ga,
         double bx, double by, double bz,
         double c2x, double c2y, double c2z,
         double c3x, double c3y, double c3z)
@@ -389,13 +471,16 @@ public:
         addTargetMarker(arr, id, frame, bx, by, bz,
                         1.0f, 1.0f, 1.0f, "Bottle");
 
-        // ── Left arm pick ─────────────────────────────────────────────────
-        addTargetMarker(arr, id, frame, pre_x,  pick_y, pick_z,
+        // ── Left arm pick ──────────────────────────────────────────────────
+        addTargetMarker(arr, id, frame, ga.pre_x,   ga.pre_y,   bz,
                         1.0f, 1.0f, 0.0f, "L Pre-grasp");
-        addTargetMarker(arr, id, frame, gras_x, pick_y, pick_z,
+        addTargetMarker(arr, id, frame, ga.grasp_x, ga.grasp_y, bz,
                         0.0f, 1.0f, 0.2f, "L Grasp");
-        addTargetMarker(arr, id, frame, gras_x, pick_y, lift_z,
+        addTargetMarker(arr, id, frame, ga.grasp_x, ga.grasp_y, bz + 0.15,
                         0.0f, 0.8f, 1.0f, "L Lift");
+        // Arrow showing approach direction (points FROM approach TO target)
+        addApproachArrow(arr, id, frame, ga.grasp_x, ga.grasp_y, bz,
+                         ga.yaw - M_PI, 1.0f, 1.0f, 0.0f);
 
         // ── Left arm place ─────────────────────────────────────────────────
         addTargetMarker(arr, id, frame, c2x, c2y - 0.285, c2z + 0.6,
@@ -425,34 +510,30 @@ public:
         const std::string r_gripper  = "right_gripper";
         const std::string base_frame = "base_footprint";
 
-        // ── Step 0: Read mock object positions from parameters ───────────
-        RCLCPP_INFO(this->get_logger(), "Loading mock object positions from parameters...");
-        double bx  = this->get_parameter("bottle_x").as_double();
-        double by  = this->get_parameter("bottle_y").as_double();
-        double bz  = this->get_parameter("bottle_z").as_double();
-        double cx  = this->get_parameter("cube_x").as_double();
-        double cy  = this->get_parameter("cube_y").as_double();
-        double cz  = this->get_parameter("cube_z").as_double();
-        double c2x = this->get_parameter("cube02_x").as_double();
-        double c2y = this->get_parameter("cube02_y").as_double();
-        double c2z = this->get_parameter("cube02_z").as_double();
-        double c3x = this->get_parameter("cube03_x").as_double();
-        double c3y = this->get_parameter("cube03_y").as_double();
-        double c3z = this->get_parameter("cube03_z").as_double();
-        RCLCPP_INFO(this->get_logger(),
-                    "Bottle=(%.2f,%.2f,%.2f)  Cube=(%.2f,%.2f,%.2f)",
-                    bx, by, bz, cx, cy, cz);
+        // ── Step 0: Wait for Isaac Sim TF frames ─────────────────────────
+        RCLCPP_INFO(this->get_logger(), "Waiting for Isaac Sim TF frames...");
+        auto bottle_tf = waitForTF(base_frame, "SM_BottleA");
+        auto cube_tf   = waitForTF(base_frame, "Cube");
+        auto cube02_tf = waitForTF(base_frame, "Cube_02");
+        auto cube03_tf = waitForTF(base_frame, "Cube_03");
 
-        const double gras_x = bx;
-        const double pre_x  = gras_x - D_PREGRASP;
-        const double pick_y = by;
-        const double pick_z = bz;
-        const double lift_z = bz + 0.16;
+        double bx  = bottle_tf.transform.translation.x;
+        double by  = bottle_tf.transform.translation.y;
+        double bz  = bottle_tf.transform.translation.z;
+        double cx  = cube_tf.transform.translation.x;
+        double cy  = cube_tf.transform.translation.y;
+        double cz  = cube_tf.transform.translation.z;
+        double c2x = cube02_tf.transform.translation.x;
+        double c2y = cube02_tf.transform.translation.y;
+        double c2z = cube02_tf.transform.translation.z;
+        double c3x = cube03_tf.transform.translation.x;
+        double c3y = cube03_tf.transform.translation.y;
+        double c3z = cube03_tf.transform.translation.z;
 
-        publishTargetMarkers(base_frame,
-                             pre_x, gras_x, pick_y, pick_z, lift_z,
-                             bx, by, bz,
-                             c2x, c2y, c2z, c3x, c3y, c3z);
+        RCLCPP_INFO(this->get_logger(), "SM_BottleA @ (%.3f, %.3f, %.3f)", bx, by, bz);
+        RCLCPP_INFO(this->get_logger(), "Cube       @ (%.3f, %.3f, %.3f)", cx, cy, cz);
+        RCLCPP_INFO(this->get_logger(), "Cube_02    @ (%.3f, %.3f, %.3f)", c2x, c2y, c2z);
+        RCLCPP_INFO(this->get_logger(), "Cube_03    @ (%.3f, %.3f, %.3f)", c3x, c3y, c3z);
 
         addTableCollisions(base_frame, cx, cy, cz, c2x, c2y, c2z, c3x, c3y, c3z);
 
@@ -463,18 +544,32 @@ public:
 
         goHome(l_arm);
         sendGripper(l_gripper, GRIPPER_OPEN);
-
         goHandsUp(l_arm);
         std::this_thread::sleep_for(150ms);
 
-        // 1. Pick from SM_BottleA
-        moveTo(l_arm, pre_x,  pick_y, pick_z, -3.14, -1.57, 0.0, false, "L Pre-grasp");
+        // Get the first link position to anchor the search axis mathematically from the pivot
+        auto shoulder_tf = waitForTF(base_frame, "openarm_left_link1");
+        double sx = shoulder_tf.transform.translation.x;
+        double sy = shoulder_tf.transform.translation.y;
+
+        // 1. Search for a reachable approach angle.
+        //    findBestGraspApproach probes each candidate and moves to the first
+        //    reachable pre-grasp — arm is already at pre-grasp on return.
+        GraspApproach ga;
+        double grasp_z = bz + 0.05; // Grab the neck of the bottle to avoid table collisions
+        if (!findBestGraspApproach(l_arm, sx, sy, bx, by, grasp_z, ga)) {
+            RCLCPP_ERROR(this->get_logger(), "Cannot reach bottle — aborting.");
+            return;
+        }
+        publishTargetMarkers(base_frame, ga, bx, by, grasp_z, c2x, c2y, c2z, c3x, c3y, c3z);
         std::this_thread::sleep_for(150ms);
-        moveTo(l_arm, gras_x, pick_y, pick_z, -3.14, -1.57, 0.0, true,  "L Grasp");
+
+        // Arm is already at pre-grasp — move straight to grasp
+        moveTo(l_arm, ga.grasp_x, ga.grasp_y, grasp_z,        ga.roll, ga.pitch, ga.yaw, true,  "L Grasp");
         std::this_thread::sleep_for(150ms);
         sendGripper(l_gripper, GRIPPER_CLOSE);
         std::this_thread::sleep_for(500ms);
-        moveTo(l_arm, gras_x, pick_y, lift_z, -3.14, -1.57, 0.0, true,  "L Lift");
+        moveTo(l_arm, ga.grasp_x, ga.grasp_y, grasp_z + 0.15, ga.roll, ga.pitch, ga.yaw, true,  "L Lift");
         std::this_thread::sleep_for(150ms);
 
         // Reach up with object in hand before moving to place
@@ -533,6 +628,7 @@ public:
 private:
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+    rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr isaac_tf_sub_;
     std::shared_ptr<moveit::planning_interface::PlanningSceneInterface> planning_scene_;
     rclcpp_action::Client<GoToPose>::SharedPtr       pose_client_;
     rclcpp_action::Client<SetJointPosition>::SharedPtr gripper_client_;

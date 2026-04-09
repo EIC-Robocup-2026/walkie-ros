@@ -62,11 +62,11 @@ public:
         left_gripper_ = std::make_shared<MoveGroupInterface>(node_, "left_gripper");
         right_gripper_= std::make_shared<MoveGroupInterface>(node_, "right_gripper");
 
-        // Set scaling
-        left_arm_->setMaxVelocityScalingFactor(0.1);
-        left_arm_->setMaxAccelerationScalingFactor(0.1);
-        right_arm_->setMaxVelocityScalingFactor(0.1);
-        right_arm_->setMaxAccelerationScalingFactor(0.1);
+        // Set scaling  (1.0 = full speed; lower for safety on real hardware)
+        left_arm_->setMaxVelocityScalingFactor(1.0);
+        left_arm_->setMaxAccelerationScalingFactor(1.0);
+        right_arm_->setMaxVelocityScalingFactor(1.0);
+        right_arm_->setMaxAccelerationScalingFactor(1.0);
 
         left_arm_->setPlanningTime(1.0);
         right_arm_->setPlanningTime(1.0);
