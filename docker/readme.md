@@ -1,7 +1,7 @@
 
-# ROS2 Simulation Docker
+# ROS2 Docker Environments
 
-This directory contains the necessary files to build a Docker image for a ROS 2 simulation environment. 
+This directory contains the necessary files to build Docker images for both ROS 2 simulation and physical robot environments.
 
 ## Prerequisites
 
@@ -31,9 +31,11 @@ Below is a list of the available commands in your `justfile`:
 
   - `list-topics`: Lists the ROS 2 topics inside the running simulation container.
   - `shell CONTAINER_NAME`: Opens a shell inside the specified container. You must provide the name of the container as an argument (e.g., `just shell robot-simulation`).
+  - `build-sim`: Builds the Docker image and tags it as `eic-robocup2026-development:latest`.
   - `run-sim`: Starts the simulation using the `compose.simulation.yml` file.
   - `stop-sim`: Stops the running simulation containers.
-  - `build-sim`: Builds the Docker image and tags it as `robocup2026-developmentls:latest`.
+  - `run-real`: Starts the physical robot environment using the `compose.physical.yml` file.
+  - `stop-real`: Stops the physical robot containers.
 
 ## Manual Docker Commands
 
@@ -55,6 +57,18 @@ docker compose -f compose.simulation.yml up
 
 ```bash
 docker compose -f compose.simulation.yml down
+```
+
+### Run the physical robot environment
+
+```bash
+docker compose -f compose.physical.yml up
+```
+
+### Stop the physical robot environment
+
+```bash
+docker compose -f compose.physical.yml down
 ```
 
 ### Enter a container's shell

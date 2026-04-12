@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, TwistStamped
 from sensor_msgs.msg import Joy
 
 class JoyToTwist(Node):
@@ -17,7 +17,7 @@ class JoyToTwist(Node):
     """
     def __init__(self):
         super().__init__('joy_teleop_node')
-        self.publisher_ = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.publisher_ = self.create_publisher(TwistStamped, '/cmd_vel_joy', 10)
         self.subscriber_ = self.create_subscription(
             Joy,
             '/joy',
@@ -40,6 +40,9 @@ class JoyToTwist(Node):
         # Angular motion (rad/s^2)
         self.declare_parameter('accel_angular_rate', 1.0) 
         self.declare_parameter('decel_angular_rate', 4.0) 
+
+        self.declare_parameter('deadzone', 0.05)
+        self.deadzone = self.get_parameter('deadzone').get_parameter_value().double_value
 
         self.max_linear_vel = self.get_parameter('max_linear_vel').get_parameter_value().double_value
         self.max_angular_vel = self.get_parameter('max_angular_vel').get_parameter_value().double_value
@@ -68,14 +71,19 @@ class JoyToTwist(Node):
         current_time = self.get_clock().now()
         # Time in seconds (T_current - T_last)
         dt = (current_time - self.last_time).nanoseconds / 1e9 
+        if dt <= 0.0:
+            return
         self.last_time = current_time 
 
         # 1. Calculate TARGET Velocities (based on Joystick Input)
         target_twist = Twist()
         
-        raw_linear_x = msg.axes[self.linear_axis] 
-        raw_linear_y = msg.axes[self.strafe_axis]
-        raw_angular_z = msg.axes[self.angular_axis]
+        def apply_deadzone(value, dz):
+            return value if abs(value) > dz else 0.0
+
+        raw_linear_x = apply_deadzone(msg.axes[self.linear_axis], self.deadzone)
+        raw_linear_y = apply_deadzone(msg.axes[self.strafe_axis], self.deadzone)
+        raw_angular_z = apply_deadzone(msg.axes[self.angular_axis], self.deadzone)
 
         # Apply Max Velocity Constraints to get the full-speed target
         target_twist.linear.x = raw_linear_x * self.max_linear_vel
@@ -112,8 +120,49 @@ class JoyToTwist(Node):
             decel_rate=self.decel_angular_rate
         )
 
+        is_input_zero = (
+            raw_linear_x == 0.0 and
+            raw_linear_y == 0.0 and
+            raw_angular_z == 0.0
+        )
+
+        def clamp_zero(val, eps=1e-3):
+            return 0.0 if abs(val) < eps else val
+
+        new_twist.linear.x = clamp_zero(new_twist.linear.x)
+        new_twist.linear.y = clamp_zero(new_twist.linear.y)
+        new_twist.angular.z = clamp_zero(new_twist.angular.z)
+
+        is_stopped = (
+            abs(new_twist.linear.x) < 1e-3 and
+            abs(new_twist.linear.y) < 1e-3 and
+            abs(new_twist.angular.z) < 1e-3
+        )
+
+        if is_input_zero and is_stopped:
+            if (
+                self.last_twist.linear.x != 0.0 or
+                self.last_twist.linear.y != 0.0 or
+                self.last_twist.angular.z != 0.0
+            ):
+                twist_stamped = TwistStamped()
+                twist_stamped.header.stamp = self.get_clock().now().to_msg()
+                twist_stamped.header.frame_id = "base_link"
+                twist_stamped.twist = Twist()  # zero command
+
+                self.publisher_.publish(twist_stamped)
+                self.last_twist = Twist()
+
+            return
+
         # 3. Publish and Update State
-        self.publisher_.publish(new_twist)
+        twist_stamped = TwistStamped()
+        twist_stamped.header.stamp = self.get_clock().now().to_msg()
+        twist_stamped.header.frame_id = "base_link"  # or your robot frame
+
+        twist_stamped.twist = new_twist
+
+        self.publisher_.publish(twist_stamped)
         self.last_twist = new_twist
     
     def _rate_limit(self, current_vel, target_vel, dt, accel_rate, decel_rate):
