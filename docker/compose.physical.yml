@@ -18,9 +18,9 @@ x-cpu-config: &cpu-config
     - /dev/dri
 services:
   robot_simulation:
-    image: eic-robocup2026-development:latest
+    image: ghcr.io/eic-robocup-2026/walkie-ros/walkie-physical:main
     <<: [*cpu-config]
-    container_name: robot-simulation
+    container_name: robot-physical
     network_mode: host
     ipc: host
     group_add:

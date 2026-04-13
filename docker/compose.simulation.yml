@@ -19,7 +19,7 @@ x-cpu-config: &cpu-config
 
 services:
   robot_simulation:
-    image: eic-robocup2026-development:latest
+    image: ghcr.io/eic-robocup-2026/walkie-ros/walkie-simulation:main
     <<: [*cpu-config]
     container_name: robot-simulation
     network_mode: host
