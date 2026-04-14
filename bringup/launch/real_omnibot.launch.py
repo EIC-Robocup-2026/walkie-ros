@@ -219,6 +219,18 @@ def generate_launch_description():
         ],
     )
 
+    rviz_config_path = PathJoinSubstitution([
+                get_package_share_directory(package_name), 'config', 'rviz', 'default.rviz'
+            ])
+    rviz2 = Node(
+            package='rviz2',
+            executable='rviz2',
+            name='rviz2',
+            output='screen',
+            arguments=['-d', rviz_config_path],
+            parameters=[{'use_sim_time': True}]
+        )
+
     ld = LaunchDescription()
     # Add launch arguments
     ld.add_action(declare_use_zed)
@@ -234,5 +246,6 @@ def generate_launch_description():
     # ld.add_action(zed_camera_launch)
     ld.add_action(rosbridge_launch)
     ld.add_action(foxgloveBridge_cmd)
+    ld.add_action(rviz2)
 
     return ld
