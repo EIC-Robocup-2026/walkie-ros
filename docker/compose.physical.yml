@@ -18,7 +18,7 @@ x-cpu-config: &cpu-config
     - /dev/dri
 services:
   robot_simulation:
-    image: ghcr.io/eic-robocup-2026/walkie-ros/walkie-physical:main
+    image: ghcr.io/eic-robocup-2026/walkie-ros/walkie-physical:feat-github_action_ci-cd
     <<: [*cpu-config]
     container_name: robot-physical
     network_mode: host
@@ -26,8 +26,8 @@ services:
     group_add:
       - dialout
     privileged: true
-    tty: true         # 1. Creates the fake terminal
-    stdin_open: true  # 2. Keeps it open so ROS doesn't auto-shutdown
+    tty: true # 1. Creates the fake terminal
+    stdin_open: true # 2. Keeps it open so ROS doesn't auto-shutdown
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ../:/ros2_ws/src
@@ -39,7 +39,7 @@ services:
                { ros2 run rmw_zenoh_cpp rmw_zenohd & } &&
                sleep 2 &&
                echo Start_Joy_Controller========================================= &&
-               { ros2 launch joy_interface joy_control.launch.py < /dev/null & } && 
+               { ros2 launch joy_interface joy_control.launch.py < /dev/null & } &&
                sleep 2 &&
                echo Start_Real_Hardware========================================== &&
                exec ros2 launch robot_bringup real_omnibot.launch.py"
