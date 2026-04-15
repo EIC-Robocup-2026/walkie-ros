@@ -19,7 +19,7 @@ x-cpu-config: &cpu-config
 
 services:
   robot_simulation:
-    image: ghcr.io/eic-robocup-2026/walkie-ros/walkie-simulation:main
+    image: ghcr.io/eic-robocup-2026/walkie-ros/walkie-simulation:feat-github_action_ci-cd
     <<: [*cpu-config]
     container_name: robot-simulation
     network_mode: host
@@ -27,9 +27,10 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ../:/ros2_ws/src
+      - ../build:/ros2_ws/build
     # command: tail -f /dev/null
     command: >
       bash -c "source /opt/ros/jazzy/setup.bash &&
-               colcon build --symlink-install &&
+               colcon build --symlink-install --parallel-workers 1 &&
                source install/setup.bash &&
                ros2 launch robot_simulation gzsim_omnibot.launch.py"

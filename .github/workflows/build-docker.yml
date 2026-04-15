@@ -35,6 +35,8 @@ jobs:
           file: ./docker/Dockerfile.simulation
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/walkie-simulation:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}/walkie-simulation:buildcache,mode=max
 
   # ----------------------------------------
   # Job ที่ 2:  Build ตัว Physical
@@ -63,3 +65,5 @@ jobs:
           file: ./docker/Dockerfile.physical
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/walkie-physical:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}/walkie-physical:buildcache,mode=max
