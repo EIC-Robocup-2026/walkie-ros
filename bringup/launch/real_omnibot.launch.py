@@ -25,11 +25,10 @@ def generate_launch_description():
     pkg_rosbridge_server = get_package_share_directory("rosbridge_server")
     description_package_name = "walkie_description"
 
-    default_robot = os.path.join(
-        get_package_share_directory(description_package_name),
-        "robots",
-        "gz_walkie.urdf.xacro",
-    )
+    default_robot = os.path.join(get_package_share_directory(description_package_name),
+                                 'robots',
+                                 'gz_walkie.urdf.xacro'
+                                 )
 
     # Launch configuration variables
     use_sim_time = LaunchConfiguration("use_sim_time", default="false")
@@ -208,6 +207,30 @@ def generate_launch_description():
         }.items(),
     )
 
+    foxgloveBridge_cmd = Node(
+        package="foxglove_bridge",
+        executable="foxglove_bridge",
+        name="foxglove_bridge",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"send_buffer_limit": 50000000},  # 50 MB
+            {"address": "0.0.0.0"},
+        ],
+    )
+
+    rviz_config_path = PathJoinSubstitution([
+                get_package_share_directory(package_name), 'config', 'rviz', 'default.rviz'
+            ])
+    rviz2 = Node(
+            package='rviz2',
+            executable='rviz2',
+            name='rviz2',
+            output='screen',
+            arguments=['-d', rviz_config_path],
+            parameters=[{'use_sim_time': True}]
+        )
+
     ld = LaunchDescription()
     # Add launch arguments
     ld.add_action(declare_use_zed)
@@ -217,10 +240,12 @@ def generate_launch_description():
     ld.add_action(delayed_omni_controller_spawner)
     ld.add_action(delayed_joint_broad_spawner)
     ld.add_action(dual_lidar_launch)
-    ld.add_action(delayed_servo_controller_spawner)
+    # ld.add_action(delayed_servo_controller_spawner)
     ld.add_action(current_pose_publisher)
     ld.add_action(realsense_camera_node)
-    ld.add_action(zed_camera_launch)
+    # ld.add_action(zed_camera_launch)
     ld.add_action(rosbridge_launch)
+    ld.add_action(foxgloveBridge_cmd)
+    ld.add_action(rviz2)
 
     return ld

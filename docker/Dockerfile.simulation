@@ -15,11 +15,12 @@ RUN apt-get update && apt-get install -y \
     ros-${ROS_DISTRO}-teleop-twist-keyboard && \
     rosdep update --rosdistro $ROS_DISTRO && \
     rosdep install --from-paths src -y -i && \
-    apt-get install -y ros-${ROS_DISTRO}-nav2* && \
+    #apt-get install -y ros-${ROS_DISTRO}-nav2* && \
+    
     apt-get install -y ros-${ROS_DISTRO}-rmw-zenoh-cpp && \
         # Build
     bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && \
-    colcon build --symlink-install" && \
+    colcon build --symlink-install --parallel-workers 3" && \
     bash -c "source /ros2_ws/install/setup.bash" && \
     # Size optimization
     apt-get remove -y ros-dev-tools && \

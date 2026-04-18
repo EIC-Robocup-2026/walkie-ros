@@ -101,7 +101,7 @@ def generate_launch_description():
                     {"laser_1_topic": "/front_lidar"},
                     {"laser_2_topic": "/back_lidar"},
                     {"merged_scan_topic": "/merged_lidar"},
-                    {"target_frame": "base_link"},
+                    {"target_frame": "merged_lidar_link"},
                     {"laser_1_x_offset": 0.0},
                     {"laser_1_y_offset": 0.0},
                     {"laser_1_yaw_offset": 0.0},
