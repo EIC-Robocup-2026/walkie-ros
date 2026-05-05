@@ -3,45 +3,58 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    RegisterEventHandler,
+)
 from launch.conditions import IfCondition
-from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
-from launch.launch_description_sources import PythonLaunchDescriptionSource, AnyLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, Command, PathJoinSubstitution
+from launch.event_handlers import OnProcessStart
+from launch.launch_description_sources import (
+    AnyLaunchDescriptionSource,
+    PythonLaunchDescriptionSource,
+)
+from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
-from launch.event_handlers import OnProcessStart
-from launch.actions import RegisterEventHandler
 
 
 def generate_launch_description():
     package_name = "robot_bringup"
     package_dir = os.path.join(get_package_share_directory(package_name))
     pkg_rosbridge_server = get_package_share_directory("rosbridge_server")
-    description_package_name = 'walkie_description'
+    description_package_name = "walkie_description"
 
-    default_robot = os.path.join(get_package_share_directory(description_package_name),
-                                 'robots',
-                                 'gz_walkie_1arm.urdf.xacro'
-                                 )
-
-    # Launch configuration variables
-    use_sim_time = LaunchConfiguration('use_sim_time', default='false')
-    robot_model = LaunchConfiguration('robot_model', default=default_robot)
-    ros2_control = LaunchConfiguration('ros2_control', default='mock')
-    use_zed = LaunchConfiguration('use_zed', default='true')
-
-    declare_use_zed = DeclareLaunchArgument(
-        'use_zed',
-        default_value='true',
-        description='Whether to use ZED camera'
+    default_robot = os.path.join(
+        get_package_share_directory(description_package_name),
+        "robots",
+        "gz_walkie.urdf.xacro",
     )
 
-    custom_zed_params_path = os.path.join(get_package_share_directory(package_name),
-        'config', 'camera',
-        'zed2i.yaml')
+    # Launch configuration variables
+    use_sim_time = LaunchConfiguration("use_sim_time", default="false")
+    robot_model = LaunchConfiguration("robot_model", default=default_robot)
+    ros2_control = LaunchConfiguration("ros2_control", default="mock")
+    use_zed = LaunchConfiguration("use_zed", default="true")
+
+    declare_use_zed = DeclareLaunchArgument(
+        "use_zed", default_value="true", description="Whether to use ZED camera"
+    )
+
+    custom_zed_params_path = os.path.join(
+        get_package_share_directory(package_name), "config", "camera", "zed2i.yaml"
+    )
 
     robot_description_content = Command(
-        ['xacro ', default_robot, ' ros2_control:=', ros2_control, ' use_zed:=', use_zed])
+        [
+            "xacro ",
+            default_robot,
+            " ros2_control:=",
+            ros2_control,
+            " use_zed:=",
+            use_zed,
+        ]
+    )
 
     robot_state_publisher_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -52,11 +65,11 @@ def generate_launch_description():
             )
         ),
         launch_arguments={
-            'use_sim_time': use_sim_time,
-            'robot_model': robot_model,
-            'ros2_control': ros2_control,
-            'use_zed': use_zed,
-        }.items()
+            "use_sim_time": use_sim_time,
+            "robot_model": robot_model,
+            "ros2_control": ros2_control,
+            "use_zed": use_zed,
+        }.items(),
     )
 
     controllers_config = os.path.join(
@@ -114,7 +127,6 @@ def generate_launch_description():
         )
     )
 
-
     # ZED Camera launch (ZED2i)
     # zed_camera_node = Node(
     #     package='zed_wrapper',
@@ -130,22 +142,20 @@ def generate_launch_description():
     # ZED Camera Launch
     zed_camera_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            PathJoinSubstitution([
-                FindPackageShare('zed_wrapper'),
-                'launch',
-                'zed_camera.launch.py'
-            ])
+            PathJoinSubstitution(
+                [FindPackageShare("zed_wrapper"), "launch", "zed_camera.launch.py"]
+            )
         ),
         launch_arguments={
-            'camera_model': 'zed2i',
-            'camera_name': 'zed_head',
-            'base_frame': 'zed_head_camera_link',
-            'publish_urdf': 'false',
-            'publish_tf': 'false',
-            'use_sim_time': use_sim_time,
-            'ros_params_override_path': custom_zed_params_path
+            "camera_model": "zed2i",
+            "camera_name": "zed_head",
+            "base_frame": "zed_head_camera_link",
+            "publish_urdf": "false",
+            "publish_tf": "false",
+            "use_sim_time": use_sim_time,
+            "ros_params_override_path": custom_zed_params_path,
         }.items(),
-        condition=IfCondition(use_zed)
+        condition=IfCondition(use_zed),
     )
 
     ld = LaunchDescription()
