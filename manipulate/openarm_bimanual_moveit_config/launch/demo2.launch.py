@@ -100,6 +100,13 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
         ],
     )
 
+    static_world_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        arguments=["--frame-id", "world", "--child-frame-id", "base_footprint"],
+        output="screen",
+    )
+
     rviz = Node(
         package="rviz2",
         executable="rviz2",
@@ -181,16 +188,25 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
                    "--controller-manager-timeout", "30"],
         output="screen",
     )
+    lift_ctrl = Node(
+        package="controller_manager", executable="spawner",
+        arguments=["lift_controller",
+                   "-c", "/controller_manager",
+                   "--controller-manager-timeout", "30"],
+        output="screen",
+    )
     move_group = Node(
         package="moveit_ros_move_group", executable="move_group",
         output="screen", parameters=[moveit_params],
     )
     return [
         rsp,
+        static_world_tf,
         TimerAction(period=2.0, actions=[control_node]),
         TimerAction(period=4.0, actions=[jsb]),
         TimerAction(period=5.0, actions=[arm_ctrl]),
         TimerAction(period=5.0, actions=[gripper_ctrl]),
+        TimerAction(period=5.0, actions=[lift_ctrl]),
         TimerAction(period=7.0, actions=[move_group]),
         rviz,
     ]
