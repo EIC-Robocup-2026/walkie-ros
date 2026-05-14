@@ -26,7 +26,7 @@ class ObDetectionNode(Node):
         self.is_active = True
         self.conf_threshold = 0.55
         self.target_classes = [0, 39, 41, 45] # Person, Bottle, Cup, Bowl
-        
+
         self.fx = None
         self.fy = None
         self.cx = None
@@ -47,7 +47,7 @@ class ObDetectionNode(Node):
         rgb_topic = '/zed/zed_node/rgb/color/rect/image'
         depth_topic = '/zed/zed_node/depth/depth_registered'
         info_topic = '/zed/zed_node/rgb/color/rect/camera_info'
-        
+
         self.create_subscription(CameraInfo, info_topic, self.info_callback, qos)
 
         self.img_sub = message_filters.Subscriber(self, Image, rgb_topic, qos_profile=qos)
@@ -57,10 +57,10 @@ class ObDetectionNode(Node):
             [self.img_sub, self.depth_sub], queue_size=10, slop=0.2)
         self.ts.registerCallback(self.sync_callback)
 
-        self.pose_pub = self.create_publisher(PoseArray, 'ob_detection/poses', 10)        
+        self.pose_pub = self.create_publisher(PoseArray, 'ob_detection/poses', 10)
         self.marker_pub = self.create_publisher(MarkerArray, 'ob_detection/markers', 10)
         self.debug_pub = self.create_publisher(Image, 'ob_detection/debug_image', 10)
-        
+
         self.create_service(SetBool, 'ob_detection/toggle', self.toggle_callback)
         self.get_logger().info("Node Initialized.")
 
@@ -84,11 +84,11 @@ class ObDetectionNode(Node):
             cv_depth = self.cv_bridge.imgmsg_to_cv2(depth_msg, '32FC1')
 
             results = self.model(cv_img, verbose=False)
-            
+
             pose_array = PoseArray()
-            pose_array.header.frame_id = 'map' 
+            pose_array.header.frame_id = 'map'
             pose_array.header.stamp = self.get_clock().now().to_msg()
-            
+
             marker_array = MarkerArray()
             marker_array.markers.append(Marker(action=Marker.DELETEALL))
 
@@ -107,17 +107,17 @@ class ObDetectionNode(Node):
 
                     if 0 <= u < cv_depth.shape[1] and 0 <= v < cv_depth.shape[0]:
                         z = float(cv_depth[v, u])
-                        
+
                         if not np.isnan(z) and not np.isinf(z) and z > 0.2:
-                            
+
                             x_cam = (u - self.cx) * z / self.fx
                             y_cam = (v - self.cy) * z / self.fy
 
                             pt_cam = PointStamped()
                             pt_cam.header.frame_id = img_msg.header.frame_id
-                            
+
                             pt_cam.header.stamp = rclpy.time.Time(seconds=0).to_msg()
-                            
+
                             pt_cam.point.x = x_cam
                             pt_cam.point.y = y_cam
                             pt_cam.point.z = z
@@ -125,7 +125,7 @@ class ObDetectionNode(Node):
                             try:
                                 pt_map = self.tf_buffer.transform(
                                     pt_cam, 'map', timeout=rclpy.duration.Duration(seconds=0.05))
-                                
+
                                 pose = Pose()
                                 pose.position = pt_map.point
                                 pose.orientation.w = 1.0 # Default orientation (flat)
@@ -138,12 +138,12 @@ class ObDetectionNode(Node):
                                 m.action = Marker.ADD
                                 m.pose.position = pt_map.point
                                 m.scale.x = 0.2; m.scale.y = 0.2; m.scale.z = 0.2
-                                m.color.a = 1.0; m.color.g = 1.0 
+                                m.color.a = 1.0; m.color.g = 1.0
                                 marker_array.markers.append(m)
                                 count += 1
-                                
+
                             except Exception:
-                                pass 
+                                pass
 
             if count > 0:
                 self.pose_pub.publish(pose_array)
