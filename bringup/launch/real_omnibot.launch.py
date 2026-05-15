@@ -3,45 +3,57 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    RegisterEventHandler,
+)
 from launch.conditions import IfCondition
-from launch.actions import IncludeLaunchDescription, DeclareLaunchArgument
-from launch.launch_description_sources import PythonLaunchDescriptionSource, AnyLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, Command, PathJoinSubstitution
+from launch.event_handlers import OnProcessStart
+from launch.launch_description_sources import (
+    AnyLaunchDescriptionSource,
+    PythonLaunchDescriptionSource,
+)
+from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
-from launch.event_handlers import OnProcessStart
-from launch.actions import RegisterEventHandler
 
 
 def generate_launch_description():
     package_name = "robot_bringup"
     package_dir = os.path.join(get_package_share_directory(package_name))
     pkg_rosbridge_server = get_package_share_directory("rosbridge_server")
-    description_package_name = 'walkie_description'
+    description_package_name = "walkie_description"
 
     default_robot = os.path.join(get_package_share_directory(description_package_name),
                                  'robots',
-                                 'gz_walkie_1arm.urdf.xacro'
+                                 'gz_walkie.urdf.xacro'
                                  )
 
     # Launch configuration variables
-    use_sim_time = LaunchConfiguration('use_sim_time', default='false')
-    robot_model = LaunchConfiguration('robot_model', default=default_robot)
-    ros2_control = LaunchConfiguration('ros2_control', default='real_robot')
-    use_zed = LaunchConfiguration('use_zed', default='true')
+    use_sim_time = LaunchConfiguration("use_sim_time", default="false")
+    robot_model = LaunchConfiguration("robot_model", default=default_robot)
+    ros2_control = LaunchConfiguration("ros2_control", default="real_robot")
+    use_zed = LaunchConfiguration("use_zed", default="true")
 
-    custom_zed_params_path = os.path.join(get_package_share_directory(package_name),
-        'config', 'camera',
-        'zed2i.yaml')
+    custom_zed_params_path = os.path.join(
+        get_package_share_directory(package_name), "config", "camera", "zed2i.yaml"
+    )
 
     declare_use_zed = DeclareLaunchArgument(
-        'use_zed',
-        default_value='true',
-        description='Whether to use ZED camera'
+        "use_zed", default_value="true", description="Whether to use ZED camera"
     )
 
     robot_description_content = Command(
-        ['xacro ', default_robot, ' ros2_control:=', ros2_control, ' use_zed:=', use_zed])
+        [
+            "xacro ",
+            default_robot,
+            " ros2_control:=",
+            ros2_control,
+            " use_zed:=",
+            use_zed,
+        ]
+    )
 
     twist_mux_params = os.path.join(
         get_package_share_directory(package_name),
@@ -52,38 +64,11 @@ def generate_launch_description():
     twist_mux = Node(
         package="twist_mux",
         executable="twist_mux",
-        parameters=[twist_mux_params],
-        remappings=[("/cmd_vel_out", "/cmd_vel")],
-    )
-
-    # twist_stamped_frame_id = 'base_footprint'
-    # twist_stamper_node = Node(
-    #     package='robot_navigation',
-    #     executable='accel_stamp_node.py',
-    #     name='Accel_Stamp',
-    #     output='screen',
-    #     remappings=[
-    #             ('/cmd_vel_in', '/cmd_vel'),
-    #             ('/cmd_vel_out', '/omni_wheel_drive_controller/cmd_vel'),
-    #     ],
-    #     parameters=[
-    #         {'frame_id': twist_stamped_frame_id},
-    #     ]
-    # )
-
-    twist_stamped_frame_id = 'base_footprint'
-    twist_stamper_node = Node(
-        package='twist_stamper',
-        executable='twist_stamper',
-        name='twist_stamper',
-        output='screen',
-        remappings=[
-            ("/cmd_vel_in", "/cmd_vel"),
-            ("/cmd_vel_out", "/omni_wheel_drive_controller/cmd_vel"),
-        ],
         parameters=[
-            {"frame_id": twist_stamped_frame_id},
+            twist_mux_params,
+            {"use_sim_time": use_sim_time},
         ],
+        remappings=[("/cmd_vel_out", "/omni_wheel_drive_controller/cmd_vel")],
     )
 
     robot_state_publisher_cmd = IncludeLaunchDescription(
@@ -95,11 +80,11 @@ def generate_launch_description():
             )
         ),
         launch_arguments={
-            'use_sim_time': use_sim_time,
-            'robot_model': robot_model,
-            'ros2_control': ros2_control,
-            'use_zed': use_zed,
-        }.items()
+            "use_sim_time": use_sim_time,
+            "robot_model": robot_model,
+            "ros2_control": ros2_control,
+            "use_zed": use_zed,
+        }.items(),
     )
 
     controllers_config = os.path.join(
@@ -180,36 +165,35 @@ def generate_launch_description():
         ],
     )
 
-    #Depth camera launch (RealsenseD415)
+    # Depth camera launch (RealsenseD415)
     realsense_camera_node = Node(
-        package='realsense2_camera',
-        executable='realsense2_camera_node',
-        output='screen',
+        package="realsense2_camera",
+        executable="realsense2_camera_node",
+        output="screen",
         # Set the parameter pointcloud.enable to true
-        parameters=[{'pointcloud.enable': True},
-                    {'camera_name': 'bottom'},
+        parameters=[
+            {"pointcloud.enable": True},
+            {"camera_name": "bottom"},
         ],
     )
 
     # ZED Camera Launch
     zed_camera_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            PathJoinSubstitution([
-                FindPackageShare('zed_wrapper'),
-                'launch',
-                'zed_camera.launch.py'
-            ])
+            PathJoinSubstitution(
+                [FindPackageShare("zed_wrapper"), "launch", "zed_camera.launch.py"]
+            )
         ),
         launch_arguments={
-            'camera_model': 'zed2i',
-            'camera_name': 'zed',
-            'base_frame': 'zed_camera_link',
-            'publish_urdf': 'false',
-            'publish_tf': 'false',
-            'use_sim_time': use_sim_time,
-            'ros_params_override_path': custom_zed_params_path
+            "camera_model": "zed2i",
+            "camera_name": "zed",
+            "base_frame": "zed_camera_link",
+            "publish_urdf": "false",
+            "publish_tf": "false",
+            "use_sim_time": use_sim_time,
+            "ros_params_override_path": custom_zed_params_path,
         }.items(),
-        condition=IfCondition(use_zed)
+        condition=IfCondition(use_zed),
     )
 
     rosbridge_launch = IncludeLaunchDescription(
@@ -223,21 +207,45 @@ def generate_launch_description():
         }.items(),
     )
 
+    foxgloveBridge_cmd = Node(
+        package="foxglove_bridge",
+        executable="foxglove_bridge",
+        name="foxglove_bridge",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"send_buffer_limit": 50000000},  # 50 MB
+            {"address": "0.0.0.0"},
+        ],
+    )
+
+    rviz_config_path = PathJoinSubstitution([
+                get_package_share_directory(package_name), 'config', 'rviz', 'default.rviz'
+            ])
+    rviz2 = Node(
+            package='rviz2',
+            executable='rviz2',
+            name='rviz2',
+            output='screen',
+            arguments=['-d', rviz_config_path],
+            parameters=[{'use_sim_time': True}]
+        )
+
     ld = LaunchDescription()
     # Add launch arguments
     ld.add_action(declare_use_zed)
     ld.add_action(robot_state_publisher_cmd)
     ld.add_action(twist_mux)
-    ld.add_action(twist_stamper_node)
     ld.add_action(controller_manager_spawner)
     ld.add_action(delayed_omni_controller_spawner)
     ld.add_action(delayed_joint_broad_spawner)
     ld.add_action(dual_lidar_launch)
-    ld.add_action(delayed_servo_controller_spawner)
+    # ld.add_action(delayed_servo_controller_spawner)
     ld.add_action(current_pose_publisher)
     ld.add_action(realsense_camera_node)
-    ld.add_action(zed_camera_launch)
+    # ld.add_action(zed_camera_launch)
     ld.add_action(rosbridge_launch)
-
+    ld.add_action(foxgloveBridge_cmd)
+    ld.add_action(rviz2)
 
     return ld

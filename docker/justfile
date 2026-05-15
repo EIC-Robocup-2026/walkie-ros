@@ -12,12 +12,22 @@ run-topic-list: _run-as-root
 build-sim :
     sudo docker build -t "eic-robocup2026-development:latest" -f Dockerfile.simulation ..
 
+build-real :
+    sudo docker build -t "eic-robocup2026-development:latest" -f Dockerfile.physical ..
+
 run-sim :
     xhost local:root
     sudo docker compose -f compose.simulation.yml up
 
 stop-sim :
     sudo docker compose -f compose.simulation.yml down
+
+run-real :
+    xhost local:root
+    sudo docker compose -f compose.physical.yml up
+
+stop-real :
+    sudo docker compose -f compose.physical.yml down
 
 shell CONTAINER_NAME:
     @echo "Entering shell for container '{{CONTAINER_NAME}}'..."

@@ -4,3 +4,6 @@
 [submodule "description"]
 	path = description
 	url = git@github.com:EIC-Robocup-2026/robot-description.git
+[submodule "hardware/actuator/topic_based_ros2_control"]
+	path = hardware/actuator/topic_based_ros2_control
+	url = https://github.com/PickNikRobotics/topic_based_ros2_control.git

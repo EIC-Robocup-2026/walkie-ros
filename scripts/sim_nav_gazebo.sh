@@ -30,5 +30,12 @@ fi
 # Source the workspace
 source "$WS_ROOT/install/setup.bash"
 
+# Check if rmw_zenohd is already running
+if ! pgrep -x "rmw_zenohd" > /dev/null
+then
+    # Start rmw_zenohd in the background without verbosity
+    ros2 run rmw_zenoh_cpp rmw_zenohd >/dev/null 2>&1 &
+fi
+
 # Launch the simulation
 ros2 launch robot_bringup nav_sim_omnibot.launch.py
