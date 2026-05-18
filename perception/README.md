@@ -1,91 +1,67 @@
 # Perception Package
 
-A ROS 2 package for **3D Object Detection** using YOLOv8 and RGB-D cameras (ZED). It provides three complementary nodes for localizing objects in 3D space — one that runs inference internally, one that subscribes to external 2D detections and streams poses continuously, and a high-performance C++ service node for on-demand 3D projection.
+ROS 2 package for 3D object localization using a ZED RGB-D camera. Three nodes cover different use cases — pick the one that fits.
+
+| Node | Language | Use when… |
+|---|---|---|
+| `ob_detection` | Python | You want self-contained detection — no external detector needed |
+| `ob_pose` | Python | You already have 2D detections and want continuous 3D poses |
+| `ob_pose_service` | C++ | You need on-demand 3D projection via a service call |
 
 ---
 
-## Architecture Overview
+## Setup
 
-```
-┌───────────────────────────────────────────────────────────────────────┐
-│                          perception package                           │
-│                                                                       │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────────────┐   │
-│  │  ob_detection   │  │    ob_pose      │  │  ob_pose_service     │   │
-│  │   (Python)      │  │   (Python)      │  │      (C++)           │   │
-│  │                 │  │                 │  │                      │   │
-│  │ Runs YOLO       │  │ Subscribes to   │  │ On-demand service    │   │
-│  │ internally      │  │ external 2D     │  │ call: send 2D dets   │   │
-│  │ RGB+Depth sync  │  │ detections      │  │ → get 3D poses back  │   │
-│  │ → map frame     │  │ → map frame     │  │ No cv_bridge needed  │   │
-│  └────────┬────────┘  └────────┬────────┘  └──────────┬───────────┘   │
-│           │                    │                      │               │
-│           └────────────────────┤                      │               │
-│                                ▼                      ▼              │
-│                  /ob_detection/poses            /get_3d_poses         │
-│                     (map frame)                  (srv response)       │
-└───────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Dependencies
-
-### System Dependencies (ROS 2)
+**Install dependencies**
 
 ```bash
-sudo apt update
 sudo apt install ros-$ROS_DISTRO-vision-msgs \
                  ros-$ROS_DISTRO-tf2-ros \
                  ros-$ROS_DISTRO-tf2-geometry-msgs \
-                 ros-$ROS_DISTRO-image-transport \
-```
+                 ros-$ROS_DISTRO-image-transport
 
-### Python Dependencies
-
-```bash
 pip3 install ultralytics numpy
 ```
 
-### Model Files
+**Download the YOLO model**
 
-Place your YOLO model inside the package at:
+The model must live at `perception/models/`. Both `.pt` and `.onnx` are supported.
 
+Option A — download `.pt` directly (simplest, works out of the box):
+
+```bash
+mkdir -p perception/models
+python3 -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
+mv ~/.config/Ultralytics/yolov8n.pt perception/models/yolov8n.pt
 ```
-perception/models/yolov8n.onnx
+
+Option B — export to ONNX for faster CPU inference:
+
+```bash
+mkdir -p perception/models
+python3 - <<'EOF'
+from ultralytics import YOLO
+model = YOLO("yolov8n.pt")          # downloads if not cached
+model.export(format="onnx")         # writes yolov8n.onnx next to the script
+EOF
+mv yolov8n.onnx perception/models/yolov8n.onnx
 ```
 
-Both `.onnx` and `.pt` formats are supported (e.g., `yolov8n.pt`).
+> `ob_detection` loads whichever file is at the path in `get_package_share_directory('perception')/models/`. Update the filename in `ob_detection.py:37` if you use a different model.
+
+**Build**
+
+```bash
+cd /home/ut/Walkie_Project/walkie_ros
+colcon build --packages-select perception --symlink-install
+source install/setup.bash
+```
 
 ---
 
-## Nodes
+## Node 1 — `ob_detection`
 
-### 1. `ob_detection` — Integrated YOLO Detection
-
-Runs the YOLOv8 model internally. Synchronizes RGB and Depth image streams, performs object detection, and computes each object's 3D position relative to the camera frame before transforming it to the map frame.
-
-**Subscriptions**
-
-| Topic | Type | Description |
-|---|---|---|
-| `/zed/zed_node/rgb/color/rect/image` | `sensor_msgs/Image` | Rectified RGB stream |
-| `/zed/zed_node/depth/depth_registered` | `sensor_msgs/Image` | Registered depth map |
-| `/zed/zed_node/rgb/color/rect/camera_info` | `sensor_msgs/CameraInfo` | Camera intrinsics |
-
-**Publications**
-
-| Topic | Type | Description |
-|---|---|---|
-| `/ob_detection/poses` | `geometry_msgs/PoseArray` | Absolute 3D coordinates in map frame |
-| `/ob_detection/markers` | `visualization_msgs/MarkerArray` | Visualization spheres for RViz |
-| `/ob_detection/debug_image` | `sensor_msgs/Image` | Live video with bounding boxes |
-
-**Services**
-
-| Service | Type | Description |
-|---|---|---|
-| `/ob_detection/toggle` | `std_srvs/SetBool` | Start / stop processing |
+Runs YOLOv8 internally. Synchronizes RGB and depth streams, detects objects (person, bottle, cup, bowl), and publishes their 3D positions in the map frame. No external detector required.
 
 **Run**
 
@@ -93,39 +69,77 @@ Runs the YOLOv8 model internally. Synchronizes RGB and Depth image streams, perf
 ros2 run perception ob_detection
 ```
 
----
-
-### 2. `ob_pose` — Absolute Map Positioning
-
-Designed to work with an **external 2D detector**. Accepts incoming 2D bounding boxes, looks up their depth from the latest registered depth frame, then uses TF2 to project the point from the camera frame into the map frame.
-
-Depth sampling is done using a robust **median filter** over a configurable pixel window, avoiding noisy single-pixel reads.
-
 **Subscriptions**
 
-| Topic | Type | Description |
-|---|---|---|
-| `/yolo/detections_2d` | `vision_msgs/Detection2DArray` | Input 2D bounding boxes |
-| `/zed/zed_node/depth/depth_registered` | `sensor_msgs/Image` | Registered depth map |
-| `/tf`, `/tf_static` | — | `camera_link` → `map` transform tree |
+| Topic | Type |
+|---|---|
+| `/zed/zed_node/rgb/color/rect/image` | `sensor_msgs/Image` |
+| `/zed/zed_node/depth/depth_registered` | `sensor_msgs/Image` |
+| `/zed/zed_node/rgb/color/rect/camera_info` | `sensor_msgs/CameraInfo` |
 
 **Publications**
 
 | Topic | Type | Description |
 |---|---|---|
-| `/ob_detection/poses` | `geometry_msgs/PoseArray` | Absolute 3D coordinates in map frame |
-| `/ob_detection/markers` | `visualization_msgs/MarkerArray` | Green spheres at object locations |
+| `/ob_detection/poses` | `geometry_msgs/PoseArray` | 3D object positions in map frame |
+| `/ob_detection/markers` | `visualization_msgs/MarkerArray` | Green spheres for RViz |
+| `/ob_detection/debug_image` | `sensor_msgs/Image` | Live feed with bounding boxes |
 
-**Services**
+**Toggle on/off**
 
-| Service | Type | Description |
-|---|---|---|
-| `/ob_detection/toggle` | `std_srvs/SetBool` | Start / stop processing |
+```bash
+ros2 service call /ob_detection/toggle std_srvs/srv/SetBool "{data: true}"   # start
+ros2 service call /ob_detection/toggle std_srvs/srv/SetBool "{data: false}"  # pause
+```
+
+Starts active by default.
+
+---
+
+## Node 2 — `ob_pose`
+
+Receives 2D bounding boxes from an external detector, looks up depth for each box center, and streams 3D poses in the map frame. Pair this with any node that publishes `Detection2DArray`.
 
 **Run**
 
 ```bash
 ros2 run perception ob_pose
+```
+
+**Subscriptions**
+
+| Topic | Type |
+|---|---|
+| `/yolo/detections_2d` | `vision_msgs/Detection2DArray` |
+| `/zed/zed_node/depth/depth_registered` | `sensor_msgs/Image` |
+| `/zed/zed_node/depth/camera_info` | `sensor_msgs/CameraInfo` |
+
+**Publications**
+
+| Topic | Type | Description |
+|---|---|---|
+| `/ob_detection/poses` | `geometry_msgs/PoseArray` | 3D object positions in map frame |
+| `/ob_detection/markers` | `visualization_msgs/MarkerArray` | Green spheres for RViz |
+
+**Toggle on/off**
+
+```bash
+ros2 service call /ob_detection/toggle std_srvs/srv/SetBool "{data: true}"   # start
+ros2 service call /ob_detection/toggle std_srvs/srv/SetBool "{data: false}"  # pause
+```
+
+> Topics, output frame (`map`), and depth sampling radius (5 px) are hardcoded.
+
+---
+
+## Node 3 — `ob_pose_service`
+
+C++ service node. Subscribes to depth in the background, then on each service call projects a batch of 2D detections to 3D and returns the result. No streaming — only runs when called. No `cv_bridge` dependency.
+
+**Run**
+
+```bash
+ros2 run perception ob_pose_service
 ```
 
 **Parameters**
@@ -134,38 +148,16 @@ ros2 run perception ob_pose
 |---|---|---|
 | `depth_topic` | `/zed/zed_node/depth/depth_registered` | Depth image topic |
 | `info_topic` | `/zed/zed_node/depth/camera_info` | Camera info topic |
-| `target_frame` | `map` | TF2 target frame for output poses |
-| `search_radius` | `3` | Pixel radius for robust median depth sampling |
-
-Override at launch:
+| `target_frame` | `map` | Output TF frame |
+| `search_radius` | `3` | Pixel radius for median depth sampling |
 
 ```bash
-ros2 run perception ob_pose --ros-args \
+ros2 run perception ob_pose_service --ros-args \
   -p target_frame:=odom \
   -p search_radius:=5
 ```
 
----
-
-### 3. `ob_pose_service` — C++ On-Demand 3D Projection Service
-
-A high-performance **C++ service node** that exposes the same depth-to-map projection logic as a ROS 2 service. Instead of streaming continuously, it waits for a service call, projects all provided 2D detections to 3D in one shot, and returns the result. Uses direct pointer casting on raw depth buffers — no `cv_bridge` dependency required.
-
-**Subscriptions**
-
-| Topic | Type | Description |
-|---|---|---|
-| `/zed/zed_node/depth/depth_registered` | `sensor_msgs/Image` | Registered depth map (cached) |
-| `/zed/zed_node/depth/camera_info` | `sensor_msgs/CameraInfo` | Camera intrinsics (latched once) |
-| `/tf`, `/tf_static` | — | `camera_link` → `map` transform tree |
-
-**Services**
-
-| Service | Type | Description |
-|---|---|---|
-| `/get_3d_poses` | `perception/srv/GetObPose` | Project a batch of 2D detections → 3D map poses |
-
-**Service Interface**
+**Service: `/get_3d_poses`**
 
 ```
 # Request
@@ -176,103 +168,35 @@ geometry_msgs/PoseArray poses
 bool success
 ```
 
-**Call Example**
+**Call example**
 
 ```bash
 ros2 service call /get_3d_poses perception/srv/GetObPose \
   "{detections: {detections: [{bbox: {center: {position: {x: 640.0, y: 360.0}}}}]}}"
 ```
 
-**Parameters**
-
-| Parameter | Default | Description |
-|---|---|---|
-| `depth_topic` | `/zed/zed_node/depth/depth_registered` | Depth image topic |
-| `info_topic` | `/zed/zed_node/depth/camera_info` | Camera info topic |
-| `target_frame` | `map` | TF2 target frame for output poses |
-| `search_radius` | `3` | Pixel radius for robust median depth sampling |
-
-**Run**
-
-```bash
-ros2 run perception ob_pose_service
-```
-
----
-
-## Toggling Detection
-
-`ob_detection` and `ob_pose` both start in an **active state**. Use their toggle service to pause and resume processing:
-
-```bash
-# Enable detection
-ros2 service call /ob_detection/toggle std_srvs/srv/SetBool "{data: true}"
-
-# Disable detection
-ros2 service call /ob_detection/toggle std_srvs/srv/SetBool "{data: false}"
-```
-
-> `ob_pose_service` has no toggle — it is purely reactive and only processes data when its service is called.
-
 ---
 
 ## How 3D Projection Works
 
-Both `ob_pose` and `ob_pose_service` share the same projection pipeline. For each 2D detection bounding box center `(u, v)`:
+All three nodes use the same pipeline for each detection center `(u, v)`:
 
-1. **Robust depth** — samples a `(2r+1) × (2r+1)` pixel window around `(u, v)`, discards non-finite and near-zero values, returns the **median** of the valid set.
-2. **Perspective unprojection** — uses camera intrinsics `(fx, fy, cx, cy)` to compute the 3D point in camera frame:
+1. **Robust depth** — sample a `(2r+1) × (2r+1)` pixel window, discard non-finite and near-zero values, take the **median**.
+2. **Pinhole unproject** — compute the camera-frame point:
    ```
    x_c = (u - cx) * z / fx
    y_c = (v - cy) * z / fy
    z_c = z
    ```
-3. **TF2 transform** — looks up the `camera_link → map` transform (100 ms timeout) and transforms the point into the target frame.
-4. **PoseArray output** — each successfully transformed point is appended to the response as a `geometry_msgs/Pose` with a neutral orientation (`w = 1.0`).
+3. **TF2 transform** — look up `camera_link → map` (100 ms timeout) and transform the point.
+4. **Output** — append as `geometry_msgs/Pose` with identity orientation (`w = 1.0`).
 
 ---
 
-## Package Structure
+## Visualizing in RViz
 
-```
-perception/
-├── models/
-│   └── yolov8n.onnx              # YOLO model weights
-├── src/
-│   └── ob_pose_service.cpp       # C++ on-demand service node
-│   ├── ob_detection.py           # Python integrated YOLO node
-│   └── ob_pose.py                # Python streaming pose node
-├── srv/
-│   └── GetObPose.srv             # Service definition
-├── CMakeLists.txt
-└── package.xml
-```
+Add these displays after running any node:
 
----
-
-## Quick Start
-
-```bash
-# 1. Build the package
-cd ~/ros2_ws
-colcon build --packages-select perception
-source install/setup.bash
-
-# 2. Launch your ZED camera driver (ensure TF is being published)
-ros2 launch zed_wrapper zed_camera.launch.py camera_model:=zed2
-
-# 3a. Integrated detection — YOLO runs inside the node
-ros2 run perception ob_detection
-
-# 3b. Streaming pose node — feed it external 2D detections
-ros2 run perception ob_pose
-
-# 3c. On-demand C++ service node — call /get_3d_poses when needed
-ros2 run perception ob_pose_service
-
-# 4. Enable processing (ob_detection and ob_pose only)
-ros2 service call /ob_detection/toggle std_srvs/srv/SetBool "{data: true}"
-
-# 5. Visualize in RViz (add PoseArray and MarkerArray displays)
-rviz2
-```
+- `PoseArray` → `/ob_detection/poses`
+- `MarkerArray` → `/ob_detection/markers`
+- `Image` → `/ob_detection/debug_image` (`ob_detection` only)

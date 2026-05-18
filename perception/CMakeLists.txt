@@ -23,8 +23,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   DEPENDENCIES geometry_msgs vision_msgs
 )
 
+# ── C++ node ──────────────────────────────────────────────────────────────────
 add_executable(ob_pose_service_cpp src/ob_pose_service.cpp)
-
 ament_target_dependencies(ob_pose_service_cpp
   rclcpp
   sensor_msgs
@@ -33,24 +33,27 @@ ament_target_dependencies(ob_pose_service_cpp
   tf2_ros
   tf2_geometry_msgs
 )
-
-rosidl_get_typesupport_target(cpp_typesupport_target "${PROJECT_NAME}" "rosidl_typesupport_cpp")
+rosidl_get_typesupport_target(cpp_typesupport_target
+  "${PROJECT_NAME}" "rosidl_typesupport_cpp")
 target_link_libraries(ob_pose_service_cpp "${cpp_typesupport_target}")
+install(TARGETS ob_pose_service_cpp DESTINATION lib/${PROJECT_NAME})
 
-install(TARGETS
-  ob_pose_service_cpp
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-install(PROGRAMS
-  src/ob_detection.py
-  src/ob_pose.py
-  DESTINATION lib/${PROJECT_NAME}
-)
+install(PROGRAMS perception/ob_detection.py
+  RENAME ob_detection DESTINATION lib/${PROJECT_NAME})
+install(PROGRAMS perception/ob_pose.py
+  RENAME ob_pose DESTINATION lib/${PROJECT_NAME})
+# install(PROGRAMS perception/obb_3d.py
+#   RENAME obb3d DESTINATION lib/${PROJECT_NAME})
+# install(PROGRAMS perception/yolo_node.py
+#   RENAME yolo_node DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY
   models
   srv
+  launch
+  config
+  rviz
+  test_scenarios
   DESTINATION share/${PROJECT_NAME}
 )
 
