@@ -26,11 +26,11 @@
 #   direction: GZ_TO_ROS
 
 # ********** Unitree 4D L2 3D Lidar **********
-- ros_topic_name: "unitree4d_l2_lidar"
-  gz_topic_name: "unitree4d_l2_lidar/points"
-  ros_type_name: "sensor_msgs/msg/PointCloud2"
-  gz_type_name: "gz.msgs.PointCloudPacked"
-  direction: GZ_TO_ROS
+# - ros_topic_name: "unitree4d_l2_lidar"
+#   gz_topic_name: "unitree4d_l2_lidar/points"
+#   ros_type_name: "sensor_msgs/msg/PointCloud2"
+#   gz_type_name: "gz.msgs.PointCloudPacked"
+#   direction: GZ_TO_ROS
 
 - ros_topic_name: "imu"
   gz_topic_name: "imu"
