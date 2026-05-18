@@ -37,7 +37,9 @@ services:
       bash -c "source /opt/ros/jazzy/setup.bash &&
                colcon build --symlink-install --parallel-workers 1 &&
                source install/setup.bash &&
-               ros2 launch robot_simulation gzsim_omnibot.launch.py"
+               cd src/scripts &&
+               ls &&
+               bash sim_nav_gazebo.sh"
 
 # 3. DECLARE THE NAMED VOLUMES AT THE BOTTOM OF THE FILE
 volumes:

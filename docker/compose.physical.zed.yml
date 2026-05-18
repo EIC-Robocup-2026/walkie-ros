@@ -18,10 +18,14 @@ x-cpu-config: &cpu-config
     - /dev/dri
 
 services:
-  robot_physical:
-    image: ghcr.io/eic-robocup-2026/walkie-ros/walkie-physical:feat-github_action_ci-cd
-    <<: [*cpu-config]
-    container_name: robot-physical
+  robot_physical_zed:
+    # Build directly from the local merged Dockerfile
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile.physical.zed
+    container_name: robot_physical_zed_container
+
+    # Network and Permissions (from physical compose)
     network_mode: host
     ipc: host
     group_add:
@@ -29,15 +33,34 @@ services:
     privileged: true
     tty: true
     stdin_open: true
+
+    # Merged Environment Variables
+    environment:
+      - USER
+      - DISPLAY=${DISPLAY:?err}
+      - XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}
+      - RMW_IMPLEMENTATION=rmw_zenoh_cpp
+      - NVIDIA_DRIVER_CAPABILITIES=all
+
+    # GPU Passthrough (from ZED compose)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # Merged Volumes
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      # 1. FIX THE SRC MOUNT: Point it explicitly to your host's src folder
       - ../:/ros2_ws/src
-      # 2. USE NAMED VOLUMES FOR CACHING
       - ros_build_cache:/ros2_ws/build
       - ros_install_cache:/ros2_ws/install
       - ros_log_cache:/ros2_ws/log
       - /dev:/dev
+
+    # Your original launch sequence
     command: >
       bash -c "source /opt/ros/jazzy/setup.bash &&
                colcon build --symlink-install --parallel-workers 1 &&
@@ -52,7 +75,6 @@ services:
                echo Start_Navigation========================================== &&
                exec ros2 launch robot_navigation localization_Nav2_real.launch.py"
 
-# 3. DECLARE THE NAMED VOLUMES AT THE BOTTOM OF THE FILE
 volumes:
   ros_build_cache:
   ros_install_cache:
