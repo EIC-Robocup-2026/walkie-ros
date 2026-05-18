@@ -1,0 +1,5 @@
+string object_id
+---
+sensor_msgs/PointCloud2 cloud
+bool found
+string message
