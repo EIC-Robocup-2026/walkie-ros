@@ -35,6 +35,9 @@ def generate_launch_description():
     robot_model = LaunchConfiguration("robot_model", default=default_robot)
     ros2_control = LaunchConfiguration("ros2_control", default="real_robot")
     use_zed = LaunchConfiguration("use_zed", default="true")
+    use_unitree_lidar = LaunchConfiguration("use_unitree_lidar", default="true")
+    unitree_cloud_frame = LaunchConfiguration("unitree_cloud_frame", default="unitree4d_l2_imu_initial")
+    unitree_imu_frame = LaunchConfiguration("unitree_imu_frame", default="unitree4d_l2_imu")
 
     custom_zed_params_path = os.path.join(
         get_package_share_directory(package_name), "config", "camera", "zed2i.yaml"
@@ -42,6 +45,21 @@ def generate_launch_description():
 
     declare_use_zed = DeclareLaunchArgument(
         "use_zed", default_value="true", description="Whether to use ZED camera"
+    )
+    declare_use_unitree_lidar = DeclareLaunchArgument(
+        "use_unitree_lidar",
+        default_value="true",
+        description="Launch the Unitree lidar node as part of the real omnibot bringup",
+    )
+    declare_unitree_cloud_frame = DeclareLaunchArgument(
+        "unitree_cloud_frame",
+        default_value="unitree4d_l2_imu_initial",
+        description="Frame ID for the Unitree lidar point cloud",
+    )
+    declare_unitree_imu_frame = DeclareLaunchArgument(
+        "unitree_imu_frame",
+        default_value="unitree4d_l2_imu",
+        description="IMU frame ID used by the Unitree lidar node",
     )
 
     robot_description_content = Command(
@@ -165,6 +183,36 @@ def generate_launch_description():
         ],
     )
 
+    unitree_lidar_node = Node(
+        package="unitree_lidar_ros2",
+        executable="unitree_lidar_ros2_node",
+        name="unitree_lidar_ros2_node",
+        output="screen",
+        parameters=[
+            {"initialize_type": 2},
+            {"work_mode": 0},
+            {"use_system_timestamp": True},
+            {"range_min": 0.0},
+            {"range_max": 100.0},
+            {"cloud_scan_num": 18},
+            {"serial_port": '/dev/ttyACM0'},
+            {"baudrate": 4000000},
+            {"lidar_port": 6101},
+            {"lidar_ip": '10.0.0.103'},
+            {"local_port": 6201},
+            {"local_ip": '10.0.0.201'},
+            {"cloud_frame": unitree_cloud_frame},
+            {"cloud_topic": "unilidar/cloud"},
+            {"imu_frame": unitree_imu_frame},
+            {"imu_topic": "unilidar/imu"},
+        ],
+        condition=IfCondition(use_unitree_lidar),
+        remappings=[
+            ('/tf', '/tf_unitree_ignore'),
+            ('/tf_static', '/tf_static_unitree_ignore')
+        ]
+    )
+
     # Depth camera launch (RealsenseD415)
     realsense_camera_node = Node(
         package="realsense2_camera",
@@ -228,21 +276,25 @@ def generate_launch_description():
             name='rviz2',
             output='screen',
             arguments=['-d', rviz_config_path],
-            parameters=[{'use_sim_time': True}]
+            parameters=[{'use_sim_time': use_sim_time}]
         )
 
     ld = LaunchDescription()
     # Add launch arguments
     ld.add_action(declare_use_zed)
+    ld.add_action(declare_use_unitree_lidar)
+    ld.add_action(declare_unitree_cloud_frame)
+    ld.add_action(declare_unitree_imu_frame)
     ld.add_action(robot_state_publisher_cmd)
     ld.add_action(twist_mux)
     ld.add_action(controller_manager_spawner)
     ld.add_action(delayed_omni_controller_spawner)
     ld.add_action(delayed_joint_broad_spawner)
-    ld.add_action(dual_lidar_launch)
-    # ld.add_action(delayed_servo_controller_spawner)
+    # ld.add_action(dual_lidar_launch)
+    ld.add_action(delayed_servo_controller_spawner)
     ld.add_action(current_pose_publisher)
-    ld.add_action(realsense_camera_node)
+    ld.add_action(unitree_lidar_node)
+    # ld.add_action(realsense_camera_node)
     # ld.add_action(zed_camera_launch)
     ld.add_action(rosbridge_launch)
     ld.add_action(foxgloveBridge_cmd)
