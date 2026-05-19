@@ -7,6 +7,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
     RegisterEventHandler,
+    TimerAction,
 )
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessStart
@@ -16,6 +17,7 @@ from launch.launch_description_sources import (
 )
 from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -36,6 +38,10 @@ def generate_launch_description():
     ros2_control = LaunchConfiguration("ros2_control", default="real_robot")
     use_zed = LaunchConfiguration("use_zed", default="true")
     use_unitree_lidar = LaunchConfiguration("use_unitree_lidar", default="true")
+    use_arm = LaunchConfiguration("use_arm", default="true")
+    use_fake_arm_hardware = LaunchConfiguration("use_fake_arm_hardware", default="false")
+    left_can_interface = LaunchConfiguration("left_can_interface", default="can1")
+    right_can_interface = LaunchConfiguration("right_can_interface", default="can0")
     unitree_cloud_frame = LaunchConfiguration("unitree_cloud_frame", default="unitree4d_l2_imu_initial")
     unitree_imu_frame = LaunchConfiguration("unitree_imu_frame", default="unitree4d_l2_imu")
 
@@ -45,6 +51,20 @@ def generate_launch_description():
 
     declare_use_zed = DeclareLaunchArgument(
         "use_zed", default_value="true", description="Whether to use ZED camera"
+    )
+    declare_use_arm = DeclareLaunchArgument(
+        "use_arm", default_value="true", description="Whether to bring up the OpenArm"
+    )
+    declare_use_fake_arm_hardware = DeclareLaunchArgument(
+        "use_fake_arm_hardware",
+        default_value="false",
+        description="Use mock hardware for the arm (false = real CAN hardware)",
+    )
+    declare_left_can_interface = DeclareLaunchArgument(
+        "left_can_interface", default_value="can1", description="CAN interface for the left arm"
+    )
+    declare_right_can_interface = DeclareLaunchArgument(
+        "right_can_interface", default_value="can0", description="CAN interface for the right arm"
     )
     declare_use_unitree_lidar = DeclareLaunchArgument(
         "use_unitree_lidar",
@@ -70,6 +90,14 @@ def generate_launch_description():
             ros2_control,
             " use_zed:=",
             use_zed,
+            " use_arm:=",
+            use_arm,
+            " use_fake_arm_hardware:=",
+            use_fake_arm_hardware,
+            " left_can_interface:=",
+            left_can_interface,
+            " right_can_interface:=",
+            right_can_interface,
         ]
     )
 
@@ -115,7 +143,7 @@ def generate_launch_description():
         package="controller_manager",
         executable="ros2_control_node",
         parameters=[
-            {"robot_description", robot_description_content},
+            {"robot_description": ParameterValue(robot_description_content, value_type=str)},
             controllers_config,
         ],
     )
@@ -170,6 +198,42 @@ def generate_launch_description():
         )
     )
 
+    arm_trajectory_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=[
+            "left_joint_trajectory_controller",
+            "right_joint_trajectory_controller",
+            "--switch-timeout", "30.0",
+        ],
+        condition=IfCondition(use_arm),
+    )
+
+    delayed_arm_trajectory_spawner = RegisterEventHandler(
+        event_handler=OnProcessStart(
+            target_action=controller_manager_spawner,
+            on_start=[arm_trajectory_spawner],
+        )
+    )
+
+    arm_gripper_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=[
+            "left_gripper_controller",
+            "right_gripper_controller",
+            "--switch-timeout", "30.0",
+        ],
+        condition=IfCondition(use_arm),
+    )
+
+    delayed_arm_gripper_spawner = RegisterEventHandler(
+        event_handler=OnProcessStart(
+            target_action=controller_manager_spawner,
+            on_start=[arm_gripper_spawner],
+        )
+    )
+
     current_pose_publisher = Node(
         package="robot_navigation",
         executable="current_pose_publisher.py",
@@ -190,7 +254,7 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {"initialize_type": 2},
-            {"work_mode": 0},
+            {"work_mode": 5},
             {"use_system_timestamp": True},
             {"range_min": 0.0},
             {"range_max": 100.0},
@@ -282,6 +346,10 @@ def generate_launch_description():
     ld = LaunchDescription()
     # Add launch arguments
     ld.add_action(declare_use_zed)
+    ld.add_action(declare_use_arm)
+    ld.add_action(declare_use_fake_arm_hardware)
+    ld.add_action(declare_left_can_interface)
+    ld.add_action(declare_right_can_interface)
     ld.add_action(declare_use_unitree_lidar)
     ld.add_action(declare_unitree_cloud_frame)
     ld.add_action(declare_unitree_imu_frame)
@@ -290,7 +358,9 @@ def generate_launch_description():
     ld.add_action(controller_manager_spawner)
     ld.add_action(delayed_omni_controller_spawner)
     ld.add_action(delayed_joint_broad_spawner)
-    # ld.add_action(dual_lidar_launch)
+    ld.add_action(delayed_arm_trajectory_spawner)
+    ld.add_action(delayed_arm_gripper_spawner)
+    ld.add_action(dual_lidar_launch)
     ld.add_action(delayed_servo_controller_spawner)
     ld.add_action(current_pose_publisher)
     ld.add_action(unitree_lidar_node)

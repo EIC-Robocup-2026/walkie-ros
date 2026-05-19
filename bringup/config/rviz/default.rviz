@@ -14,6 +14,7 @@ Panels:
         - /Marker1
         - /PointCloud21
         - /PointCloud22
+        - /PointCloud22/Autocompute Value Bounds1
       Splitter Ratio: 0.5
     Tree Height: 650
   - Class: rviz_common/Selection
@@ -33,7 +34,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: ""
+    SyncSource: LaserScan
   - Class: nav2_rviz_plugins/Navigation 2
     Name: Navigation 2
 Visualization Manager:
@@ -100,11 +101,11 @@ Visualization Manager:
         All Enabled: true
         back_lidar_link:
           Value: true
+        back_lidar_link_calibrated:
+          Value: true
         base_footprint:
           Value: true
         base_link:
-          Value: true
-        bl_wheel_link:
           Value: true
         bottom_bottom_screw_frame:
           Value: true
@@ -126,13 +127,9 @@ Visualization Manager:
           Value: true
         bottom_right_ir_optical_frame:
           Value: true
-        br_wheel_link:
-          Value: true
-        fl_wheel_link:
-          Value: true
-        fr_wheel_link:
-          Value: true
         front_lidar_link:
+          Value: true
+        front_lidar_link_calibrated:
           Value: true
         head_servo_link:
           Value: true
@@ -140,31 +137,13 @@ Visualization Manager:
           Value: true
         merged_lidar_link:
           Value: true
-        odom:
-          Value: true
         openarm_left_hand:
           Value: true
         openarm_left_hand_tcp:
           Value: true
-        openarm_left_left_finger:
-          Value: true
         openarm_left_link0:
           Value: true
-        openarm_left_link1:
-          Value: true
-        openarm_left_link2:
-          Value: true
-        openarm_left_link3:
-          Value: true
-        openarm_left_link4:
-          Value: true
-        openarm_left_link5:
-          Value: true
-        openarm_left_link6:
-          Value: true
         openarm_left_link7:
-          Value: true
-        openarm_left_right_finger:
           Value: true
         openarm_left_wristcam_bracket:
           Value: true
@@ -172,25 +151,9 @@ Visualization Manager:
           Value: true
         openarm_right_hand_tcp:
           Value: true
-        openarm_right_left_finger:
-          Value: true
         openarm_right_link0:
           Value: true
-        openarm_right_link1:
-          Value: true
-        openarm_right_link2:
-          Value: true
-        openarm_right_link3:
-          Value: true
-        openarm_right_link4:
-          Value: true
-        openarm_right_link5:
-          Value: true
-        openarm_right_link6:
-          Value: true
         openarm_right_link7:
-          Value: true
-        openarm_right_right_finger:
           Value: true
         openarm_right_wristcam_bracket:
           Value: true
@@ -199,8 +162,6 @@ Visualization Manager:
         unitree4d_l2_imu:
           Value: true
         unitree4d_l2_imu_initial:
-          Value: true
-        unitree4d_l2_lidar_link:
           Value: true
         zed_head_camera_center:
           Value: true
@@ -220,7 +181,35 @@ Visualization Manager:
       Show Axes: true
       Show Names: false
       Tree:
-        {}
+        base_footprint:
+          base_link:
+            back_lidar_link:
+              back_lidar_link_calibrated:
+                {}
+            bottom_bottom_screw_frame:
+              bottom_link:
+                bottom_depth_frame:
+                  bottom_color_frame:
+                    bottom_color_optical_frame:
+                      {}
+                  bottom_depth_optical_frame:
+                    {}
+                  bottom_left_ir_frame:
+                    bottom_left_ir_optical_frame:
+                      {}
+                  bottom_right_ir_frame:
+                    bottom_right_ir_optical_frame:
+                      {}
+            front_lidar_link:
+              front_lidar_link_calibrated:
+                {}
+            merged_lidar_link:
+              {}
+            top_imu_link:
+              {}
+            unitree4d_l2_imu_initial:
+              unitree4d_l2_imu:
+                {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -279,9 +268,9 @@ Visualization Manager:
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
-      Max Intensity: 184
+      Max Intensity: 191
       Min Color: 0; 0; 0
-      Min Intensity: 24
+      Min Intensity: 37
       Name: LaserScan
       Position Transformer: XYZ
       Selectable: true
@@ -643,11 +632,11 @@ Visualization Manager:
           Alpha: 1
           Show Axes: false
           Show Trail: false
-        unitree4d_l2_imu_initial:
+        unitree4d_l2_imu:
           Alpha: 1
           Show Axes: false
           Show Trail: false
-        unitree4d_l2_lidar_link:
+        unitree4d_l2_imu_initial:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -747,23 +736,23 @@ Visualization Manager:
     - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
-        Value: true
+        Max Value: 3.2478995323181152
+        Min Value: -0.36596477031707764
+        Value: false
       Axis: Z
-      Channel Name: intensity
+      Channel Name: z
       Class: rviz_default_plugins/PointCloud2
       Color: 255; 255; 255
-      Color Transformer: ""
-      Decay Time: 0
+      Color Transformer: AxisColor
+      Decay Time: 0.6000000238418579
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
-      Max Intensity: 4096
+      Max Intensity: 255
       Min Color: 0; 0; 0
-      Min Intensity: 0
+      Min Intensity: 11
       Name: PointCloud2
-      Position Transformer: ""
+      Position Transformer: XYZ
       Selectable: true
       Size (Pixels): 3
       Size (m): 0.009999999776482582
@@ -823,25 +812,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 10.173694610595703
+      Distance: 4.843838691711426
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 1.1363933086395264
-        Y: 1.8707810640335083
-        Z: 0.18441477417945862
+        X: 0
+        Y: 0
+        Z: 0.25
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.7297959327697754
+      Pitch: 0.5547959804534912
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 6.23038387298584
+      Yaw: 2.0153982639312744
     Saved: ~
 Window Geometry:
   Displays:

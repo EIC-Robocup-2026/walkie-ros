@@ -31,14 +31,11 @@ lakibeam_lidar:
 
     inverted: false
 
-    #jetson
-    # hostip: '10.0.0.201'
-
     #walkie pc
-    #hostip: "10.0.0.6"
+    hostip: '10.0.0.201'
 
     #toya pc
-    hostip: "10.0.0.3"
+    # hostip: "10.0.0.3"
 
     port: "2368"
     angle_offset: 0
