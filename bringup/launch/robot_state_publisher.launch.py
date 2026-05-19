@@ -31,22 +31,50 @@ def generate_launch_description():
     robot_model = LaunchConfiguration('robot_model')
     ros2_control = LaunchConfiguration('ros2_control', default='topic_base')
     use_zed = LaunchConfiguration('use_zed', default='false')
+    use_arm = LaunchConfiguration('use_arm', default='true')
+    use_fake_arm_hardware = LaunchConfiguration('use_fake_arm_hardware', default='false')
+    left_can_interface = LaunchConfiguration('left_can_interface', default='can1')
+    right_can_interface = LaunchConfiguration('right_can_interface', default='can0')
 
     declare_robot_model = DeclareLaunchArgument(
         'robot_model', default_value=os.path.join(get_package_share_directory('robot_bringup'), 'urdf','tb3_custom','robot.urdf.xacro'),
         description='path of robot urdf file that going to use')
 
     robot_desc = ParameterValue(
-        Command(['xacro ', robot_model, ' ros2_control:=', ros2_control, ' use_zed:=', use_zed]),
+        Command([
+            'xacro ', robot_model,
+            ' ros2_control:=', ros2_control,
+            ' use_zed:=', use_zed,
+            ' use_arm:=', use_arm,
+            ' use_fake_arm_hardware:=', use_fake_arm_hardware,
+            ' left_can_interface:=', left_can_interface,
+            ' right_can_interface:=', right_can_interface,
+        ]),
         value_type=str
     )
-    
+
     return LaunchDescription([
         declare_robot_model,
         DeclareLaunchArgument(
             'use_zed',
             default_value='false',
             description='Whether to use ZED camera'),
+        DeclareLaunchArgument(
+            'use_arm',
+            default_value='true',
+            description='Whether to include the OpenArm'),
+        DeclareLaunchArgument(
+            'use_fake_arm_hardware',
+            default_value='false',
+            description='Use mock hardware for the arm'),
+        DeclareLaunchArgument(
+            'left_can_interface',
+            default_value='can1',
+            description='CAN interface for the left arm'),
+        DeclareLaunchArgument(
+            'right_can_interface',
+            default_value='can0',
+            description='CAN interface for the right arm'),
 
         DeclareLaunchArgument(
             'use_sim_time',
