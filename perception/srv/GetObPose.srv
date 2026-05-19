@@ -1,0 +1,7 @@
+# Request
+vision_msgs/Detection2DArray detections
+
+---
+# Response
+geometry_msgs/PoseArray poses
+bool success
