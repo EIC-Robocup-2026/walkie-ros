@@ -5,12 +5,13 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    ExecuteProcess,
     IncludeLaunchDescription,
     RegisterEventHandler,
     TimerAction,
 )
 from launch.conditions import IfCondition
-from launch.event_handlers import OnProcessStart
+from launch.event_handlers import OnProcessExit, OnProcessStart
 from launch.launch_description_sources import (
     AnyLaunchDescriptionSource,
     PythonLaunchDescriptionSource,
@@ -198,6 +199,24 @@ def generate_launch_description():
         )
     )
 
+    # Send head to 0.0 once the servo controller is active (publishes once then exits)
+    head_servo_init_pub = ExecuteProcess(
+        cmd=[
+            'ros2', 'topic', 'pub', '--times', '1',
+            '/head_servo_controller/commands',
+            'std_msgs/msg/Float64MultiArray',
+            '{"layout": {"dim": [{"label": "", "size": 1, "stride": 1}], "data_offset": 0}, "data": [0.0]}',
+        ],
+        output='screen',
+    )
+
+    delayed_head_servo_init = RegisterEventHandler(
+        event_handler=OnProcessExit(
+            target_action=servo_controller_spawner,
+            on_exit=[head_servo_init_pub],
+        )
+    )
+
     arm_trajectory_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -298,8 +317,8 @@ def generate_launch_description():
         ),
         launch_arguments={
             "camera_model": "zed2i",
-            "camera_name": "zed",
-            "base_frame": "zed_camera_link",
+            "camera_name": "zed_head",
+            "base_frame": "zed_head_camera_link",
             "publish_urdf": "false",
             "publish_tf": "false",
             "use_sim_time": use_sim_time,
@@ -362,6 +381,7 @@ def generate_launch_description():
     ld.add_action(delayed_arm_gripper_spawner)
     ld.add_action(dual_lidar_launch)
     ld.add_action(delayed_servo_controller_spawner)
+    ld.add_action(delayed_head_servo_init)
     ld.add_action(current_pose_publisher)
     ld.add_action(unitree_lidar_node)
     # ld.add_action(realsense_camera_node)
