@@ -20,6 +20,9 @@ def generate_launch_description():
     lift_min_cm = LaunchConfiguration("lift_min_cm")
     lift_max_cm = LaunchConfiguration("lift_max_cm")
     joint_name = LaunchConfiguration("joint_name")
+    topic_joint_states = LaunchConfiguration("topic_joint_states")
+    topic_lift_controller_commands = LaunchConfiguration("topic_lift_controller_commands")
+    topic_position_commands = LaunchConfiguration("topic_position_commands")
 
     return LaunchDescription([
         DeclareLaunchArgument("motor_id", default_value="16"),
@@ -40,6 +43,9 @@ def generate_launch_description():
         DeclareLaunchArgument("lift_max_cm", default_value="74.35",
                               description="URDF prismatic upper limit (cm). Hard-stop home is here."),
         DeclareLaunchArgument("joint_name", default_value="lift_joint"),
+        DeclareLaunchArgument("topic_joint_states", default_value="lift/joint_states"),
+        DeclareLaunchArgument("topic_lift_controller_commands", default_value="lift_controller/commands"),
+        DeclareLaunchArgument("topic_position_commands", default_value="forward_position_controller/commands"),
         Node(
             package="robot_bringup",
             executable="lift_homing_node.py",
@@ -60,6 +66,9 @@ def generate_launch_description():
                 "lift_min_cm": lift_min_cm,
                 "lift_max_cm": lift_max_cm,
                 "joint_name": joint_name,
+                "topic_joint_states": topic_joint_states,
+                "topic_lift_controller_commands": topic_lift_controller_commands,
+                "topic_position_commands": topic_position_commands,
             }],
         ),
     ])
