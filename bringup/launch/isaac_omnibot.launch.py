@@ -149,13 +149,13 @@ def generate_launch_description():
     left_arm_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["left_arm_controller", "--switch-timeout", "30.0"],
+        arguments=["left_joint_trajectory_controller", "--switch-timeout", "30.0"],
     )
 
     right_arm_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=["right_arm_controller", "--switch-timeout", "30.0"],
+        arguments=["right_joint_trajectory_controller", "--switch-timeout", "30.0"],
     )
 
     left_gripper_controller_spawner = Node(
@@ -174,6 +174,12 @@ def generate_launch_description():
         package="controller_manager",
         executable="spawner",
         arguments=["arm_controller", "--switch-timeout", "30.0"],
+    )
+
+    lift_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["lift_controller", "--switch-timeout", "30.0"],
     )
 
     delayed_joint_broad_spawner = TimerAction(
@@ -209,6 +215,11 @@ def generate_launch_description():
     delayed_arm_controller_spawner = TimerAction(
         period=RIGHT_ARM_DELAY,
         actions=[arm_controller_spawner],
+    )
+
+    delayed_lift_controller_spawner = TimerAction(
+        period=LEFT_ARM_DELAY,
+        actions=[lift_controller_spawner],
     )
 
     current_pose_publisher = Node(
@@ -251,6 +262,7 @@ def generate_launch_description():
     ld.add_action(delayed_left_gripper_controller_spawner)
     ld.add_action(delayed_right_arm_controller_spawner)
     ld.add_action(delayed_right_gripper_controller_spawner)
+    ld.add_action(delayed_lift_controller_spawner)
 
     ld.add_action(current_pose_publisher)
     ld.add_action(rosbridge_launch)

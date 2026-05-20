@@ -253,6 +253,19 @@ def generate_launch_description():
         )
     )
 
+    lift_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["lift_controller", "--switch-timeout", "30.0"],
+    )
+
+    delayed_lift_controller_spawner = RegisterEventHandler(
+        event_handler=OnProcessStart(
+            target_action=controller_manager_spawner,
+            on_start=[lift_controller_spawner],
+        )
+    )
+
     current_pose_publisher = Node(
         package="robot_navigation",
         executable="current_pose_publisher.py",
@@ -379,6 +392,7 @@ def generate_launch_description():
     ld.add_action(delayed_joint_broad_spawner)
     ld.add_action(delayed_arm_trajectory_spawner)
     ld.add_action(delayed_arm_gripper_spawner)
+    ld.add_action(delayed_lift_controller_spawner)
     ld.add_action(dual_lidar_launch)
     ld.add_action(delayed_servo_controller_spawner)
     ld.add_action(delayed_head_servo_init)

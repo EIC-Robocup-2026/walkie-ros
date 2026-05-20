@@ -4,11 +4,12 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
+        - /Global Options1
         - /MotionPlanning1
         - /MotionPlanning1/Scene Robot1
         - /MotionPlanning1/Planning Request1
       Splitter Ratio: 0.5
-    Tree Height: 370
+    Tree Height: 135
   - Class: rviz_common/Help
     Name: Help
   - Class: rviz_common/Views
@@ -127,10 +128,6 @@ Visualization Manager:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-          bottombase:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
           br_wheel_link:
             Alpha: 1
             Show Axes: false
@@ -160,6 +157,10 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
+          merged_lidar_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
           openarm_left_hand:
             Alpha: 1
             Show Axes: false
@@ -215,6 +216,11 @@ Visualization Manager:
             Show Trail: false
             Value: true
           openarm_left_right_finger:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          openarm_left_wristcam_bracket:
             Alpha: 1
             Show Axes: false
             Show Trail: false
@@ -278,11 +284,12 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
-          top_imu_link:
+          openarm_right_wristcam_bracket:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-          world:
+            Value: true
+          top_imu_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
@@ -416,10 +423,6 @@ Visualization Manager:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-          bottombase:
-            Alpha: 1
-            Show Axes: false
-            Show Trail: false
           br_wheel_link:
             Alpha: 1
             Show Axes: false
@@ -449,6 +452,10 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
+          merged_lidar_link:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
           openarm_left_hand:
             Alpha: 1
             Show Axes: false
@@ -504,6 +511,11 @@ Visualization Manager:
             Show Trail: false
             Value: true
           openarm_left_right_finger:
+            Alpha: 1
+            Show Axes: false
+            Show Trail: false
+            Value: true
+          openarm_left_wristcam_bracket:
             Alpha: 1
             Show Axes: false
             Show Trail: false
@@ -567,11 +579,12 @@ Visualization Manager:
             Show Axes: false
             Show Trail: false
             Value: true
-          top_imu_link:
+          openarm_right_wristcam_bracket:
             Alpha: 1
             Show Axes: false
             Show Trail: false
-          world:
+            Value: true
+          top_imu_link:
             Alpha: 1
             Show Axes: false
             Show Trail: false
@@ -607,13 +620,12 @@ Visualization Manager:
       Velocity_Scaling_Factor: 1
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
-      Name: Pick&Place Targets
+      Name: "Pick&Place Targets"
       Namespaces:
         {}
       Topic:
         Depth: 10
         Durability Policy: Volatile
-        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /pick_and_place/markers
@@ -621,7 +633,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: world
+    Fixed Frame: base_footprint
     Frame Rate: 30
   Name: root
   Tools:
@@ -636,7 +648,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 1.3624029159545898
+      Distance: 4.100924968719482
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -659,7 +671,7 @@ Visualization Manager:
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 1334
+  Height: 763
   Help:
     collapsed: false
   Hide Left Dock: false
@@ -668,9 +680,9 @@ Window Geometry:
     collapsed: false
   MotionPlanning - Trajectory Slider:
     collapsed: false
-  QMainWindow State: 000000ff00000000fd0000000200000000000001da00000496fc0200000004fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000006c01000003fb000000100044006900730070006c0061007900730100000067000002650000011901000003fb0000000800480065006c0070000000029a0000006e0000008f01000003fb0000000a0056006900650077007301000002cd000002300000010101000003000000010000031a00000496fc0200000001fb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e006701000000670000049600000273010000030000050a0000049600000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000200000000000001ca00000297fc0200000004fb00000044004d006f00740069006f006e0050006c0061006e006e0069006e00670020002d0020005400720061006a006500630074006f0072007900200053006c00690064006500720000000000ffffffff0000004a00fffffffb000000100044006900730070006c006100790073010000004200000157000000d200fffffffb0000000800480065006c0070000000029a0000006e0000007200fffffffb0000000a00560069006500770073010000019f0000013a000000b200ffffff000000010000020000000297fc0200000001fb0000001c004d006f00740069006f006e0050006c0061006e006e0069006e0067010000004200000297000001bd00ffffff0000012a0000029700000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
-  Width: 2560
+  Width: 1280
   X: 0
   Y: 0
