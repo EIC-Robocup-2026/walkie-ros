@@ -52,8 +52,7 @@ mv yolov8n.onnx perception/models/yolov8n.onnx
 **Build**
 
 ```bash
-cd /home/ut/Walkie_Project/walkie_ros
-colcon build --packages-select perception --symlink-install
+colcon build --packages-select walkie_perception --symlink-install
 source install/setup.bash
 ```
 
@@ -66,7 +65,7 @@ Runs YOLOv8 internally. Synchronizes RGB and depth streams, detects objects (per
 **Run**
 
 ```bash
-ros2 run perception ob_detection
+ros2 run walkie_perception ob_detection
 ```
 
 **Subscriptions**
@@ -103,7 +102,7 @@ Receives 2D bounding boxes from an external detector, looks up depth for each bo
 **Run**
 
 ```bash
-ros2 run perception ob_pose
+ros2 run walkie_perception ob_pose
 ```
 
 **Subscriptions**
@@ -139,22 +138,31 @@ C++ service node. Subscribes to depth in the background, then on each service ca
 **Run**
 
 ```bash
-ros2 run perception ob_pose_service
+ros2 run walkie_perception ob_pose_service
 ```
 
 **Parameters**
 
 | Parameter | Default | Description |
 |---|---|---|
-| `depth_topic` | `/zed/zed_node/depth/depth_registered` | Depth image topic |
-| `info_topic` | `/zed/zed_node/depth/camera_info` | Camera info topic |
+| `camera_name` | `zed` | Camera namespace — topics become `/<camera_name>/zed_node/depth/...` |
 | `target_frame` | `map` | Output TF frame |
 | `search_radius` | `3` | Pixel radius for median depth sampling |
+| `fx` | `0.0` | Focal length X (overrides camera_info; required if camera_info unavailable) |
+| `fy` | `0.0` | Focal length Y |
+| `cx` | `0.0` | Principal point X |
+| `cy` | `0.0` | Principal point Y |
 
 ```bash
-ros2 run perception ob_pose_service --ros-args \
-  -p target_frame:=odom \
-  -p search_radius:=5
+# With camera_info available
+ros2 run walkie_perception ob_pose_service_cpp --ros-args \
+  -p camera_name:=zed_head \
+  -p target_frame:=odom
+
+# Without camera_info (e.g. Gazebo simulation)
+ros2 run walkie_perception ob_pose_service_cpp --ros-args \
+  -p camera_name:=zed_head \
+  -p fx:=525.0 -p fy:=525.0 -p cx:=320.0 -p cy:=240.0
 ```
 
 **Service: `/get_3d_poses`**
@@ -171,7 +179,7 @@ bool success
 **Call example**
 
 ```bash
-ros2 service call /get_3d_poses perception/srv/GetObPose \
+ros2 service call /get_3d_poses walkie_perception/srv/GetObPose \
   "{detections: {detections: [{bbox: {center: {position: {x: 640.0, y: 360.0}}}}]}}"
 ```
 
