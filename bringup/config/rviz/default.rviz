@@ -107,6 +107,8 @@ Visualization Manager:
           Value: true
         base_link:
           Value: true
+        bl_wheel_link:
+          Value: true
         bottom_bottom_screw_frame:
           Value: true
         bottom_color_frame:
@@ -127,6 +129,12 @@ Visualization Manager:
           Value: true
         bottom_right_ir_optical_frame:
           Value: true
+        br_wheel_link:
+          Value: true
+        fl_wheel_link:
+          Value: true
+        fr_wheel_link:
+          Value: true
         front_lidar_link:
           Value: true
         front_lidar_link_calibrated:
@@ -135,15 +143,35 @@ Visualization Manager:
           Value: true
         lift_link:
           Value: true
+        map:
+          Value: true
         merged_lidar_link:
+          Value: true
+        odom:
           Value: true
         openarm_left_hand:
           Value: true
         openarm_left_hand_tcp:
           Value: true
+        openarm_left_left_finger:
+          Value: true
         openarm_left_link0:
           Value: true
+        openarm_left_link1:
+          Value: true
+        openarm_left_link2:
+          Value: true
+        openarm_left_link3:
+          Value: true
+        openarm_left_link4:
+          Value: true
+        openarm_left_link5:
+          Value: true
+        openarm_left_link6:
+          Value: true
         openarm_left_link7:
+          Value: true
+        openarm_left_right_finger:
           Value: true
         openarm_left_wristcam_bracket:
           Value: true
@@ -151,9 +179,25 @@ Visualization Manager:
           Value: true
         openarm_right_hand_tcp:
           Value: true
+        openarm_right_left_finger:
+          Value: true
         openarm_right_link0:
           Value: true
+        openarm_right_link1:
+          Value: true
+        openarm_right_link2:
+          Value: true
+        openarm_right_link3:
+          Value: true
+        openarm_right_link4:
+          Value: true
+        openarm_right_link5:
+          Value: true
+        openarm_right_link6:
+          Value: true
         openarm_right_link7:
+          Value: true
+        openarm_right_right_finger:
           Value: true
         openarm_right_wristcam_bracket:
           Value: true
@@ -181,35 +225,90 @@ Visualization Manager:
       Show Axes: true
       Show Names: false
       Tree:
-        base_footprint:
-          base_link:
-            back_lidar_link:
-              back_lidar_link_calibrated:
+        map:
+          {}
+        odom:
+          base_footprint:
+            base_link:
+              back_lidar_link:
+                back_lidar_link_calibrated:
+                  {}
+              bl_wheel_link:
                 {}
-            bottom_bottom_screw_frame:
-              bottom_link:
-                bottom_depth_frame:
-                  bottom_color_frame:
-                    bottom_color_optical_frame:
+              bottom_bottom_screw_frame:
+                bottom_link:
+                  bottom_depth_frame:
+                    bottom_color_frame:
+                      bottom_color_optical_frame:
+                        {}
+                    bottom_depth_optical_frame:
                       {}
-                  bottom_depth_optical_frame:
-                    {}
-                  bottom_left_ir_frame:
-                    bottom_left_ir_optical_frame:
-                      {}
-                  bottom_right_ir_frame:
-                    bottom_right_ir_optical_frame:
-                      {}
-            front_lidar_link:
-              front_lidar_link_calibrated:
+                    bottom_left_ir_frame:
+                      bottom_left_ir_optical_frame:
+                        {}
+                    bottom_right_ir_frame:
+                      bottom_right_ir_optical_frame:
+                        {}
+              br_wheel_link:
                 {}
-            merged_lidar_link:
-              {}
-            top_imu_link:
-              {}
-            unitree4d_l2_imu_initial:
-              unitree4d_l2_imu:
+              fl_wheel_link:
                 {}
+              fr_wheel_link:
+                {}
+              front_lidar_link:
+                front_lidar_link_calibrated:
+                  {}
+              lift_link:
+                head_servo_link:
+                  zed_head_camera_link:
+                    zed_head_camera_center:
+                      zed_head_left_camera_frame:
+                        zed_head_left_camera_frame_optical:
+                          {}
+                      zed_head_right_camera_frame:
+                        zed_head_right_camera_frame_optical:
+                          {}
+                openarm_left_link0:
+                  openarm_left_link1:
+                    openarm_left_link2:
+                      openarm_left_link3:
+                        openarm_left_link4:
+                          openarm_left_link5:
+                            openarm_left_link6:
+                              openarm_left_link7:
+                                openarm_left_hand:
+                                  openarm_left_hand_tcp:
+                                    {}
+                                  openarm_left_left_finger:
+                                    {}
+                                  openarm_left_right_finger:
+                                    {}
+                                  openarm_left_wristcam_bracket:
+                                    {}
+                openarm_right_link0:
+                  openarm_right_link1:
+                    openarm_right_link2:
+                      openarm_right_link3:
+                        openarm_right_link4:
+                          openarm_right_link5:
+                            openarm_right_link6:
+                              openarm_right_link7:
+                                openarm_right_hand:
+                                  openarm_right_hand_tcp:
+                                    {}
+                                  openarm_right_left_finger:
+                                    {}
+                                  openarm_right_right_finger:
+                                    {}
+                                  openarm_right_wristcam_bracket:
+                                    {}
+              merged_lidar_link:
+                {}
+              top_imu_link:
+                {}
+              unitree4d_l2_imu_initial:
+                unitree4d_l2_imu:
+                  {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -268,9 +367,9 @@ Visualization Manager:
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
-      Max Intensity: 191
+      Max Intensity: 203
       Min Color: 0; 0; 0
-      Min Intensity: 37
+      Min Intensity: 45
       Name: LaserScan
       Position Transformer: XYZ
       Selectable: true
@@ -819,18 +918,18 @@ Visualization Manager:
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0
-        Y: 0
-        Z: 0.25
+        X: 0.8948983550071716
+        Y: -2.8828659057617188
+        Z: 1.8118250370025635
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.5547959804534912
+      Pitch: 0.9147965908050537
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 2.0153982639312744
+      Yaw: 2.7053990364074707
     Saved: ~
 Window Geometry:
   Displays:
