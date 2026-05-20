@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
+import os
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+# Resolve the UV venv site-packages path relative to this launch file.
+# os.path.realpath resolves the symlink that colcon --symlink-install creates
+# (install/share/.../lift_homing.launch.py -> src/.../bringup/launch/lift_homing.launch.py)
+# so _pkg_dir correctly points to the bringup/ source directory where .venv lives.
+# Without --symlink-install, set ROBOT_BRINGUP_VENV_SITE to the site-packages path.
+_pkg_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+_venv_site = os.path.join(_pkg_dir, '.venv', 'lib', 'python3.12', 'site-packages')
+_venv_site = os.environ.get('ROBOT_BRINGUP_VENV_SITE', _venv_site)
+_pythonpath = _venv_site + os.pathsep + os.environ.get('PYTHONPATH', '')
 
 
 def generate_launch_description():
@@ -51,6 +63,7 @@ def generate_launch_description():
             executable="lift_homing_node.py",
             name="tmotor_ros2_bridge",
             output="screen",
+            additional_env={'PYTHONPATH': _pythonpath},
             parameters=[{
                 "motor_id": motor_id,
                 "motor_type": motor_type,
