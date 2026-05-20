@@ -4,7 +4,7 @@
 #include <vision_msgs/msg/detection2_d_array.hpp>
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/point_stamped.hpp>
-#include <perception/srv/get_ob_pose.hpp>
+#include <walkie_perception/srv/get_ob_pose.hpp>
 
 #include <tf2_ros/buffer.hpp>
 #include <tf2_ros/transform_listener.hpp>
@@ -41,7 +41,7 @@ public:
         depth_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
             depth_topic, qos, std::bind(&ObPoseServiceCpp::depth_callback, this, _1));
 
-        srv_ = this->create_service<perception::srv::GetObPose>(
+        srv_ = this->create_service<walkie_perception::srv::GetObPose>(
             "get_3d_poses", std::bind(&ObPoseServiceCpp::handle_service, this, _1, _2));
 
         RCLCPP_INFO(this->get_logger(), "Service Ready. Listening to: %s", depth_topic.c_str());
@@ -56,7 +56,7 @@ private:
 
     rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr info_sub_;
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr depth_sub_;
-    rclcpp::Service<perception::srv::GetObPose>::SharedPtr srv_;
+    rclcpp::Service<walkie_perception::srv::GetObPose>::SharedPtr srv_;
 
     void info_callback(const sensor_msgs::msg::CameraInfo::SharedPtr msg) {
         if (fx_ == 0.0) {
@@ -71,8 +71,8 @@ private:
         latest_depth_msg_ = msg;
     }
 
-    void handle_service(const std::shared_ptr<perception::srv::GetObPose::Request> request,
-                        std::shared_ptr<perception::srv::GetObPose::Response> response) {
+    void handle_service(const std::shared_ptr<walkie_perception::srv::GetObPose::Request> request,
+                        std::shared_ptr<walkie_perception::srv::GetObPose::Response> response) {
 
         auto local_depth = latest_depth_msg_;
         std::string target_frame = this->get_parameter("target_frame").as_string();
