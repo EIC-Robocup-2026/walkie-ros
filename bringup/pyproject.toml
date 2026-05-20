@@ -8,6 +8,7 @@ dependencies = [
     "python-can>=4.0.0",
     "numpy",
     "pyserial>=3.5",
+    "pyyaml>=6.0.3",
 ]
 
 [tool.uv]
@@ -15,4 +16,4 @@ dependencies = [
 # Re-create the venv with `uv venv --python python3.12 --system-site-packages` before `uv sync`.
 
 [tool.uv.sources]
-TMotorCANControl = { path = "/home/ryu/TMotorCANControl", editable = true }
+TMotorCANControl = { git = "https://github.com/EIC-Robocup-2026/TMotorCANControl.git" }
