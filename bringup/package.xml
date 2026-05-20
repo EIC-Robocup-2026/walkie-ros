@@ -12,6 +12,8 @@
   <depend>std_msgs</depend>
   <depend>ros2_control</depend>
   <depend>ros2_controllers</depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>controller_manager</exec_depend>
   <exec_depend>joint_state_broadcaster</exec_depend>
   <exec_depend>forward_command_controller</exec_depend>
