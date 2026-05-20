@@ -45,7 +45,7 @@ def generate_launch_description():
         DeclareLaunchArgument("joint_name", default_value="lift_joint"),
         DeclareLaunchArgument("topic_joint_states", default_value="lift/joint_states"),
         DeclareLaunchArgument("topic_lift_controller_commands", default_value="lift_controller/commands"),
-        DeclareLaunchArgument("topic_position_commands", default_value="forward_position_controller/commands"),
+        DeclareLaunchArgument("topic_position_commands", default_value="lift/cmd"),
         Node(
             package="robot_bringup",
             executable="lift_homing_node.py",

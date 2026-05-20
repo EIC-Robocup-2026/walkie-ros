@@ -48,7 +48,7 @@ class TMotorBridgeNode(Node):
         self.declare_parameter('joint_name', 'lift_joint')
         self.declare_parameter('topic_joint_states', 'lift/joint_states')
         self.declare_parameter('topic_lift_controller_commands', 'lift_controller/commands')
-        self.declare_parameter('topic_position_commands', 'forward_position_controller/commands')
+        self.declare_parameter('topic_position_commands', 'lift/cmd')
 
         self.motor_id = self.get_parameter('motor_id').value
         self.motor_type = self.get_parameter('motor_type').value
