@@ -26,19 +26,9 @@ The node depends on `TMotorCANControl` and `python-can`, declared in
 the system `site-packages` so `rclpy` / `sensor_msgs` / `std_msgs` from
 `/opt/ros/jazzy` remain importable.
 
-First time only (creates a `--system-site-packages` venv):
-
 ```bash
 cd ~/walkie_ws/walkie-ros/bringup
-uv venv --python python3.12 --system-site-packages
-uv sync
-```
-
-Subsequent updates (after editing `pyproject.toml`):
-
-```bash
-cd ~/walkie_ws/walkie-ros/bringup
-uv sync
+uv sync --system-site-packages
 ```
 
 Activate the venv (must be sourced in every shell that runs the node):
@@ -111,7 +101,7 @@ ros2 topic pub --once /forward_position_controller/commands \
 
 # Go to the top at 2 cm/s
 ros2 topic pub --once /forward_position_controller/commands \
-  std_msgs/msg/Float64MultiArray "data: [74.35, 2.0]"
+  std_msgs/msg/Float64MultiArray "data: [74.35, 2.0, 0.5]"
 ```
 
 ## Parameters
@@ -132,31 +122,3 @@ ros2 topic pub --once /forward_position_controller/commands \
 | `lift_min_cm`            | `0.0`          | Lower position limit (cm) — matches URDF lower limit                  |
 | `lift_max_cm`            | `74.35`        | Upper position limit (cm) — matches URDF upper limit (= top, homed)   |
 | `joint_name`             | `lift_joint`   | Joint name used in published `JointState`                             |
-
-## How motion is shaped
-
-`cmd_callback` sets `traj_target_m`, `traj_max_vel_ms`, `traj_max_acc_ms2` and
-flags `traj_active = True`. Each `loop_callback` tick:
-
-1. `_advance_trajectory(dt)` steps `traj_current_pos_m` via a trapezoidal
-   velocity profile toward `traj_target_m`.
-2. `target_pos_rad = (traj_current_pos_m - lift_top_m) / lift_m_per_rad` is
-   sent to the motor via `set_output_angle_radians(...)`. The vel/acc CAN
-   caps are pinned to the lib's int16 ceiling — actual lift speed is governed
-   by how fast `traj_current_pos_m` advances, not by these caps.
-3. `traj_current_pos_m` is published as the joint position on both output
-   topics (NOT integrated motor feedback — see "Why not integrate feedback"
-   below).
-
-## Why not integrate motor feedback
-
-The TMotor library's `get_output_velocity_radians_per_second()` uses a
-hard-coded `radps_per_ERPM = 5.82e-4` that does not match the AK45-10's
-14 pole pairs and 10:1 gear ratio. Integration would be wildly off-scale
-either way (the motor-side getter overshoots ~10×; the output-side getter
-undershoots ~17000×). The CAN position field also saturates near ±735 rad,
-well before full lift travel.
-
-Publishing `traj_current_pos_m` directly is precise and matches commanded
-behavior — provided `hardware_max_cm_s` is set to what the motor can actually
-sustain, so the trajectory never runs ahead of the physical lift.
