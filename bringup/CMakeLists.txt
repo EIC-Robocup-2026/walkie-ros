@@ -15,6 +15,7 @@ install(
 
 install(PROGRAMS
   scripts/lift_homing_node.py
+  scripts/lift_homing_mock_node.py
   DESTINATION lib/${PROJECT_NAME})
 
 # find dependencies

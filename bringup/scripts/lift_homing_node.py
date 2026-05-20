@@ -46,6 +46,9 @@ class TMotorBridgeNode(Node):
         self.declare_parameter('lift_min_cm', 0.0)
         self.declare_parameter('lift_max_cm', 74.35)
         self.declare_parameter('joint_name', 'lift_joint')
+        self.declare_parameter('topic_joint_states', 'lift/joint_states')
+        self.declare_parameter('topic_lift_controller_commands', 'lift_controller/commands')
+        self.declare_parameter('topic_position_commands', 'lift/cmd')
 
         self.motor_id = self.get_parameter('motor_id').value
         self.motor_type = self.get_parameter('motor_type').value
@@ -61,6 +64,9 @@ class TMotorBridgeNode(Node):
         self.lift_min_cm = self.get_parameter('lift_min_cm').value
         self.lift_max_cm = self.get_parameter('lift_max_cm').value
         self.joint_name = self.get_parameter('joint_name').value
+        self.topic_joint_states = self.get_parameter('topic_joint_states').value
+        self.topic_lift_ctrl_cmds = self.get_parameter('topic_lift_controller_commands').value
+        self.topic_pos_cmds = self.get_parameter('topic_position_commands').value
         # Lift position (m) at the homed origin (motor_rad = 0). With the upper-stop
         # homing scheme this is the top of travel, i.e. lift_max_cm in meters.
         self.lift_top_m = self.lift_max_cm * 0.01
@@ -70,15 +76,15 @@ class TMotorBridgeNode(Node):
             )
 
         # ---- Publishers & Subscribers ----
-        self.state_pub = self.create_publisher(JointState, 'lift/joint_states', 10)
+        self.state_pub = self.create_publisher(JointState, self.topic_joint_states, 10)
         # Position command stream for a ros2_control lift_controller
         # (position_controllers/JointGroupPositionController on lift_joint).
         # With mock_components/GenericSystem the command loops back through
         # joint_state_broadcaster to /joint_states, driving RViz.
         self.lift_ctrl_pub = self.create_publisher(
-            Float64MultiArray, 'lift_controller/commands', 10
+            Float64MultiArray, self.topic_lift_ctrl_cmds, 10
         )
-        self.cmd_sub = self.create_subscription(Float64MultiArray, 'forward_position_controller/commands', self.cmd_callback, 10)
+        self.cmd_sub = self.create_subscription(Float64MultiArray, self.topic_pos_cmds, self.cmd_callback, 10)
 
         # ---- Motor Initialization ----
         self.dev = TMotorManager_servo_can(motor_type=self.motor_type, motor_ID=self.motor_id)

@@ -157,6 +157,12 @@ def generate_launch_description():
         arguments=["joint_broad", "--switch-timeout", "30.0"],
     )
 
+    lift_position_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["lift_controller", "--switch-timeout", "30.0"],
+    )
+
     delayed_spawners = RegisterEventHandler(
         OnProcessExit(
             target_action=spawn_entity_node,
@@ -164,6 +170,7 @@ def generate_launch_description():
                 # forward_velocity_spawner,
                 omni_controller_spawner,
                 joint_broad_spawner,
+                lift_position_spawner,
             ],
         )
     )
