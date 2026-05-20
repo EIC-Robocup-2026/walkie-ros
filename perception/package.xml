@@ -1,9 +1,10 @@
 <?xml version="1.0" ?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>perception</name>
+  <name>walkie_perception</name>
   <version>0.0.0</version>
-  <description>Unified perception package: 3D object detection with YOLOv8 and ZED RGB-D camera. Provides ob_detection, ob_pose, ob_pose_service (C++), obb_3d, YOLO nodes, and test utilities.</description>
+  <description
+  >Unified perception package: 3D object detection with YOLOv8 and ZED RGB-D camera. Provides ob_detection, ob_pose, ob_pose_service (C++), obb_3d, YOLO nodes, and test utilities.</description>
   <maintainer email="user@todo.todo">user</maintainer>
   <license>TODO: License declaration</license>
 
