@@ -63,6 +63,7 @@ services:
     # Your original launch sequence
     command: >
       bash -c "source /opt/ros/jazzy/setup.bash &&
+               source /opt/zed_ros2_ws/install/local_setup.bash &&
                colcon build --symlink-install --parallel-workers 1 &&
                source install/setup.bash &&
                { ros2 run rmw_zenoh_cpp rmw_zenohd & } &&
@@ -70,9 +71,12 @@ services:
                echo Start_Joy_Controller========================================= &&
                { ros2 launch joy_interface joy_control_smooth.launch.py < /dev/null & } &&
                sleep 2 &&
+               echo Start_ZED_Camera============================================= &&
+               { ros2 launch zed_wrapper zed_camera.launch.py camera_model:=zed2i & } &&
+               sleep 3 &&
                echo Start_Real_Hardware========================================== &&
                { ros2 launch robot_bringup real_omnibot.launch.py &} &&
-               echo Start_Navigation========================================== &&
+               echo Start_Navigation============================================= &&
                exec ros2 launch robot_navigation localization_Nav2_real.launch.py"
 
 volumes:

@@ -11,6 +11,11 @@ ARG ROS_DISTRO=jazzy
 ENV ROS_DISTRO=${ROS_DISTRO}
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
+# Source ROS and workspace setups for any interactive shell
+RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /root/.bashrc && \
+    echo "source /opt/zed_ros2_ws/install/local_setup.bash 2>/dev/null || true" >> /root/.bashrc && \
+    echo "source /ros2_ws/install/setup.bash 2>/dev/null || true" >> /root/.bashrc
+
 # Standard NVIDIA/GUI setup
 ENV NVIDIA_DRIVER_CAPABILITIES \
     ${NVIDIA_DRIVER_CAPABILITIES:+$NVIDIA_DRIVER_CAPABILITIES,}compute,video,utility,graphics
@@ -52,7 +57,24 @@ RUN git clone https://github.com/realsenseai/librealsense.git /tmp/librealsense 
     rm -rf /tmp/librealsense
 
 # ==============================================================
-# 5. Setup and Build ROS 2 Workspace
+# 5. Clone and Build ZED ROS 2 Wrapper (separate workspace)
+# ==============================================================
+RUN rosdep init || true && \
+    rosdep update --rosdistro ${ROS_DISTRO} && \
+    mkdir -p /opt/zed_ros2_ws/src && \
+    git clone --recurse-submodules https://github.com/stereolabs/zed-ros2-wrapper.git \
+              /opt/zed_ros2_ws/src/zed-ros2-wrapper && \
+    apt-get update && \
+    cd /opt/zed_ros2_ws && \
+    rosdep install --from-paths src --ignore-src -r -y && \
+    bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash && \
+             colcon build --symlink-install --cmake-args=-DCMAKE_BUILD_TYPE=Release \
+                          --packages-skip zed_debug" && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# ==============================================================
+# 6. Setup and Build ROS 2 Workspace
 # ==============================================================
 COPY ./ /ros2_ws/src
 
@@ -68,7 +90,8 @@ RUN apt-get update && apt-get install -y \
       rosdep update --rosdistro $ROS_DISTRO && \
       rosdep install --from-paths src -y -i && \
       bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && \
-      colcon build --symlink-install --parallel-workers 3" && \
+               source /opt/zed_ros2_ws/install/local_setup.bash && \
+               colcon build --symlink-install --parallel-workers 3" && \
       apt-get remove -y ros-dev-tools && \
       apt-get autoremove -y && \
       apt-get clean && \

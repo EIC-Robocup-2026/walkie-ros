@@ -19,7 +19,7 @@ x-cpu-config: &cpu-config
 
 services:
   robot_physical:
-    image: ghcr.io/eic-robocup-2026/walkie-ros/walkie-physical:feat-github_action_ci-cd
+       ghcr.io/eic-robocup-2026/walkie-ros/walkie-physical:feat-github_action_ci-cd
     <<: [*cpu-config]
     container_name: robot-physical
     network_mode: host
