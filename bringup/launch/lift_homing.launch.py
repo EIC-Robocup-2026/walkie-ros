@@ -15,7 +15,10 @@ from launch_ros.actions import Node
 _pkg_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 _venv_site = os.path.join(_pkg_dir, '.venv', 'lib', 'python3.12', 'site-packages')
 _venv_site = os.environ.get('ROBOT_BRINGUP_VENV_SITE', _venv_site)
-_pythonpath = _venv_site + os.pathsep + os.environ.get('PYTHONPATH', '')
+_existing_pythonpath = os.environ.get('PYTHONPATH', '')
+_pythonpath = os.pathsep.join(
+    path for path in (_venv_site, _existing_pythonpath) if path
+)
 
 
 def generate_launch_description():
