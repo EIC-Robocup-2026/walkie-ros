@@ -13,6 +13,10 @@ install(
     launch
   DESTINATION share/${PROJECT_NAME})
 
+install(PROGRAMS
+  scripts/lift_homing_node.py
+  DESTINATION lib/${PROJECT_NAME})
+
 # find dependencies
 # uncomment the following section in order to fill in
 # further dependencies manually.
