@@ -3,6 +3,7 @@ import os
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -31,12 +32,15 @@ def generate_launch_description():
     lift_m_per_rad = LaunchConfiguration("lift_m_per_rad")
     lift_min_cm = LaunchConfiguration("lift_min_cm")
     lift_max_cm = LaunchConfiguration("lift_max_cm")
+    mock = LaunchConfiguration("mock")
     joint_name = LaunchConfiguration("joint_name")
     topic_joint_states = LaunchConfiguration("topic_joint_states")
     topic_lift_controller_commands = LaunchConfiguration("topic_lift_controller_commands")
     topic_position_commands = LaunchConfiguration("topic_position_commands")
 
     return LaunchDescription([
+        DeclareLaunchArgument("mock", default_value="false",
+                              description="Run mock node (no CAN bus). Set to 'true' for sim/dev without hardware."),
         DeclareLaunchArgument("motor_id", default_value="16"),
         DeclareLaunchArgument("motor_type", default_value="AK45-10"),
         DeclareLaunchArgument("homing_erpm", default_value="-8500"),
@@ -58,7 +62,9 @@ def generate_launch_description():
         DeclareLaunchArgument("topic_joint_states", default_value="lift/joint_states"),
         DeclareLaunchArgument("topic_lift_controller_commands", default_value="lift_controller/commands"),
         DeclareLaunchArgument("topic_position_commands", default_value="lift/cmd"),
+        # Real hardware node
         Node(
+            condition=UnlessCondition(mock),
             package="robot_bringup",
             executable="lift_homing_node.py",
             name="tmotor_ros2_bridge",
@@ -76,6 +82,26 @@ def generate_launch_description():
                 "homing_backoff_time_s": homing_backoff_time_s,
                 "hardware_max_cm_s": hardware_max_cm_s,
                 "lift_m_per_rad": lift_m_per_rad,
+                "lift_min_cm": lift_min_cm,
+                "lift_max_cm": lift_max_cm,
+                "joint_name": joint_name,
+                "topic_joint_states": topic_joint_states,
+                "topic_lift_controller_commands": topic_lift_controller_commands,
+                "topic_position_commands": topic_position_commands,
+            }],
+        ),
+        # Mock node (no CAN bus — for simulation / dev without hardware)
+        Node(
+            condition=IfCondition(mock),
+            package="robot_bringup",
+            executable="lift_homing_mock_node.py",
+            name="tmotor_ros2_bridge",
+            output="screen",
+            parameters=[{
+                "control_frequency": control_frequency,
+                "max_velocity_cm_s": max_velocity_cm_s,
+                "max_acceleration_cm_s2": max_acceleration_cm_s2,
+                "hardware_max_cm_s": hardware_max_cm_s,
                 "lift_min_cm": lift_min_cm,
                 "lift_max_cm": lift_max_cm,
                 "joint_name": joint_name,
