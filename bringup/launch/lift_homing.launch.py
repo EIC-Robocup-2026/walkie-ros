@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
+import os
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+# Resolve the UV venv site-packages path relative to this launch file.
+# os.path.realpath resolves the symlink that colcon --symlink-install creates
+# (install/share/.../lift_homing.launch.py -> src/.../bringup/launch/lift_homing.launch.py)
+# so _pkg_dir correctly points to the bringup/ source directory where .venv lives.
+# Without --symlink-install, set ROBOT_BRINGUP_VENV_SITE to the site-packages path.
+_pkg_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+_venv_site = os.path.join(_pkg_dir, '.venv', 'lib', 'python3.12', 'site-packages')
+_venv_site = os.environ.get('ROBOT_BRINGUP_VENV_SITE', _venv_site)
+_pythonpath = _venv_site + os.pathsep + os.environ.get('PYTHONPATH', '')
 
 
 def generate_launch_description():
@@ -20,6 +32,9 @@ def generate_launch_description():
     lift_min_cm = LaunchConfiguration("lift_min_cm")
     lift_max_cm = LaunchConfiguration("lift_max_cm")
     joint_name = LaunchConfiguration("joint_name")
+    topic_joint_states = LaunchConfiguration("topic_joint_states")
+    topic_lift_controller_commands = LaunchConfiguration("topic_lift_controller_commands")
+    topic_position_commands = LaunchConfiguration("topic_position_commands")
 
     return LaunchDescription([
         DeclareLaunchArgument("motor_id", default_value="16"),
@@ -40,11 +55,15 @@ def generate_launch_description():
         DeclareLaunchArgument("lift_max_cm", default_value="74.35",
                               description="URDF prismatic upper limit (cm). Hard-stop home is here."),
         DeclareLaunchArgument("joint_name", default_value="lift_joint"),
+        DeclareLaunchArgument("topic_joint_states", default_value="lift/joint_states"),
+        DeclareLaunchArgument("topic_lift_controller_commands", default_value="lift_controller/commands"),
+        DeclareLaunchArgument("topic_position_commands", default_value="lift/cmd"),
         Node(
             package="robot_bringup",
             executable="lift_homing_node.py",
             name="tmotor_ros2_bridge",
             output="screen",
+            additional_env={'PYTHONPATH': _pythonpath},
             parameters=[{
                 "motor_id": motor_id,
                 "motor_type": motor_type,
@@ -60,6 +79,9 @@ def generate_launch_description():
                 "lift_min_cm": lift_min_cm,
                 "lift_max_cm": lift_max_cm,
                 "joint_name": joint_name,
+                "topic_joint_states": topic_joint_states,
+                "topic_lift_controller_commands": topic_lift_controller_commands,
+                "topic_position_commands": topic_position_commands,
             }],
         ),
     ])

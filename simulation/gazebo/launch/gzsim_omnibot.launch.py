@@ -157,7 +157,7 @@ def generate_launch_description():
         arguments=["joint_broad", "--switch-timeout", "30.0"],
     )
 
-    lift_controller_spawner = Node(
+    lift_position_spawner = Node(
         package="controller_manager",
         executable="spawner",
         arguments=["lift_controller", "--switch-timeout", "30.0"],
@@ -194,11 +194,11 @@ def generate_launch_description():
                 # forward_velocity_spawner,
                 omni_controller_spawner,
                 joint_broad_spawner,
-                lift_controller_spawner,
                 left_arm_controller_spawner,
                 right_arm_controller_spawner,
                 left_gripper_controller_spawner,
                 right_gripper_controller_spawner,
+                lift_position_spawner,
             ],
         )
     )

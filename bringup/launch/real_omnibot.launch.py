@@ -253,18 +253,10 @@ def generate_launch_description():
         )
     )
 
-    lift_controller_spawner = Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=["lift_controller", "--switch-timeout", "30.0"],
-    )
-
-    delayed_lift_controller_spawner = RegisterEventHandler(
-        event_handler=OnProcessStart(
-            target_action=controller_manager_spawner,
-            on_start=[lift_controller_spawner],
-        )
-    )
+    # lift_controller (JointTrajectoryController) is intentionally NOT spawned.
+    # The lift_homing_node owns the FollowJointTrajectory action server at
+    # lift_controller/follow_joint_trajectory directly, so MoveIt connects to
+    # the real motor without the JTC mock-components bridge.
 
     current_pose_publisher = Node(
         package="robot_navigation",
@@ -307,6 +299,25 @@ def generate_launch_description():
             ('/tf', '/tf_unitree_ignore'),
             ('/tf_static', '/tf_static_unitree_ignore')
         ]
+    )
+
+    unitree_pointcloud_filter = Node(
+        package="robot_navigation",
+        executable="pointcloud_self_filter_node.py",
+        name="unitree_pointcloud_self_filter",
+        output="screen",
+        parameters=[
+            {"input_topic": "/unilidar/cloud"},
+            {"output_topic": "/unilidar/cloud/filtered"},
+            {"filter_frame": "base_footprint"},
+            {"min_x": -0.45},
+            {"max_x": 0.45},
+            {"min_y": -0.45},
+            {"max_y": 0.45},
+            {"min_z": 0.0},
+            {"max_z": 1.9},
+            {"min_range": 0.75},
+        ],
     )
 
     # Depth camera launch (RealsenseD415)
@@ -375,6 +386,18 @@ def generate_launch_description():
             parameters=[{'use_sim_time': use_sim_time}]
         )
 
+    # Relay lift_homing_node's SW-trajectory joint state into /joint_states so
+    # robot_state_publisher (and RViz) reflect real lift motion.
+    # joint_broad is configured to exclude lift_joint (real_controllers.yaml)
+    # so there is no duplicate/conflicting publisher on that joint.
+    lift_joint_state_relay = Node(
+        package='topic_tools',
+        executable='relay',
+        name='lift_joint_state_relay',
+        arguments=['lift/joint_states', '/joint_states'],
+        output='screen',
+    )
+
     ld = LaunchDescription()
     # Add launch arguments
     ld.add_action(declare_use_zed)
@@ -392,16 +415,18 @@ def generate_launch_description():
     ld.add_action(delayed_joint_broad_spawner)
     ld.add_action(delayed_arm_trajectory_spawner)
     ld.add_action(delayed_arm_gripper_spawner)
-    ld.add_action(delayed_lift_controller_spawner)
+    # delayed_lift_controller_spawner removed — see comment above
     ld.add_action(dual_lidar_launch)
     ld.add_action(delayed_servo_controller_spawner)
     ld.add_action(delayed_head_servo_init)
     ld.add_action(current_pose_publisher)
     ld.add_action(unitree_lidar_node)
+    ld.add_action(unitree_pointcloud_filter)
     # ld.add_action(realsense_camera_node)
-    # ld.add_action(zed_camera_launch)
+    ld.add_action(zed_camera_launch)
     ld.add_action(rosbridge_launch)
     ld.add_action(foxgloveBridge_cmd)
     ld.add_action(rviz2)
+    ld.add_action(lift_joint_state_relay)
 
     return ld

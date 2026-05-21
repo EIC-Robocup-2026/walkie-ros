@@ -5,9 +5,15 @@ Integrates the homing sequence from demo_ak45_10_speed_until_current_diff.py.
 """
 
 import rclpy
+import rclpy.duration
 from rclpy.node import Node
+from rclpy.action import ActionServer
+from rclpy.executors import MultiThreadedExecutor
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64MultiArray
+from control_msgs.msg import JointTrajectoryControllerState
+from control_msgs.action import FollowJointTrajectory
+import threading
 import math
 import time
 import numpy as np
@@ -46,6 +52,10 @@ class TMotorBridgeNode(Node):
         self.declare_parameter('lift_min_cm', 0.0)
         self.declare_parameter('lift_max_cm', 74.35)
         self.declare_parameter('joint_name', 'lift_joint')
+        self.declare_parameter('topic_joint_states', 'lift/joint_states')
+        self.declare_parameter('topic_lift_controller_commands', 'lift_controller/commands')
+        self.declare_parameter('topic_position_commands', 'lift/cmd')
+        self.declare_parameter('topic_jtc_state', 'lift_controller/state')
 
         self.motor_id = self.get_parameter('motor_id').value
         self.motor_type = self.get_parameter('motor_type').value
@@ -61,6 +71,10 @@ class TMotorBridgeNode(Node):
         self.lift_min_cm = self.get_parameter('lift_min_cm').value
         self.lift_max_cm = self.get_parameter('lift_max_cm').value
         self.joint_name = self.get_parameter('joint_name').value
+        self.topic_joint_states = self.get_parameter('topic_joint_states').value
+        self.topic_lift_ctrl_cmds = self.get_parameter('topic_lift_controller_commands').value
+        self.topic_pos_cmds = self.get_parameter('topic_position_commands').value
+        self.topic_jtc_state = self.get_parameter('topic_jtc_state').value
         # Lift position (m) at the homed origin (motor_rad = 0). With the upper-stop
         # homing scheme this is the top of travel, i.e. lift_max_cm in meters.
         self.lift_top_m = self.lift_max_cm * 0.01
@@ -70,15 +84,24 @@ class TMotorBridgeNode(Node):
             )
 
         # ---- Publishers & Subscribers ----
-        self.state_pub = self.create_publisher(JointState, 'lift/joint_states', 10)
+        self.state_pub = self.create_publisher(JointState, self.topic_joint_states, 10)
         # Position command stream for a ros2_control lift_controller
         # (position_controllers/JointGroupPositionController on lift_joint).
         # With mock_components/GenericSystem the command loops back through
         # joint_state_broadcaster to /joint_states, driving RViz.
         self.lift_ctrl_pub = self.create_publisher(
-            Float64MultiArray, 'lift_controller/commands', 10
+            Float64MultiArray, self.topic_lift_ctrl_cmds, 10
         )
-        self.cmd_sub = self.create_subscription(Float64MultiArray, 'forward_position_controller/commands', self.cmd_callback, 10)
+        self.cmd_sub = self.create_subscription(Float64MultiArray, self.topic_pos_cmds, self.cmd_callback, 10)
+
+        # FollowJointTrajectory action server — MoveIt sends goals here directly.
+        # Runs in a background thread (MultiThreadedExecutor required in main()).
+        self._jtc_action_server = ActionServer(
+            self,
+            FollowJointTrajectory,
+            'lift_controller/follow_joint_trajectory',
+            self._jtc_execute_cb,
+        )
 
         # ---- Motor Initialization ----
         self.dev = TMotorManager_servo_can(motor_type=self.motor_type, motor_ID=self.motor_id)
@@ -286,6 +309,53 @@ class TMotorBridgeNode(Node):
             f"cmd → {pos_cm:.2f}cm @ {vel_cms:.3f}cm/s, acc {acc_cms2:.3f}cm/s² (SW traj)"
         )
 
+    def jtc_state_callback(self, msg: JointTrajectoryControllerState):
+        """Bridge MoveIt → real motor via lift_controller/state reference position.
+
+        JointTrajectoryController publishes its reference (desired) position on
+        this topic at 50 Hz while executing a trajectory. When JTC is idle the
+        reference is constant, so _last_jtc_ref_m stays the same and this
+        callback returns immediately — direct lift/cmd commands are not overridden.
+        """
+        if self.state != 'CONTROL':
+            return
+        if self.m_per_rad == 0.0:
+            return
+
+        # Find lift_joint index in this message
+        try:
+            idx = msg.joint_names.index(self.joint_name)
+        except ValueError:
+            return  # lift_joint not in this message
+
+        if not msg.reference.positions or idx >= len(msg.reference.positions):
+            return
+
+        ref_pos_m = float(msg.reference.positions[idx])
+
+        # Clamp to valid URDF range
+        ref_pos_m = max(self.lift_min_cm * 0.01, min(self.lift_max_cm * 0.01, ref_pos_m))
+
+        # Only act when the reference is actually changing (JTC is executing a
+        # trajectory). A constant reference means JTC is idle — skip to avoid
+        # fighting with lift/cmd or re-triggering a completed move.
+        if self._last_jtc_ref_m is not None and abs(ref_pos_m - self._last_jtc_ref_m) < 1e-4:
+            return
+        self._last_jtc_ref_m = ref_pos_m
+
+        # Use configured velocity/acceleration limits (same as cmd_callback defaults)
+        vel_ms = min(self.max_vel_cms, self.hw_max_vel_cms) * 0.01
+        acc_ms2 = self.max_acc_cms2 * 0.01
+
+        self.traj_target_m = ref_pos_m
+        self.traj_max_vel_ms = vel_ms
+        self.traj_max_acc_ms2 = acc_ms2
+        self.traj_active = True
+
+        self.get_logger().debug(
+            f"JTC ref → {ref_pos_m * 100:.2f} cm (MoveIt bridge)"
+        )
+
     def _advance_trajectory(self, dt):
         """Step the trapezoidal velocity profile toward traj_target_m by dt seconds."""
         if not self.traj_active:
@@ -371,6 +441,110 @@ class TMotorBridgeNode(Node):
         lift_cmd.data = [self.traj_current_pos_m]
         self.lift_ctrl_pub.publish(lift_cmd)
 
+    def _jtc_execute_cb(self, goal_handle):
+        """Execute a FollowJointTrajectory goal from MoveIt.
+
+        Runs in a background thread (MultiThreadedExecutor). Extracts waypoints
+        for lift_joint, feeds them into the SW trapezoidal trajectory, then waits
+        for the lift to reach the final position before returning success.
+        """
+        trajectory = goal_handle.request.trajectory
+
+        # Find lift_joint in the trajectory
+        try:
+            idx = trajectory.joint_names.index(self.joint_name)
+        except ValueError:
+            self.get_logger().warn(
+                f"FollowJointTrajectory: '{self.joint_name}' not in goal — aborting"
+            )
+            goal_handle.abort()
+            result = FollowJointTrajectory.Result()
+            result.error_code = FollowJointTrajectory.Result.INVALID_JOINTS
+            return result
+
+        if self.state != 'CONTROL':
+            self.get_logger().warn("FollowJointTrajectory: not in CONTROL state — aborting")
+            goal_handle.abort()
+            result = FollowJointTrajectory.Result()
+            result.error_code = FollowJointTrajectory.Result.INVALID_GOAL
+            return result
+
+        if not trajectory.points:
+            goal_handle.succeed()
+            return FollowJointTrajectory.Result()
+
+        self.get_logger().info(
+            f"FollowJointTrajectory: {len(trajectory.points)} waypoints"
+        )
+
+        # Process each waypoint at its scheduled time
+        start_ns = self.get_clock().now().nanoseconds
+        for point in trajectory.points:
+            if goal_handle.is_cancel_requested:
+                self.get_logger().info("FollowJointTrajectory: cancelled")
+                goal_handle.canceled()
+                return FollowJointTrajectory.Result()
+
+            pos_m = float(point.positions[idx])
+            pos_m = max(self.lift_min_cm * 0.01, min(self.lift_max_cm * 0.01, pos_m))
+
+            vel_ms = min(self.max_vel_cms, self.hw_max_vel_cms) * 0.01
+            if point.velocities and idx < len(point.velocities):
+                v = abs(float(point.velocities[idx]))
+                if v > 0:
+                    vel_ms = min(v, self.hw_max_vel_cms * 0.01)
+
+            # Update SW trajectory target
+            self.traj_target_m = pos_m
+            self.traj_max_vel_ms = vel_ms
+            self.traj_max_acc_ms2 = self.max_acc_cms2 * 0.01
+            self.traj_active = True
+
+            # Wait until this waypoint's scheduled time OR the motor has already
+            # reached this waypoint position — whichever comes first.
+            # The trajectory's time_from_start may be based on MoveIt's planner
+            # velocity (which may differ from actual hardware speed), so we must
+            # not block longer than necessary: succeed as soon as the motor arrives.
+            POSITION_TOLERANCE_M = 0.01  # 1 cm
+            point_ns = int(
+                point.time_from_start.sec * 1e9 + point.time_from_start.nanosec
+            )
+            deadline_ns = start_ns + point_ns
+            while self.get_clock().now().nanoseconds < deadline_ns:
+                if goal_handle.is_cancel_requested:
+                    goal_handle.canceled()
+                    return FollowJointTrajectory.Result()
+                # Early exit: motor reached this waypoint already
+                if (abs(self.traj_current_pos_m - pos_m) < POSITION_TOLERANCE_M
+                        and not self.traj_active):
+                    break
+                time.sleep(0.02)
+
+        # Wait for the lift to physically reach the final position
+        final_pos_m = max(
+            self.lift_min_cm * 0.01,
+            min(self.lift_max_cm * 0.01, float(trajectory.points[-1].positions[idx])),
+        )
+        POSITION_TOLERANCE_M = 0.01  # 1 cm
+        TIMEOUT_S = 60.0
+        t0 = time.time()
+        while time.time() - t0 < TIMEOUT_S:
+            if goal_handle.is_cancel_requested:
+                goal_handle.canceled()
+                return FollowJointTrajectory.Result()
+            if (abs(self.traj_current_pos_m - final_pos_m) < POSITION_TOLERANCE_M
+                    and not self.traj_active):
+                break
+            time.sleep(0.05)
+
+        self.get_logger().info(
+            f"FollowJointTrajectory: done at {self.traj_current_pos_m * 100:.1f} cm"
+        )
+        goal_handle.succeed()
+        result = FollowJointTrajectory.Result()
+        result.error_code = FollowJointTrajectory.Result.SUCCESSFUL
+        return result
+
     def shutdown(self):
         self.get_logger().info("Shutting down bridge...")
         self.dev.enter_idle_mode()
@@ -380,8 +554,12 @@ class TMotorBridgeNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = TMotorBridgeNode()
+    # MultiThreadedExecutor lets the FollowJointTrajectory action server run
+    # in a background thread without blocking the 100 Hz control loop.
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
