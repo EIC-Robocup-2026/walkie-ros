@@ -159,7 +159,7 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {"source_frame": "map"},
-            {"target_frame": "base_link"},
+            {"target_frame": "base_footprint"},
             {"publish_rate": 10.0},
             {"topic_name": "current_pose"},
         ],
