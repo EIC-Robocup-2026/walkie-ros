@@ -14,3 +14,4 @@ start_state_max_bounds_error: 0.01
 trajectory_execution:
   allowed_execution_duration_scaling: 2.0
   allowed_goal_duration_margin: 60.0
+  allowed_start_tolerance: 0.1
