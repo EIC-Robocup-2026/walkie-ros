@@ -1,4 +1,5 @@
-#!/usr/bin/env python3
+#!/bin/sh
+"exec" "${PERCEPTION_VENV:-$HOME/perception-venv/bin/python3}" "$0" "$@"
 
 import json
 import threading
@@ -20,7 +21,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy
 from scipy.spatial.transform import Rotation as R
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2, PointField
 from std_srvs.srv import Trigger
-from perception.srv import GetObjectCloud
+from walkie_perception.srv import GetObjectCloud
 from vision_msgs.msg import (
     BoundingBox3D,
     Detection2DArray,

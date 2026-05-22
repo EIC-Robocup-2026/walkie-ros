@@ -3,8 +3,7 @@
 <package format="3">
   <name>walkie_perception</name>
   <version>0.0.0</version>
-  <description
-  >Unified perception package: 3D object detection with YOLOv8 and ZED RGB-D camera. Provides ob_detection, ob_pose, ob_pose_service (C++), obb_3d, YOLO nodes, and test utilities.</description>
+  <description>Perception stack for Walkie: YOLO+ByteTrack detection, 3D OBB estimation, and GraspNet-based grasp pose service.</description>
   <maintainer email="user@todo.todo">user</maintainer>
   <license>TODO: License declaration</license>
 
@@ -24,8 +23,6 @@
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
-  <exec_depend>python3-yaml</exec_depend>
-  <exec_depend>python3-scipy</exec_depend>
   <exec_depend>rosidl_default_runtime</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>

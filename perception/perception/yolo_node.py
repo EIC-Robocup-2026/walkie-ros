@@ -1,10 +1,11 @@
-#!/usr/bin/env python3
+#!/bin/sh
+"exec" "${PERCEPTION_VENV:-$HOME/perception-venv/bin/python3}" "$0" "$@"
 """
 yolo_node.py — Real YOLOv8 + ByteTrack detection node for OBB3D testing.
 
 Subscribes
 ──────────
-  /zed/zed_node/rgb/image_rect_color   sensor_msgs/Image (BGR8 or RGB8)
+  /zed_head/zed_node/rgb/image_rect_color   sensor_msgs/Image (BGR8 or RGB8)
 
 Publishes
 ─────────
@@ -35,7 +36,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CompressedImage
 from cv_bridge import CvBridge
 from vision_msgs.msg import (
     BoundingBox2D,
@@ -54,7 +55,7 @@ class YoloNode(Node):
         # ── Parameters ────────────────────────────────────────────────────────
         from ament_index_python.packages import get_package_share_directory
         default_model = os.path.join(
-            get_package_share_directory('perception'), 'models', 'yolo11l-seg.pt')
+            get_package_share_directory('walkie_perception'), 'models', 'yolo11l-seg.pt')
         self.declare_parameter('model_path', default_model)
         self.declare_parameter('image_topic', '/zed/zed_node/rgb/color/rect/image')
         self.declare_parameter('confidence_threshold', 0.3)
@@ -94,8 +95,16 @@ class YoloNode(Node):
         # ── Subscriptions / publishers ────────────────────────────────────────
         # BEST_EFFORT to drop frames if YOLO falls behind, never queue.
         qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, depth=2)
-        self.create_subscription(Image, self.image_topic,
-                                 self._image_cb, qos)
+        self._last_raw_img_t   = 0.0
+        self._last_raw_depth_t = 0.0
+
+        # Primary (raw)
+        self.create_subscription(Image, self.image_topic, self._image_cb, qos)
+        # Fallback (compressed) — used only when raw silent > 2 s
+        self.create_subscription(
+            CompressedImage,
+            self.image_topic + '/compressed',
+            self._image_compressed_cb, qos)
 
         self.det_pub = self.create_publisher(
             Detection2DArray, '/yolo/tracked_detections_2d', 10)
@@ -109,12 +118,17 @@ class YoloNode(Node):
 
         # ── Depth stamp cache (for sync alignment with OBB3D) ─────────────────
         self._latest_depth_stamp = None
+        _dqos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, depth=2)
+        # Primary depth stamp
         self.create_subscription(
             Image,
-            '/zed/zed_node/depth/depth_registered',
-            self._depth_stamp_cb,
-            QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, depth=2),
-        )
+            '/zed_head/zed_node/depth/depth_registered',
+            self._depth_stamp_cb, _dqos)
+        # Fallback depth stamp
+        self.create_subscription(
+            CompressedImage,
+            '/zed_head/zed_node/depth/depth_registered/compressed',
+            self._depth_stamp_compressed_cb, _dqos)
 
         # ── Stats ─────────────────────────────────────────────────────────────
         self._frame_count = 0
@@ -125,17 +139,37 @@ class YoloNode(Node):
         self.get_logger().info(f'YOLO node ready. Listening on {self.image_topic}')
 
     def _depth_stamp_cb(self, msg: Image) -> None:
-        """Cache latest depth frame stamp for sync alignment with OBB3D."""
+        self._last_raw_depth_t = time.monotonic()
+        self._latest_depth_stamp = msg.header.stamp
+
+    def _depth_stamp_compressed_cb(self, msg: CompressedImage) -> None:
+        if time.monotonic() - self._last_raw_depth_t <= 2.0:
+            return
         self._latest_depth_stamp = msg.header.stamp
 
     def _image_cb(self, msg: Image) -> None:
-        """Run YOLO + ByteTrack on the incoming image."""
+        """Run YOLO + ByteTrack on the incoming image (primary raw path)."""
+        self._last_raw_img_t = time.monotonic()
         try:
             img = self._bridge.imgmsg_to_cv2(msg, 'bgr8')
         except Exception as e:
             self.get_logger().warn(f'Image decode failed: {e}',
                                    throttle_duration_sec=5.0)
             return
+        self._run_yolo(img, msg.header)
+
+    def _image_compressed_cb(self, msg: CompressedImage) -> None:
+        """Fallback — only active when raw image silent for > 2 s."""
+        if time.monotonic() - self._last_raw_img_t <= 2.0:
+            return
+        arr = np.frombuffer(msg.data, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img is None:
+            return
+        self._run_yolo(img, msg.header)
+
+    def _run_yolo(self, img, header) -> None:
+        """Shared YOLO inference path for both raw and compressed inputs."""
 
         # ── Run tracking inference ────────────────────────────────────────────
         # persist=True keeps the tracker state across calls (essential for IDs).
@@ -162,7 +196,7 @@ class YoloNode(Node):
 
         # ── Build Detection2DArray ────────────────────────────────────────────
         det_msg = Detection2DArray()
-        det_msg.header = msg.header
+        det_msg.header = header
         # Use depth stamp so OBB3D synchronizer matches perfectly.
         if self._latest_depth_stamp is not None:
             det_msg.header.stamp = self._latest_depth_stamp
@@ -202,7 +236,7 @@ class YoloNode(Node):
             h  = float(y2 - y1)
 
             det = Detection2D()
-            det.header = msg.header
+            det.header = header
             det.bbox = BoundingBox2D(
                 center=Pose2D(position=Point2D(x=cx, y=cy)),
                 size_x=w,
@@ -222,7 +256,7 @@ class YoloNode(Node):
         # Only published when the seg model returns masks (yolo11n-seg.pt etc.)
         result = results[0] if results else None
         if result is not None and result.masks is not None and len(result.masks) > 0:
-            label_img = np.zeros((msg.height, msg.width), dtype=np.uint16)
+            label_img = np.zeros((img.shape[0], img.shape[1]), dtype=np.uint16)
             for i in range(len(xyxy)):
                 if ids[i] < 0:
                     continue
@@ -239,11 +273,11 @@ class YoloNode(Node):
                     continue
             mask_msg = Image()
             mask_msg.header = det_msg.header
-            mask_msg.height = msg.height
-            mask_msg.width = msg.width
+            mask_msg.height = img.shape[0]
+            mask_msg.width = img.shape[1]
             mask_msg.encoding = '16UC1'
             mask_msg.is_bigendian = False
-            mask_msg.step = msg.width * 2
+            mask_msg.step = img.shape[1] * 2
             mask_msg.data = label_img.tobytes()
             self.mask_pub.publish(mask_msg)
 
@@ -252,7 +286,7 @@ class YoloNode(Node):
             try:
                 annotated = result.plot()  # ultralytics renders boxes + IDs
                 dbg = Image()
-                dbg.header   = msg.header
+                dbg.header   = header
                 dbg.height   = annotated.shape[0]
                 dbg.width    = annotated.shape[1]
                 dbg.encoding = 'bgr8'

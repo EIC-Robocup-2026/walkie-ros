@@ -1,2 +1,7 @@
 # Model weights — large binaries, not version-controlled
 models/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
