@@ -1,7 +1,16 @@
-# Extends demo2.launch.py: same full MoveIt stack + bimanual commander action server.
-# Usage:
-#   ros2 launch openarm_bimanual_moveit_config demo2_with_commander.launch.py
-#   ros2 launch openarm_bimanual_moveit_config demo2_with_commander.launch.py hardware_type:=isaac
+# Copyright 2025 Enactic, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import os
 import xacro
@@ -20,6 +29,8 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from moveit_configs_utils import MoveItConfigsBuilder
 
+
+# hardware_type -> xacro mappings for gz_walkie.urdf.xacro
 _HW_MAPPINGS = {
     "mock_components": {
         "ros2_control": "mock",
@@ -47,7 +58,7 @@ _HW_MAPPINGS = {
 
 
 def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
-    hardware_type  = context.perform_substitution(hardware_type_lc)
+    hardware_type = context.perform_substitution(hardware_type_lc)
     controllers_file = context.perform_substitution(controllers_file_lc)
 
     mappings = _HW_MAPPINGS.get(hardware_type, _HW_MAPPINGS["mock_components"])
@@ -74,15 +85,10 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
     )
     moveit_params = moveit_config.to_dict()
     moveit_params["use_sim_time"] = use_sim_time
-
-    # Commander node params (subset — no full moveit_params to avoid overhead)
-    commander_params = [
-        moveit_config.robot_description,
-        moveit_config.robot_description_semantic,
-        moveit_config.robot_description_kinematics,
-        moveit_config.joint_limits,
-        {"use_sim_time": use_sim_time},
-    ]
+    # Disable octomap when no real 3D sensors are configured (mock/isaac)
+    if hardware_type not in ("gazebo", "real_robot"):
+        moveit_params.pop("sensors_3d", None)
+        moveit_params["octomap_resolution"] = 0.0
 
     rsp = Node(
         package="robot_state_publisher",
@@ -94,6 +100,13 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
         ],
     )
 
+    static_world_tf = Node(
+        package="tf2_ros",
+        executable="static_transform_publisher",
+        arguments=["--frame-id", "world", "--child-frame-id", "base_footprint"],
+        output="screen",
+    )
+
     rviz = Node(
         package="rviz2",
         executable="rviz2",
@@ -102,15 +115,6 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
         output="log",
     )
 
-    commander = Node(
-        package="openarm_bimanual_commander_cpp",
-        executable="commander",
-        name="bimanual_commander",
-        output="screen",
-        parameters=commander_params,
-    )
-
-    # ── Gazebo path ───────────────────────────────────────────────────────
     if hardware_type == "gazebo":
         gazebo = IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
@@ -133,10 +137,6 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
                        "-name", "walkie", "-x", "0.0", "-y", "0.0", "-z", "0.05"],
             output="screen",
         )
-        move_group = Node(
-            package="moveit_ros_move_group", executable="move_group",
-            output="screen", parameters=[moveit_params],
-        )
         gz_spawners = RegisterEventHandler(
             event_handler=OnProcessExit(
                 target_action=spawn,
@@ -149,49 +149,20 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
                     Node(package="controller_manager", executable="spawner",
                          arguments=["left_gripper_controller",
                                     "right_gripper_controller"]),
+                    Node(package="controller_manager", executable="spawner",
+                         arguments=["lift_controller"]),
                 ],
             )
         )
-        return [rsp, gazebo, bridge, spawn, gz_spawners, move_group,
-                TimerAction(period=15.0, actions=[commander]), rviz]
+        move_group = Node(
+            package="moveit_ros_move_group", executable="move_group",
+            output="screen", parameters=[moveit_params],
+        )
+        return [rsp, gazebo, bridge, spawn, gz_spawners, move_group, rviz]
 
-    # ── mock_components: fake object TFs + pick_and_place node ───────────
-    mock_nodes = []
-    if hardware_type == "mock_components":
-        # Static object poses (relative to base_footprint) for testing without Isaac.
-        # Bottle on a table 0.6 m ahead; tables at left/right of the robot.
-        mock_nodes = [
-            Node(
-                package="tf2_ros", executable="static_transform_publisher",
-                name="fake_bottle_tf",
-                arguments=["0.60", "0.00", "0.92",   # x y z
-                           "0", "0", "0", "1",        # qx qy qz qw
-                           "base_footprint", "SM_BottleA"],
-            ),
-            Node(
-                package="tf2_ros", executable="static_transform_publisher",
-                name="fake_cube_tf",
-                arguments=["0.60", "0.00", "0.35",
-                           "0", "0", "0", "1",
-                           "base_footprint", "Cube"],
-            ),
-            Node(
-                package="tf2_ros", executable="static_transform_publisher",
-                name="fake_cube02_tf",
-                arguments=["0.55", "0.55", "0.30",
-                           "0", "0", "0", "1",
-                           "base_footprint", "Cube_02"],
-            ),
-            Node(
-                package="tf2_ros", executable="static_transform_publisher",
-                name="fake_cube03_tf",
-                arguments=["0.55", "-0.55", "0.30",
-                           "0", "0", "0", "1",
-                           "base_footprint", "Cube_03"],
-            ),
-        ]
-
-    # ── non-Gazebo: mock_components / isaac / real_robot ──────────────────
+    # non-Gazebo: mock_components / isaac / real_robot
+    # Jazzy ros2_control_node reads robot_description from /robot_description topic.
+    # RSP is returned first so it starts and publishes before control_node subscribes.
     control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
@@ -219,35 +190,26 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
                    "--controller-manager-timeout", "30"],
         output="screen",
     )
+    lift_ctrl = Node(
+        package="controller_manager", executable="spawner",
+        arguments=["lift_controller",
+                   "-c", "/controller_manager",
+                   "--controller-manager-timeout", "30"],
+        output="screen",
+    )
     move_group = Node(
         package="moveit_ros_move_group", executable="move_group",
         output="screen", parameters=[moveit_params],
     )
-
-    pick_and_place = Node(
-        package="openarm_bimanual_commander_cpp",
-        executable="pick_and_place_isaac2",
-        name="pick_and_place_isaac2",
-        output="screen",
-        parameters=[
-            moveit_config.robot_description,
-            moveit_config.robot_description_semantic,
-            moveit_config.robot_description_kinematics,
-            {"use_sim_time": use_sim_time},
-        ],
-    )
-
-    # Commander + pick_and_place start after move_group is up
     return [
         rsp,
-        *mock_nodes,
-        TimerAction(period=2.0,  actions=[control_node]),
-        TimerAction(period=4.0,  actions=[jsb]),
-        TimerAction(period=5.0,  actions=[arm_ctrl]),
-        TimerAction(period=5.0,  actions=[gripper_ctrl]),
-        TimerAction(period=7.0,  actions=[move_group]),
-        TimerAction(period=10.0, actions=[commander]),
-        TimerAction(period=12.0, actions=[pick_and_place]),
+        static_world_tf,
+        TimerAction(period=2.0, actions=[control_node]),
+        TimerAction(period=4.0, actions=[jsb]),
+        TimerAction(period=5.0, actions=[arm_ctrl]),
+        TimerAction(period=5.0, actions=[gripper_ctrl]),
+        TimerAction(period=5.0, actions=[lift_ctrl]),
+        TimerAction(period=7.0, actions=[move_group]),
         rviz,
     ]
 
@@ -269,7 +231,7 @@ def generate_launch_description():
         ),
     ]
 
-    hardware_type    = LaunchConfiguration("hardware_type")
+    hardware_type = LaunchConfiguration("hardware_type")
     controllers_file = LaunchConfiguration("controllers_file")
 
     nodes_func = OpaqueFunction(

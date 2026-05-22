@@ -1,0 +1,17 @@
+# Tolerance for joints that are slightly outside URDF position limits at
+# start-state check time.  Real hardware joints can read a few milli-radians
+# outside their nominal zero due to encoder offset / calibration drift.
+# Default in MoveIt is ~0.0001 rad which is too tight for real hardware.
+start_state_max_bounds_error: 0.01
+
+# Lift motor (TMotor AK45-10) is physically limited to ~3 cm/s sustained speed.
+# MoveIt's default allowed time = planned_duration × 1.2 + 0.5 s is far too
+# tight for any move longer than a few centimetres.  The large flat margin
+# (60 s) ensures MoveIt never cancels a goal while the motor is still moving,
+# regardless of how long MoveIt's planner estimated.  The action server in
+# lift_homing_node.py signals success the moment the motor actually arrives, so
+# in practice MoveIt does not block for the full 60 s — it just stops timing out.
+trajectory_execution:
+  allowed_execution_duration_scaling: 2.0
+  allowed_goal_duration_margin: 60.0
+  allowed_start_tolerance: 0.1
