@@ -28,6 +28,11 @@
   <depend>hardware_interface</depend>
   <depend>openarm_can</depend>
   <depend>pluginlib</depend>
+  <depend>kdl_parser</depend>
+  <depend>orocos_kdl_vendor</depend>
+  <depend>urdf</depend>
+  <depend>urdfdom</depend>
+  <depend>eigen</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

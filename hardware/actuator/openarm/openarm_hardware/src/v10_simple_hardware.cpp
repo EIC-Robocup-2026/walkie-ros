@@ -72,10 +72,55 @@ bool OpenArm_v10HW::parse_config(const hardware_interface::HardwareInfo& info) {
     }
   }
 
+  // Parse KDL dynamics-compensation parameters (all optional).
+  it = info.hardware_parameters.find("urdf_path");
+  urdf_path_ = (it != info.hardware_parameters.end()) ? it->second : "";
+
+  it = info.hardware_parameters.find("kdl_start_link");
+  kdl_start_link_ = (it != info.hardware_parameters.end())
+                        ? it->second
+                        : ("openarm_" + arm_prefix_ + "link0");
+
+  it = info.hardware_parameters.find("kdl_end_link");
+  kdl_end_link_ = (it != info.hardware_parameters.end())
+                      ? it->second
+                      : ("openarm_" + arm_prefix_ + "link7");
+
+  it = info.hardware_parameters.find("gravity_x");
+  if (it != info.hardware_parameters.end()) gravity_x_ = std::stod(it->second);
+  it = info.hardware_parameters.find("gravity_y");
+  if (it != info.hardware_parameters.end()) gravity_y_ = std::stod(it->second);
+  it = info.hardware_parameters.find("gravity_z");
+  if (it != info.hardware_parameters.end()) gravity_z_ = std::stod(it->second);
+
+  it = info.hardware_parameters.find("gravity_compensation");
+  if (it != info.hardware_parameters.end()) {
+    std::string value = it->second;
+    std::transform(value.begin(), value.end(), value.begin(), ::tolower);
+    gravity_comp_enabled_ = (value == "true");
+  } else {
+    gravity_comp_enabled_ = true;  // default on when dynamics is available
+  }
+
+  it = info.hardware_parameters.find("coriolis_compensation");
+  if (it != info.hardware_parameters.end()) {
+    std::string value = it->second;
+    std::transform(value.begin(), value.end(), value.begin(), ::tolower);
+    coriolis_comp_enabled_ = (value == "true");
+  } else {
+    coriolis_comp_enabled_ = false;  // off by default; can be noisy
+  }
+
   RCLCPP_INFO(rclcpp::get_logger("OpenArm_v10HW"),
               "Configuration: CAN=%s, arm_prefix=%s, hand=%s, can_fd=%s",
               can_interface_.c_str(), arm_prefix_.c_str(),
               hand_ ? "enabled" : "disabled", can_fd_ ? "enabled" : "disabled");
+  RCLCPP_INFO(rclcpp::get_logger("OpenArm_v10HW"),
+              "Dynamics: chain=%s -> %s, g=(%.3f, %.3f, %.3f), "
+              "gravity_comp=%s, coriolis_comp=%s",
+              kdl_start_link_.c_str(), kdl_end_link_.c_str(), gravity_x_,
+              gravity_y_, gravity_z_, gravity_comp_enabled_ ? "on" : "off",
+              coriolis_comp_enabled_ ? "on" : "off");
   return true;
 }
 
@@ -156,6 +201,46 @@ hardware_interface::CallbackReturn OpenArm_v10HW::on_init(
   pos_states_.resize(total_joints, 0.0);
   vel_states_.resize(total_joints, 0.0);
   tau_states_.resize(total_joints, 0.0);
+
+  // Initialize KDL dynamics for gravity / coriolis compensation. Prefer the
+  // URDF embedded in HardwareInfo (provided by ros2_control), fall back to a
+  // file path if the user configured one. Any failure here is non-fatal -- we
+  // simply skip the feedforward torque.
+  dynamics_ = std::make_unique<Dynamics>(urdf_path_, kdl_start_link_,
+                                          kdl_end_link_);
+  dynamics_->SetGravity(gravity_x_, gravity_y_, gravity_z_);
+
+  bool dynamics_ok = false;
+  if (!info.original_xml.empty()) {
+    dynamics_ok = dynamics_->InitFromString(info.original_xml);
+  }
+  if (!dynamics_ok && !urdf_path_.empty()) {
+    dynamics_ok = dynamics_->Init();
+  }
+
+  if (!dynamics_ok) {
+    RCLCPP_WARN(rclcpp::get_logger("OpenArm_v10HW"),
+                "Failed to initialize KDL dynamics (chain %s -> %s). "
+                "Gravity / coriolis compensation will be disabled.",
+                kdl_start_link_.c_str(), kdl_end_link_.c_str());
+    dynamics_.reset();
+    gravity_comp_enabled_ = false;
+    coriolis_comp_enabled_ = false;
+  } else if (dynamics_->GetNrOfJoints() != ARM_DOF) {
+    RCLCPP_WARN(rclcpp::get_logger("OpenArm_v10HW"),
+                "KDL chain has %zu joints, expected %zu. Disabling dynamics "
+                "compensation to avoid undefined behavior.",
+                dynamics_->GetNrOfJoints(), ARM_DOF);
+    dynamics_.reset();
+    gravity_comp_enabled_ = false;
+    coriolis_comp_enabled_ = false;
+  } else {
+    gravity_torque_.assign(ARM_DOF, 0.0);
+    coriolis_torque_.assign(ARM_DOF, 0.0);
+    RCLCPP_INFO(rclcpp::get_logger("OpenArm_v10HW"),
+                "KDL dynamics initialized with %zu joints.",
+                dynamics_->GetNrOfJoints());
+  }
 
   RCLCPP_INFO(rclcpp::get_logger("OpenArm_v10HW"),
               "OpenArm V10 Simple HW initialized successfully");
@@ -269,11 +354,31 @@ hardware_interface::return_type OpenArm_v10HW::read(
 
 hardware_interface::return_type OpenArm_v10HW::write(
     const rclcpp::Time& /*time*/, const rclcpp::Duration& /*period*/) {
+  // Compute gravity / coriolis feedforward torques from current measured state.
+  // Using pos_states_ rather than pos_commands_ avoids fighting the controller
+  // tracking error when the goal first changes.
+  bool have_gravity = false;
+  bool have_coriolis = false;
+  if (dynamics_) {
+    if (gravity_comp_enabled_) {
+      dynamics_->GetGravity(pos_states_.data(), gravity_torque_.data());
+      have_gravity = true;
+    }
+    if (coriolis_comp_enabled_) {
+      dynamics_->GetCoriolis(pos_states_.data(), vel_states_.data(),
+                             coriolis_torque_.data());
+      have_coriolis = true;
+    }
+  }
+
   // Control arm motors with MIT control
   std::vector<openarm::damiao_motor::MITParam> arm_params;
   for (size_t i = 0; i < ARM_DOF; ++i) {
+    double tau_ff = tau_commands_[i];
+    if (have_gravity) tau_ff += gravity_torque_[i];
+    if (have_coriolis) tau_ff += coriolis_torque_[i];
     arm_params.push_back(
-        {kp_[i], kd_[i], pos_commands_[i], vel_commands_[i], tau_commands_[i]});
+        {kp_[i], kd_[i], pos_commands_[i], vel_commands_[i], tau_ff});
   }
   openarm_->get_arm().mit_control_all(arm_params);
   // Control gripper if enabled
