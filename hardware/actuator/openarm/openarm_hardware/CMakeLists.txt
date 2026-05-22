@@ -25,18 +25,25 @@ find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
+find_package(kdl_parser REQUIRED)
+find_package(orocos_kdl_vendor REQUIRED)
+find_package(urdf REQUIRED)
+find_package(urdfdom REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 # Find openarm_can library
 find_package(OpenArmCAN REQUIRED)
 
 add_library(${PROJECT_NAME} SHARED
   src/v10_simple_hardware.cpp
+  src/dynamics.cpp
 )
 
 target_include_directories(
   ${PROJECT_NAME}
   PRIVATE
   include
+  ${EIGEN3_INCLUDE_DIRS}
 )
 
 target_link_libraries(${PROJECT_NAME}
@@ -48,6 +55,11 @@ ament_target_dependencies(${PROJECT_NAME}
   pluginlib
   rclcpp
   rclcpp_lifecycle
+  kdl_parser
+  orocos_kdl_vendor
+  urdf
+  urdfdom
+  Eigen3
 )
 
 pluginlib_export_plugin_description_file(hardware_interface openarm_hardware.xml)
@@ -73,6 +85,11 @@ ament_export_dependencies(
   openarm_can
   pluginlib
   rclcpp
+  kdl_parser
+  orocos_kdl_vendor
+  urdf
+  urdfdom
+  Eigen3
 )
 
 ament_package()

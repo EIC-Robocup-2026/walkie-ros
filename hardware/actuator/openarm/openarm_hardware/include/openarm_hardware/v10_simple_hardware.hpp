@@ -25,6 +25,7 @@
 #include "hardware_interface/hardware_info.hpp"
 #include "hardware_interface/system_interface.hpp"
 #include "hardware_interface/types/hardware_interface_return_values.hpp"
+#include "openarm_hardware/dynamics.hpp"
 #include "openarm_hardware/visibility_control.h"
 #include "rclcpp/macros.hpp"
 #include "rclcpp_lifecycle/state.hpp"
@@ -119,6 +120,20 @@ class OpenArm_v10HW : public hardware_interface::SystemInterface {
 
   // OpenArm instance
   std::unique_ptr<openarm::can::socket::OpenArm> openarm_;
+
+  // KDL-based gravity / coriolis compensation. Optional; only created when a
+  // URDF is available (either via hardware parameter or info.original_xml).
+  std::unique_ptr<Dynamics> dynamics_;
+  bool gravity_comp_enabled_ = false;
+  bool coriolis_comp_enabled_ = false;
+  double gravity_x_ = 0.0;
+  double gravity_y_ = 0.0;
+  double gravity_z_ = -9.81;
+  std::string kdl_start_link_;
+  std::string kdl_end_link_;
+  std::string urdf_path_;
+  std::vector<double> gravity_torque_;
+  std::vector<double> coriolis_torque_;
 
   // Generated joint names for this arm instance
   std::vector<std::string> joint_names_;
