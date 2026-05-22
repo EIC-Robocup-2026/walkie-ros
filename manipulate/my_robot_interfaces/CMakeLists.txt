@@ -12,6 +12,8 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/PoseCommand.msg"
   "srv/GetPosition.srv"
+  "srv/GetEEPose.srv"
+  "srv/GetJointStates.srv"
   "action/GoToPose.action"
   "action/GoToPoseRelative.action"
   "action/GoToPoseQuaternion.action"

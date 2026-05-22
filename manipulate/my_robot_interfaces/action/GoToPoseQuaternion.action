@@ -8,6 +8,7 @@ float64 qy
 float64 qz
 float64 qw
 bool cartesian_path
+string frame_id
 ---
 # Result
 bool success
