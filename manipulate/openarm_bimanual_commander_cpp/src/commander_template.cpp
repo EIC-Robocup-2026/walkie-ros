@@ -57,26 +57,46 @@ public:
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
         // 2. Initialize Groups (both arms and grippers)
-        left_arm_     = std::make_shared<MoveGroupInterface>(node_, "left_arm");
-        right_arm_    = std::make_shared<MoveGroupInterface>(node_, "right_arm");
-        left_gripper_ = std::make_shared<MoveGroupInterface>(node_, "left_gripper");
-        right_gripper_= std::make_shared<MoveGroupInterface>(node_, "right_gripper");
+        left_arm_      = std::make_shared<MoveGroupInterface>(node_, "left_arm");
+        right_arm_     = std::make_shared<MoveGroupInterface>(node_, "right_arm");
+        left_gripper_  = std::make_shared<MoveGroupInterface>(node_, "left_gripper");
+        right_gripper_ = std::make_shared<MoveGroupInterface>(node_, "right_gripper");
+        left_arm_lift_  = std::make_shared<MoveGroupInterface>(node_, "left_arm_lift");
+        right_arm_lift_ = std::make_shared<MoveGroupInterface>(node_, "right_arm_lift");
+        both_arms_      = std::make_shared<MoveGroupInterface>(node_, "both_arms");
+        both_arms_lift_ = std::make_shared<MoveGroupInterface>(node_, "both_arms_lift");
 
         // Set scaling  (1.0 = full speed; lower for safety on real hardware)
         left_arm_->setMaxVelocityScalingFactor(1.0);
         left_arm_->setMaxAccelerationScalingFactor(1.0);
         right_arm_->setMaxVelocityScalingFactor(1.0);
         right_arm_->setMaxAccelerationScalingFactor(1.0);
+        left_arm_lift_->setMaxVelocityScalingFactor(1.0);
+        left_arm_lift_->setMaxAccelerationScalingFactor(1.0);
+        right_arm_lift_->setMaxVelocityScalingFactor(1.0);
+        right_arm_lift_->setMaxAccelerationScalingFactor(1.0);
+        both_arms_->setMaxVelocityScalingFactor(1.0);
+        both_arms_->setMaxAccelerationScalingFactor(1.0);
+        both_arms_lift_->setMaxVelocityScalingFactor(1.0);
+        both_arms_lift_->setMaxAccelerationScalingFactor(1.0);
 
         left_arm_->setPlanningTime(1.0);
         right_arm_->setPlanningTime(1.0);
         left_gripper_->setPlanningTime(1.0);
         right_gripper_->setPlanningTime(1.0);
+        left_arm_lift_->setPlanningTime(1.0);
+        right_arm_lift_->setPlanningTime(1.0);
+        both_arms_->setPlanningTime(1.0);
+        both_arms_lift_->setPlanningTime(1.0);
 
         left_arm_->setNumPlanningAttempts(10000);
         right_arm_->setNumPlanningAttempts(10000);
         left_gripper_->setNumPlanningAttempts(100);
         right_gripper_->setNumPlanningAttempts(100);
+        left_arm_lift_->setNumPlanningAttempts(10000);
+        right_arm_lift_->setNumPlanningAttempts(10000);
+        both_arms_->setNumPlanningAttempts(10000);
+        both_arms_lift_->setNumPlanningAttempts(10000);
 
         // 3. Gripper Action Clients (GripperActionController)
         left_gripper_client_ = rclcpp_action::create_client<GripperCommand>(
@@ -127,18 +147,26 @@ public:
     // --- Helper: group selection ---
     std::shared_ptr<MoveGroupInterface> getGroup(const std::string & group_name)
     {
-        if (group_name == "left_arm")     return left_arm_;
-        if (group_name == "right_arm")    return right_arm_;
-        if (group_name == "left_gripper") return left_gripper_;
-        if (group_name == "right_gripper") return right_gripper_;
+        if (group_name == "left_arm")       return left_arm_;
+        if (group_name == "right_arm")      return right_arm_;
+        if (group_name == "left_gripper")   return left_gripper_;
+        if (group_name == "right_gripper")  return right_gripper_;
+        if (group_name == "left_arm_lift")  return left_arm_lift_;
+        if (group_name == "right_arm_lift") return right_arm_lift_;
+        if (group_name == "both_arms")      return both_arms_;
+        if (group_name == "both_arms_lift") return both_arms_lift_;
         return nullptr;
     }
 
-    // --- Helper: arm group only (for stop on cancel) ---
+    // --- Helper: arm group only (excludes grippers) ---
     std::shared_ptr<MoveGroupInterface> getArmGroup(const std::string & group_name)
     {
-        if (group_name == "left_arm")  return left_arm_;
-        if (group_name == "right_arm") return right_arm_;
+        if (group_name == "left_arm")       return left_arm_;
+        if (group_name == "right_arm")      return right_arm_;
+        if (group_name == "left_arm_lift")  return left_arm_lift_;
+        if (group_name == "right_arm_lift") return right_arm_lift_;
+        if (group_name == "both_arms")      return both_arms_;
+        if (group_name == "both_arms_lift") return both_arms_lift_;
         return nullptr;
     }
 
@@ -252,6 +280,8 @@ public:
         (void)goal_handle;
         left_arm_->stop();
         right_arm_->stop();
+        left_arm_lift_->stop();
+        right_arm_lift_->stop();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -347,6 +377,8 @@ public:
         (void)goal_handle;
         left_arm_->stop();
         right_arm_->stop();
+        left_arm_lift_->stop();
+        right_arm_lift_->stop();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -481,6 +513,8 @@ public:
         (void)goal_handle;
         left_arm_->stop();
         right_arm_->stop();
+        left_arm_lift_->stop();
+        right_arm_lift_->stop();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -615,8 +649,8 @@ public:
         std::shared_ptr<const GoToHome::Goal> goal)
     {
         (void)uuid;
-        if (goal->group_name != "left_arm" && goal->group_name != "right_arm") {
-            RCLCPP_ERROR(node_->get_logger(), "GoToHome only supports left_arm/right_arm, got: %s",
+        if (!getArmGroup(goal->group_name)) {
+            RCLCPP_ERROR(node_->get_logger(), "GoToHome does not support group: %s",
                          goal->group_name.c_str());
             return rclcpp_action::GoalResponse::REJECT;
         }
@@ -630,6 +664,8 @@ public:
         (void)goal_handle;
         left_arm_->stop();
         right_arm_->stop();
+        left_arm_lift_->stop();
+        right_arm_lift_->stop();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -775,6 +811,10 @@ private:
     std::shared_ptr<MoveGroupInterface> right_arm_;
     std::shared_ptr<MoveGroupInterface> left_gripper_;
     std::shared_ptr<MoveGroupInterface> right_gripper_;
+    std::shared_ptr<MoveGroupInterface> left_arm_lift_;
+    std::shared_ptr<MoveGroupInterface> right_arm_lift_;
+    std::shared_ptr<MoveGroupInterface> both_arms_;
+    std::shared_ptr<MoveGroupInterface> both_arms_lift_;
 
     std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
