@@ -16,6 +16,7 @@
 # (robot_state_publisher, ros2_control_node, controllers).
 
 import os
+import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription, LaunchContext
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
@@ -73,6 +74,16 @@ def _make_nodes(context: LaunchContext, hardware_type_lc):
     if hardware_type not in ("gazebo", "real_robot"):
         moveit_params.pop("sensors_3d", None)
         moveit_params["octomap_resolution"] = 0.0
+
+    # MoveItConfigsBuilder does not auto-load move_group.yaml, so merge it here.
+    # Provides start_state_max_bounds_error and trajectory_execution tolerances.
+    with open(os.path.join(pkg_moveit, "config", "move_group.yaml")) as _f:
+        _mg = yaml.safe_load(_f)
+    for _k, _v in _mg.items():
+        if isinstance(_v, dict) and isinstance(moveit_params.get(_k), dict):
+            moveit_params[_k].update(_v)
+        else:
+            moveit_params[_k] = _v
 
     move_group = Node(
         package="moveit_ros_move_group",

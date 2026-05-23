@@ -4,6 +4,7 @@
 #   ros2 launch openarm_bimanual_moveit_config demo2_with_commander.launch.py hardware_type:=isaac
 
 import os
+import yaml
 import xacro
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription, LaunchContext
@@ -75,6 +76,16 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
     moveit_params = moveit_config.to_dict()
     moveit_params["use_sim_time"] = use_sim_time
 
+    # MoveItConfigsBuilder does not auto-load move_group.yaml, so merge it here.
+    # Provides start_state_max_bounds_error and trajectory_execution tolerances.
+    with open(os.path.join(pkg_moveit, "config", "move_group.yaml")) as _f:
+        _mg = yaml.safe_load(_f)
+    for _k, _v in _mg.items():
+        if isinstance(_v, dict) and isinstance(moveit_params.get(_k), dict):
+            moveit_params[_k].update(_v)
+        else:
+            moveit_params[_k] = _v
+
     # Commander node params (subset — no full moveit_params to avoid overhead)
     commander_params = [
         moveit_config.robot_description,
@@ -135,7 +146,8 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
         )
         move_group = Node(
             package="moveit_ros_move_group", executable="move_group",
-            output="screen", parameters=[moveit_params],
+            output="screen",
+            parameters=[moveit_params],
         )
         gz_spawners = RegisterEventHandler(
             event_handler=OnProcessExit(
@@ -230,7 +242,8 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
     )
     move_group = Node(
         package="moveit_ros_move_group", executable="move_group",
-        output="screen", parameters=[moveit_params],
+        output="screen",
+        parameters=[moveit_params],
     )
 
     pick_and_place = Node(

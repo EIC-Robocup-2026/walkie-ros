@@ -110,7 +110,7 @@
     <!-- WHOLE BODY GROUP STATES (Includes Lift Joint)  -->
     <!-- ============================================== -->
     <group_state name="home" group="left_arm_lift">
-        <joint name="lift_joint" value="0"/>
+        <joint name="lift_joint" value="0.7435"/>
         <joint name="openarm_left_joint1" value="0"/>
         <joint name="openarm_left_joint2" value="0"/>
         <joint name="openarm_left_joint3" value="0"/>
@@ -121,7 +121,25 @@
     </group_state>
 
     <group_state name="home" group="right_arm_lift">
-        <joint name="lift_joint" value="0"/>
+        <joint name="lift_joint" value="0.7435"/>
+        <joint name="openarm_right_joint1" value="0"/>
+        <joint name="openarm_right_joint2" value="0"/>
+        <joint name="openarm_right_joint3" value="0"/>
+        <joint name="openarm_right_joint4" value="0"/>
+        <joint name="openarm_right_joint5" value="0"/>
+        <joint name="openarm_right_joint6" value="0"/>
+        <joint name="openarm_right_joint7" value="0"/>
+    </group_state>
+
+    <group_state name="home" group="both_arms_lift">
+        <joint name="lift_joint" value="0.7435"/>
+        <joint name="openarm_left_joint1" value="0"/>
+        <joint name="openarm_left_joint2" value="0"/>
+        <joint name="openarm_left_joint3" value="0"/>
+        <joint name="openarm_left_joint4" value="0"/>
+        <joint name="openarm_left_joint5" value="0"/>
+        <joint name="openarm_left_joint6" value="0"/>
+        <joint name="openarm_left_joint7" value="0"/>
         <joint name="openarm_right_joint1" value="0"/>
         <joint name="openarm_right_joint2" value="0"/>
         <joint name="openarm_right_joint3" value="0"/>
@@ -132,7 +150,7 @@
     </group_state>
 
     <group_state name="hands_up" group="left_arm_lift">
-        <joint name="lift_joint" value="0"/> <!-- Adjust this lift height as needed -->
+        <joint name="lift_joint" value="0.7435"/> <!-- Adjust this lift height as needed -->
         <joint name="openarm_left_joint1" value="0"/>
         <joint name="openarm_left_joint2" value="0"/>
         <joint name="openarm_left_joint3" value="0"/>
@@ -143,7 +161,7 @@
     </group_state>
 
     <group_state name="hands_up" group="right_arm_lift">
-        <joint name="lift_joint" value="0"/> <!-- Adjust this lift height as needed -->
+        <joint name="lift_joint" value="0.7435"/> <!-- Adjust this lift height as needed -->
         <joint name="openarm_right_joint1" value="0"/>
         <joint name="openarm_right_joint2" value="0"/>
         <joint name="openarm_right_joint3" value="0"/>
