@@ -1,0 +1,311 @@
+#!/bin/bash
+# setup_can2_udev.sh
+# Auto-detects a USB-to-CAN adapter by asking you to plug it in, then installs:
+#   1. systemd .link file  → persistent rename to "can2"
+#   2. udev rule           → triggers auto-up service on plug-in
+#   3. systemd service     → sets bitrate 1Mbps and brings the interface up
+#
+# Usage:
+#   sudo ./setup_can2_udev.sh            → detect & install all rules
+#   sudo ./setup_can2_udev.sh uninstall  → remove all installed rules
+#   sudo ./setup_can2_udev.sh status     → show rules + live interface state
+
+set -euo pipefail
+
+LINK_FILE="/etc/systemd/network/70-can2.link"   # must be < 73 to beat 73-usb-net-by-mac.link
+UDEV_RULE="/etc/udev/rules.d/71-can2-up.rules"
+SERVICE_FILE="/etc/systemd/system/can2-up.service"
+
+IFACE_NAME="can2"
+BITRATE="1000000"          # 1 Mbps
+DETECT_TIMEOUT=30
+
+# ── colors ────────────────────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+
+info()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
+error() { echo -e "${RED}[ERROR]${NC} $*" >&2; exit 1; }
+step()  { echo -e "${CYAN}◆${NC} $*"; }
+div()   { echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"; }
+
+require_root() {
+    [[ $EUID -eq 0 ]] || error "Run with sudo: sudo $0 $*"
+}
+
+# ── detect ────────────────────────────────────────────────────────────────────
+# Waits for a new network interface to appear, then extracts its USB attributes.
+# Populates globals: DETECTED_IFACE, DETECTED_SERIAL, DETECTED_VENDOR,
+#                    DETECTED_PRODUCT, DETECTED_MODEL
+detect_device() {
+    local before
+    before=$(ls /sys/class/net/ 2>/dev/null | sort)
+
+    local existing_can
+    existing_can=$(ls /sys/class/net/ | grep '^can' || true)
+    if [[ -n "$existing_can" ]]; then
+        warn "CAN interface(s) already present: ${existing_can}"
+        warn "Please unplug all USB-CAN adapters first, then re-run, OR"
+        warn "unplug/replug the target adapter so it re-registers."
+        echo ""
+        read -rp "  Continue anyway (wait for a NEW interface)? [y/N]: " cont
+        [[ "${cont,,}" =~ ^(y|yes)$ ]] || { warn "Aborted."; exit 0; }
+    fi
+
+    div
+    echo -e "  ${BOLD}Plug in your USB-to-CAN adapter now.${NC}"
+    echo -e "  Waiting up to ${DETECT_TIMEOUT} seconds..."
+    div
+    echo ""
+
+    local elapsed=0
+    DETECTED_IFACE=""
+
+    while [[ $elapsed -lt $DETECT_TIMEOUT ]]; do
+        local after
+        after=$(ls /sys/class/net/ 2>/dev/null | sort)
+        DETECTED_IFACE=$(comm -13 <(echo "$before") <(echo "$after") | head -1)
+        if [[ -n "$DETECTED_IFACE" ]]; then
+            echo ""
+            break
+        fi
+        printf "\r  ⏳ %2ds elapsed... " "$elapsed"
+        sleep 1
+        (( elapsed++ )) || true
+    done
+
+    printf "\r                          \r"
+
+    if [[ -z "$DETECTED_IFACE" ]]; then
+        error "No new network interface appeared within ${DETECT_TIMEOUT}s.
+       Make sure the adapter uses a native CAN driver (gs_usb, peak, kvaser).
+       slcan/serial-line adapters require a different setup."
+    fi
+
+    info "New interface detected: ${BOLD}${DETECTED_IFACE}${NC}"
+
+    # Walk sysfs: <iface> → net/ → <usb_interface>/ → <usb_device>/
+    local net_path
+    net_path=$(readlink -f "/sys/class/net/${DETECTED_IFACE}")
+    local usb_dev_path
+    usb_dev_path=$(dirname "$(dirname "$(dirname "$net_path")")")
+
+    step "sysfs USB path: ${usb_dev_path}"
+
+    local udev_info
+    udev_info=$(udevadm info --query=all --path="$usb_dev_path" 2>/dev/null) || \
+        error "udevadm could not read path: ${usb_dev_path}"
+
+    DETECTED_SERIAL=$(echo  "$udev_info" | grep "^E: ID_SERIAL_SHORT=" | cut -d= -f2)
+    DETECTED_VENDOR=$(echo  "$udev_info" | grep "^E: ID_VENDOR_ID="     | cut -d= -f2)
+    DETECTED_PRODUCT=$(echo "$udev_info" | grep "^E: ID_MODEL_ID="      | cut -d= -f2)
+    DETECTED_MODEL=$(echo   "$udev_info" | grep "^E: ID_MODEL="         | cut -d= -f2 | tr '_' ' ')
+
+    if [[ -z "$DETECTED_VENDOR" && -z "$DETECTED_SERIAL" ]]; then
+        error "Could not read USB attributes. Try: udevadm info --path=${usb_dev_path}"
+    fi
+}
+
+# ── write_link_file ───────────────────────────────────────────────────────────
+write_link_file() {
+    local match_props
+    if [[ -n "$DETECTED_SERIAL" ]]; then
+        match_props="Property=ID_SERIAL_SHORT=${DETECTED_SERIAL}"
+    else
+        warn "No USB serial — matching by Vendor:Product (all identical adapters get this name)."
+        match_props="Property=ID_VENDOR_ID=${DETECTED_VENDOR}
+Property=ID_MODEL_ID=${DETECTED_PRODUCT}"
+    fi
+
+    [[ -f "$LINK_FILE" ]] && { cp "$LINK_FILE" "${LINK_FILE}.bak"; warn "Backed up → ${LINK_FILE}.bak"; }
+
+    cat > "$LINK_FILE" <<EOF
+# Persistent network name for USB-to-CAN adapter.
+# Auto-generated by setup_can2_udev.sh
+# Model  : ${DETECTED_MODEL:-unknown}
+# USB ID : ${DETECTED_VENDOR:-?}:${DETECTED_PRODUCT:-?}
+# Serial : ${DETECTED_SERIAL:-(not available)}
+[Match]
+${match_props}
+
+[Link]
+Name=${IFACE_NAME}
+EOF
+    info "Link rule  → ${LINK_FILE}"
+}
+
+# ── write_udev_rule ───────────────────────────────────────────────────────────
+write_udev_rule() {
+    local match_attr
+    if [[ -n "$DETECTED_SERIAL" ]]; then
+        match_attr="ENV{ID_SERIAL_SHORT}==\"${DETECTED_SERIAL}\""
+    else
+        match_attr="ENV{ID_VENDOR_ID}==\"${DETECTED_VENDOR}\", ENV{ID_MODEL_ID}==\"${DETECTED_PRODUCT}\""
+    fi
+
+    [[ -f "$UDEV_RULE" ]] && { cp "$UDEV_RULE" "${UDEV_RULE}.bak"; warn "Backed up → ${UDEV_RULE}.bak"; }
+
+    cat > "$UDEV_RULE" <<EOF
+# Auto-start can2-up.service when the USB-CAN adapter is plugged in.
+# Auto-generated by setup_can2_udev.sh
+SUBSYSTEM=="net", ACTION=="add", ${match_attr}, TAG+="systemd", ENV{SYSTEMD_WANTS}="can2-up.service"
+EOF
+    info "udev rule  → ${UDEV_RULE}"
+}
+
+# ── write_service ─────────────────────────────────────────────────────────────
+write_service() {
+    [[ -f "$SERVICE_FILE" ]] && { cp "$SERVICE_FILE" "${SERVICE_FILE}.bak"; warn "Backed up → ${SERVICE_FILE}.bak"; }
+
+    cat > "$SERVICE_FILE" <<EOF
+# Brings up the ${IFACE_NAME} interface at ${BITRATE} bps automatically on plug-in.
+# Auto-generated by setup_can2_udev.sh
+[Unit]
+Description=Bring up ${IFACE_NAME} at ${BITRATE} bps
+After=sys-subsystem-net-devices-${IFACE_NAME}.device
+BindsTo=sys-subsystem-net-devices-${IFACE_NAME}.device
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# '-' prefix means ignore failure (interface may already be down)
+ExecStartPre=-/usr/sbin/ip link set ${IFACE_NAME} down
+ExecStart=/usr/sbin/ip link set ${IFACE_NAME} type can bitrate ${BITRATE}
+ExecStart=/usr/sbin/ip link set up ${IFACE_NAME}
+ExecStop=-/usr/sbin/ip link set down ${IFACE_NAME}
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+# systemd starts this service automatically when the ${IFACE_NAME} device unit appears
+WantedBy=sys-subsystem-net-devices-${IFACE_NAME}.device
+EOF
+    info "Service    → ${SERVICE_FILE}"
+}
+
+# ── install ───────────────────────────────────────────────────────────────────
+install() {
+    require_root
+
+    detect_device   # populates DETECTED_* globals
+
+    echo ""
+    div
+    printf "  ${BOLD}%-14s${NC} %s\n" "Model:"      "${DETECTED_MODEL:-unknown}"
+    printf "  ${BOLD}%-14s${NC} %s\n" "USB ID:"     "${DETECTED_VENDOR:-?}:${DETECTED_PRODUCT:-?}"
+    printf "  ${BOLD}%-14s${NC} %s\n" "Serial:"     "${DETECTED_SERIAL:-(none)}"
+    printf "  ${BOLD}%-14s${NC} %s → %s\n" "Rename:" "$DETECTED_IFACE" "$IFACE_NAME"
+    printf "  ${BOLD}%-14s${NC} %s bps\n" "Auto bitrate:" "$BITRATE"
+    printf "  ${BOLD}%-14s${NC} %s\n" "Files:"      "${LINK_FILE}"
+    printf "  ${BOLD}%-14s${NC} %s\n" ""            "${UDEV_RULE}"
+    printf "  ${BOLD}%-14s${NC} %s\n" ""            "${SERVICE_FILE}"
+    div
+    echo ""
+    read -rp "  Install all rules? [Y/n]: " confirm
+    [[ "${confirm,,}" =~ ^(y|yes|)$ ]] || { warn "Aborted."; exit 0; }
+    echo ""
+
+    write_link_file
+    write_udev_rule
+    write_service
+
+    # Reload everything and enable the service
+    systemctl daemon-reload
+    # Enable: creates WantedBy symlink so systemd auto-starts when can2 device appears
+    systemctl enable can2-up.service
+    udevadm control --reload-rules
+    udevadm trigger --subsystem-match=net --action=add
+    systemctl restart systemd-networkd 2>/dev/null || true
+    info "Rules reloaded, service enabled."
+
+    # Live-rename and bring up the interface that was just detected
+    local live_iface="$DETECTED_IFACE"
+    if ip link show "$live_iface" &>/dev/null && [[ "$live_iface" != "$IFACE_NAME" ]]; then
+        info "Renaming live interface ${live_iface} → ${IFACE_NAME}..."
+        ip link set "$live_iface" down
+        ip link set "$live_iface" name "$IFACE_NAME"
+    fi
+
+    if ip link show "$IFACE_NAME" &>/dev/null; then
+        info "Bringing up ${IFACE_NAME} at ${BITRATE} bps..."
+        ip link set "$IFACE_NAME" down 2>/dev/null || true
+        ip link set "$IFACE_NAME" type can bitrate "$BITRATE"
+        ip link set up "$IFACE_NAME"
+        info "$(ip -details link show "$IFACE_NAME" | grep -E 'can|state' | xargs)"
+    fi
+
+    echo ""
+    div
+    info "✅ Setup complete!"
+    echo -e "   Plug in the adapter at any time — it will appear as ${BOLD}${IFACE_NAME}${NC} and"
+    echo -e "   come up automatically at ${BOLD}${BITRATE} bps${NC}."
+    echo -e "   Check status: ${CYAN}sudo $0 status${NC}"
+    div
+}
+
+# ── uninstall ─────────────────────────────────────────────────────────────────
+uninstall() {
+    require_root
+    local removed=0
+
+    for f in "$LINK_FILE" "$UDEV_RULE" "$SERVICE_FILE"; do
+        if [[ -f "$f" ]]; then
+            rm "$f"
+            info "Removed $f"
+            (( removed++ )) || true
+        else
+            warn "Not found (skipped): $f"
+        fi
+    done
+
+    if [[ $removed -gt 0 ]]; then
+        systemctl disable can2-up.service 2>/dev/null || true
+        systemctl daemon-reload
+        udevadm control --reload-rules
+        info "Rules reloaded. Unplug and replug the adapter to revert to default naming."
+    fi
+
+    # Bring down the live interface if it's up
+    if ip link show "$IFACE_NAME" &>/dev/null; then
+        ip link set down "$IFACE_NAME" 2>/dev/null || true
+        info "${IFACE_NAME} brought down."
+    fi
+}
+
+# ── status ────────────────────────────────────────────────────────────────────
+status() {
+    echo ""
+    for f in "$LINK_FILE" "$UDEV_RULE" "$SERVICE_FILE"; do
+        step "$f"
+        if [[ -f "$f" ]]; then
+            sed 's/^/    /' "$f"
+        else
+            echo -e "    ${YELLOW}(not installed)${NC}"
+        fi
+        echo ""
+    done
+
+    step "Live CAN interfaces:"
+    ip -details link show type can 2>/dev/null || echo -e "  ${YELLOW}No CAN interfaces found.${NC}"
+
+    echo ""
+    step "Service state:"
+    systemctl status can2-up.service --no-pager 2>/dev/null | head -10 || \
+        echo -e "  ${YELLOW}Service not loaded.${NC}"
+}
+
+# ── entry point ───────────────────────────────────────────────────────────────
+case "${1:-install}" in
+    install)   install ;;
+    uninstall) uninstall ;;
+    status)    status ;;
+    *)
+        echo -e "Usage: ${BOLD}sudo $0 {install|uninstall|status}${NC}"
+        echo ""
+        echo "  install    Detect USB-CAN adapter interactively, install rename + auto-up rules"
+        echo "  uninstall  Remove all installed rules and service"
+        echo "  status     Show all rule files + live interface state"
+        exit 1
+        ;;
+esac
