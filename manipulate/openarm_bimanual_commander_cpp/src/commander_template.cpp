@@ -18,6 +18,8 @@
 #include <my_robot_interfaces/action/go_to_home.hpp>
 #include <my_robot_interfaces/action/go_to_pose_quaternion.hpp>
 #include <my_robot_interfaces/action/set_joint_position.hpp>
+#include <my_robot_interfaces/srv/get_ee_pose.hpp>
+#include <my_robot_interfaces/srv/get_joint_states.hpp>
 #include <control_msgs/action/gripper_command.hpp>
 #include <moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>
 #include <moveit/robot_state/robot_state.hpp>
@@ -38,6 +40,8 @@ using GoalHandleGoToPoseQuaternion = rclcpp_action::ServerGoalHandle<GoToPoseQua
 using SetJointPosition = my_robot_interfaces::action::SetJointPosition;
 using GoalHandleSetJointPosition = rclcpp_action::ServerGoalHandle<SetJointPosition>;
 using GripperCommand = control_msgs::action::GripperCommand;
+using GetEEPose = my_robot_interfaces::srv::GetEEPose;
+using GetJointStates = my_robot_interfaces::srv::GetJointStates;
 
 using namespace std::placeholders;
 
@@ -57,32 +61,52 @@ public:
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
         // 2. Initialize Groups (both arms and grippers)
-        left_arm_     = std::make_shared<MoveGroupInterface>(node_, "left_arm");
-        right_arm_    = std::make_shared<MoveGroupInterface>(node_, "right_arm");
-        left_gripper_ = std::make_shared<MoveGroupInterface>(node_, "left_gripper");
-        right_gripper_= std::make_shared<MoveGroupInterface>(node_, "right_gripper");
+        left_arm_      = std::make_shared<MoveGroupInterface>(node_, "left_arm");
+        right_arm_     = std::make_shared<MoveGroupInterface>(node_, "right_arm");
+        left_gripper_  = std::make_shared<MoveGroupInterface>(node_, "left_gripper");
+        right_gripper_ = std::make_shared<MoveGroupInterface>(node_, "right_gripper");
+        left_arm_lift_  = std::make_shared<MoveGroupInterface>(node_, "left_arm_lift");
+        right_arm_lift_ = std::make_shared<MoveGroupInterface>(node_, "right_arm_lift");
+        both_arms_      = std::make_shared<MoveGroupInterface>(node_, "both_arms");
+        both_arms_lift_ = std::make_shared<MoveGroupInterface>(node_, "both_arms_lift");
 
         // Set scaling  (1.0 = full speed; lower for safety on real hardware)
         left_arm_->setMaxVelocityScalingFactor(1.0);
         left_arm_->setMaxAccelerationScalingFactor(1.0);
         right_arm_->setMaxVelocityScalingFactor(1.0);
         right_arm_->setMaxAccelerationScalingFactor(1.0);
+        left_arm_lift_->setMaxVelocityScalingFactor(1.0);
+        left_arm_lift_->setMaxAccelerationScalingFactor(1.0);
+        right_arm_lift_->setMaxVelocityScalingFactor(1.0);
+        right_arm_lift_->setMaxAccelerationScalingFactor(1.0);
+        both_arms_->setMaxVelocityScalingFactor(1.0);
+        both_arms_->setMaxAccelerationScalingFactor(1.0);
+        both_arms_lift_->setMaxVelocityScalingFactor(1.0);
+        both_arms_lift_->setMaxAccelerationScalingFactor(1.0);
 
         left_arm_->setPlanningTime(1.0);
         right_arm_->setPlanningTime(1.0);
         left_gripper_->setPlanningTime(1.0);
         right_gripper_->setPlanningTime(1.0);
+        left_arm_lift_->setPlanningTime(1.0);
+        right_arm_lift_->setPlanningTime(1.0);
+        both_arms_->setPlanningTime(1.0);
+        both_arms_lift_->setPlanningTime(1.0);
 
         left_arm_->setNumPlanningAttempts(10000);
         right_arm_->setNumPlanningAttempts(10000);
         left_gripper_->setNumPlanningAttempts(100);
         right_gripper_->setNumPlanningAttempts(100);
+        left_arm_lift_->setNumPlanningAttempts(10000);
+        right_arm_lift_->setNumPlanningAttempts(10000);
+        both_arms_->setNumPlanningAttempts(10000);
+        both_arms_lift_->setNumPlanningAttempts(10000);
 
         // 3. Gripper Action Clients (GripperActionController)
         left_gripper_client_ = rclcpp_action::create_client<GripperCommand>(
-            node_, "/left_gripper_controller/gripper_action");
+            node_, "/left_gripper_controller/gripper_cmd");
         right_gripper_client_ = rclcpp_action::create_client<GripperCommand>(
-            node_, "/right_gripper_controller/gripper_action");
+            node_, "/right_gripper_controller/gripper_cmd");
 
         // 4. Action Servers
         go_to_pose_server_ = rclcpp_action::create_server<GoToPose>(
@@ -121,24 +145,44 @@ public:
             std::bind(&Commander::handle_cancel_set_joint_position, this, _1),
             std::bind(&Commander::handle_accepted_set_joint_position, this, _1));
 
+        get_joint_states_service_ = node_->create_service<GetJointStates>(
+            "get_joint_states",
+            std::bind(&Commander::handle_get_joint_states, this, _1, _2),
+            rclcpp::ServicesQoS(),
+            callback_group_);
+
+        get_ee_pose_service_ = node_->create_service<GetEEPose>(
+            "get_ee_pose",
+            std::bind(&Commander::handle_get_ee_pose, this, _1, _2),
+            rclcpp::ServicesQoS(),
+            callback_group_);
+
         RCLCPP_INFO(node_->get_logger(), "Bimanual Commander Node Initialized");
     }
 
     // --- Helper: group selection ---
     std::shared_ptr<MoveGroupInterface> getGroup(const std::string & group_name)
     {
-        if (group_name == "left_arm")     return left_arm_;
-        if (group_name == "right_arm")    return right_arm_;
-        if (group_name == "left_gripper") return left_gripper_;
-        if (group_name == "right_gripper") return right_gripper_;
+        if (group_name == "left_arm")       return left_arm_;
+        if (group_name == "right_arm")      return right_arm_;
+        if (group_name == "left_gripper")   return left_gripper_;
+        if (group_name == "right_gripper")  return right_gripper_;
+        if (group_name == "left_arm_lift")  return left_arm_lift_;
+        if (group_name == "right_arm_lift") return right_arm_lift_;
+        if (group_name == "both_arms")      return both_arms_;
+        if (group_name == "both_arms_lift") return both_arms_lift_;
         return nullptr;
     }
 
-    // --- Helper: arm group only (for stop on cancel) ---
+    // --- Helper: arm group only (excludes grippers) ---
     std::shared_ptr<MoveGroupInterface> getArmGroup(const std::string & group_name)
     {
-        if (group_name == "left_arm")  return left_arm_;
-        if (group_name == "right_arm") return right_arm_;
+        if (group_name == "left_arm")       return left_arm_;
+        if (group_name == "right_arm")      return right_arm_;
+        if (group_name == "left_arm_lift")  return left_arm_lift_;
+        if (group_name == "right_arm_lift") return right_arm_lift_;
+        if (group_name == "both_arms")      return both_arms_;
+        if (group_name == "both_arms_lift") return both_arms_lift_;
         return nullptr;
     }
 
@@ -231,6 +275,79 @@ public:
         return false;
     }
 
+    // ========== GetJointStates Service ==========
+
+    void handle_get_joint_states(
+        const std::shared_ptr<GetJointStates::Request> request,
+        std::shared_ptr<GetJointStates::Response> response)
+    {
+        auto group = getGroup(request->group_name);
+        if (!group) {
+            response->success = false;
+            response->status  = "Invalid group: " + request->group_name;
+            return;
+        }
+
+        auto state = group->getCurrentState();
+        if (!state) {
+            response->success = false;
+            response->status  = "Failed to get current robot state";
+            return;
+        }
+        auto jmg = state->getJointModelGroup(request->group_name);
+        if (!jmg) {
+            response->success = false;
+            response->status  = "Joint model group not found: " + request->group_name;
+            return;
+        }
+        response->joint_names = jmg->getVariableNames();
+        std::vector<double> positions;
+        state->copyJointGroupPositions(jmg, positions);
+        response->joint_positions = positions;
+        response->success         = true;
+        response->status          = "OK";
+    }
+
+    // ========== GetEEPose Service ==========
+
+    void handle_get_ee_pose(
+        const std::shared_ptr<GetEEPose::Request> request,
+        std::shared_ptr<GetEEPose::Response> response)
+    {
+        auto group = getGroup(request->group_name);
+        if (!group) {
+            response->success = false;
+            response->status = "Invalid group: " + request->group_name;
+            return;
+        }
+
+        std::string frame = request->frame_id.empty() ? "base_footprint" : request->frame_id;
+        std::string ee_link = group->getEndEffectorLink();
+
+        if (ee_link.empty()) {
+            response->success = false;
+            response->status = "No end-effector link for group: " + request->group_name;
+            return;
+        }
+
+        try {
+            auto t = tf_buffer_->lookupTransform(frame, ee_link, tf2::TimePointZero);
+            response->x        = t.transform.translation.x;
+            response->y        = t.transform.translation.y;
+            response->z        = t.transform.translation.z;
+            response->qx       = t.transform.rotation.x;
+            response->qy       = t.transform.rotation.y;
+            response->qz       = t.transform.rotation.z;
+            response->qw       = t.transform.rotation.w;
+            response->frame_id = frame;
+            response->success  = true;
+            response->status   = "OK";
+        } catch (const tf2::TransformException & ex) {
+            response->success = false;
+            response->status  = std::string("TF lookup failed: ") + ex.what();
+        }
+    }
+
     // ========== GoToPose ==========
 
     rclcpp_action::GoalResponse handle_goal_pose(
@@ -252,6 +369,8 @@ public:
         (void)goal_handle;
         left_arm_->stop();
         right_arm_->stop();
+        left_arm_lift_->stop();
+        right_arm_lift_->stop();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -271,7 +390,8 @@ public:
         }
 
         group->setStartStateToCurrentState();
-        group->setPoseReferenceFrame("base_footprint");
+        std::string frame = goal->frame_id.empty() ? "base_footprint" : goal->frame_id;
+        group->setPoseReferenceFrame(frame);
         group->setGoalTolerance(0.01);
 
         tf2::Quaternion q;
@@ -347,6 +467,8 @@ public:
         (void)goal_handle;
         left_arm_->stop();
         right_arm_->stop();
+        left_arm_lift_->stop();
+        right_arm_lift_->stop();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -365,7 +487,7 @@ public:
             goal_handle->abort(result); return;
         }
 
-        std::string target_frame = "base_footprint";
+        std::string target_frame = goal->frame_id.empty() ? "base_footprint" : goal->frame_id;
         std::string source_frame = group->getEndEffectorLink();
         geometry_msgs::msg::Pose current_pose;
 
@@ -393,17 +515,23 @@ public:
         tf2::fromMsg(current_pose.orientation, q_current);
         tf2::Quaternion q_increment;
         q_increment.setRPY(goal->roll, goal->pitch, goal->yaw);
-        tf2::Quaternion q_final = q_current * q_increment;
+        // ee_frame=false: rotate around frame_id (world-fixed) axes
+        // ee_frame=true:  rotate around EEF's own (body-fixed) axes
+        tf2::Quaternion q_final = goal->ee_frame
+            ? (q_current * q_increment)
+            : (q_increment * q_current);
         q_final.normalize();
 
-        tf2::Matrix3x3 mat_rot(q_current);
         tf2::Vector3 v_offset(goal->x, goal->y, goal->z);
-        tf2::Vector3 v_offset_rotated = mat_rot * v_offset;
+        if (goal->ee_frame) {
+            // rotate offset from EEF-local into the reference frame
+            v_offset = tf2::Matrix3x3(q_current) * v_offset;
+        }
 
         geometry_msgs::msg::Pose target_pose;
-        target_pose.position.x = current_pose.position.x + v_offset_rotated.x();
-        target_pose.position.y = current_pose.position.y + v_offset_rotated.y();
-        target_pose.position.z = current_pose.position.z + v_offset_rotated.z();
+        target_pose.position.x = current_pose.position.x + v_offset.x();
+        target_pose.position.y = current_pose.position.y + v_offset.y();
+        target_pose.position.z = current_pose.position.z + v_offset.z();
         target_pose.orientation = tf2::toMsg(q_final);
 
         RCLCPP_INFO(node_->get_logger(), "[%s] Relative Target -> X:%.2f Y:%.2f Z:%.2f",
@@ -481,6 +609,8 @@ public:
         (void)goal_handle;
         left_arm_->stop();
         right_arm_->stop();
+        left_arm_lift_->stop();
+        right_arm_lift_->stop();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -500,7 +630,8 @@ public:
         }
 
         group->setStartStateToCurrentState();
-        group->setPoseReferenceFrame("base_footprint");
+        std::string frame = goal->frame_id.empty() ? "base_footprint" : goal->frame_id;
+        group->setPoseReferenceFrame(frame);
         group->setGoalTolerance(0.01);
 
         tf2::Quaternion q(goal->qx, goal->qy, goal->qz, goal->qw);
@@ -615,8 +746,8 @@ public:
         std::shared_ptr<const GoToHome::Goal> goal)
     {
         (void)uuid;
-        if (goal->group_name != "left_arm" && goal->group_name != "right_arm") {
-            RCLCPP_ERROR(node_->get_logger(), "GoToHome only supports left_arm/right_arm, got: %s",
+        if (!getArmGroup(goal->group_name)) {
+            RCLCPP_ERROR(node_->get_logger(), "GoToHome does not support group: %s",
                          goal->group_name.c_str());
             return rclcpp_action::GoalResponse::REJECT;
         }
@@ -630,6 +761,8 @@ public:
         (void)goal_handle;
         left_arm_->stop();
         right_arm_->stop();
+        left_arm_lift_->stop();
+        right_arm_lift_->stop();
         return rclcpp_action::CancelResponse::ACCEPT;
     }
 
@@ -775,6 +908,10 @@ private:
     std::shared_ptr<MoveGroupInterface> right_arm_;
     std::shared_ptr<MoveGroupInterface> left_gripper_;
     std::shared_ptr<MoveGroupInterface> right_gripper_;
+    std::shared_ptr<MoveGroupInterface> left_arm_lift_;
+    std::shared_ptr<MoveGroupInterface> right_arm_lift_;
+    std::shared_ptr<MoveGroupInterface> both_arms_;
+    std::shared_ptr<MoveGroupInterface> both_arms_lift_;
 
     std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
@@ -788,6 +925,8 @@ private:
     rclcpp_action::Server<GoToHome>::SharedPtr go_to_home_server_;
     rclcpp_action::Server<GoToPoseQuaternion>::SharedPtr go_to_pose_quat_server_;
     rclcpp_action::Server<SetJointPosition>::SharedPtr set_joint_position_server_;
+    rclcpp::Service<GetJointStates>::SharedPtr get_joint_states_service_;
+    rclcpp::Service<GetEEPose>::SharedPtr get_ee_pose_service_;
 };
 
 int main(int argc, char ** argv)

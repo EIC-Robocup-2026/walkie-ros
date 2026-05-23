@@ -1,8 +1,9 @@
-# Tolerance for joints that are slightly outside URDF position limits at
-# start-state check time.  Real hardware joints can read a few milli-radians
-# outside their nominal zero due to encoder offset / calibration drift.
-# Default in MoveIt is ~0.0001 rad which is too tight for real hardware.
-start_state_max_bounds_error: 0.01
+# NOTE: start_state_max_bounds_error was removed in MoveIt 2.12 (Jazzy).
+# CheckStartStateBounds now enforces URDF limits strictly for revolute joints —
+# there is no per-adapter tolerance.  The bounds themselves must be wide enough
+# to contain the hardware encoder reading.  See joint_limits.yaml for joint4's
+# lower bound which was widened to -0.025 rad to absorb the observed ~-0.011 rad
+# encoder offset at the hard stop.
 
 # Lift motor (TMotor AK45-10) is physically limited to ~3 cm/s sustained speed.
 # MoveIt's default allowed time = planned_duration × 1.2 + 0.5 s is far too

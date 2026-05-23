@@ -58,4 +58,16 @@ install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(PROGRAMS
+  src/commander_interactive.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME commander_interactive
+)
+
+install(PROGRAMS
+  src/commander_benchmark.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME commander_benchmark
+)
+
 ament_package()
