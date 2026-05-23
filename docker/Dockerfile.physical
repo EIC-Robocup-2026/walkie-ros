@@ -1,55 +1,177 @@
-ARG ROS_DISTRO=jazzy
-FROM osrf/ros:jazzy-desktop-full
+# =============================================================================
+# COMBINED Dockerfile
+#   Base skeleton : ZED Dockerfile (stereolabs/zed -> CUDA + ZED SDK + ROS Jazzy)
+#   Spliced in    : RealSense SDK + RealSense ROS packages from Dockerfile.physical
+#
+# WHY this base and not osrf/ros:
+#   You cannot have two FROM lines produce one merged root filesystem.
+#   The stereolabs/zed image already ships CUDA + the ZED SDK, and we install
+#   ROS Jazzy on top of it (just like the original ZED Dockerfile did).
+#   The osrf/ros base only provided "ROS pre-installed", which we reproduce
+#   here, so nothing is lost by standardizing on the ZED base.
+# =============================================================================
+FROM stereolabs/zed:5.2-gl-devel-cuda12.8-ubuntu24.04
 
-USER root
+ENV NVIDIA_DRIVER_CAPABILITIES \
+    ${NVIDIA_DRIVER_CAPABILITIES:+$NVIDIA_DRIVER_CAPABILITIES,}compute,video,utility,graphics
 
-WORKDIR /ros2_ws
-
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ROS_DISTRO=jazzy
+# From Dockerfile.physical: lets pip install into the system env on Ubuntu 24.04
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
-# ==============================================================
-# 1. Install dependencies for librealsense2 SDK
-# ==============================================================
+# -----------------------------------------------------------------------------
+# Locale (required by ROS 2)                                      [from ZED file]
+# -----------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y locales && \
+    locale-gen en_US en_US.UTF-8 && \
+    update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+ENV LANG=en_US.UTF-8
+
+# -----------------------------------------------------------------------------
+# Base utilities + ROS 2 apt repo                                 [from ZED file]
+#   NOTE: merged in the librealsense build deps from Dockerfile.physical
+#   (libssl-dev, libusb, libudev, gtk, glfw, mesa...) so the source build below
+#   has everything it needs in one apt layer.
+# -----------------------------------------------------------------------------
 RUN apt-get update && apt-get install -y \
+    curl gnupg2 lsb-release software-properties-common \
+    git wget build-essential cmake \
+    iputils-ping iproute2 telnet zstd \
+    python3-pip \
+    # ---- librealsense2 build dependencies (from Dockerfile.physical) ----
     libssl-dev libusb-1.0-0-dev libudev-dev pkg-config libgtk-3-dev \
-    git wget cmake build-essential \
     libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev at && \
+    add-apt-repository universe && \
     rm -rf /var/lib/apt/lists/*
 
-# ==============================================================
-# 2. Clone and Build librealsense2 SDK from source
-# ==============================================================
+# Add the ROS 2 apt key + repo (Jazzy on Ubuntu 24.04 / Noble)
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+        -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
+http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" \
+    > /etc/apt/sources.list.d/ros2.list
+
+# -----------------------------------------------------------------------------
+# Install ROS 2 Jazzy + dev tools                                 [from ZED file]
+# -----------------------------------------------------------------------------
+RUN apt-get update && apt-get install -y \
+    ros-${ROS_DISTRO}-desktop \
+    ros-${ROS_DISTRO}-ros-base \
+    ros-dev-tools \
+    python3-colcon-common-extensions \
+    python3-rosdep \
+    python3-rosinstall-generator \
+    python3-vcstool && \
+    rm -rf /var/lib/apt/lists/*
+
+# Optional: Point Cloud Transport + Zenoh RMW                     [from ZED file]
+RUN apt-get update && apt-get install -y \
+    ros-${ROS_DISTRO}-point-cloud-transport \
+    ros-${ROS_DISTRO}-point-cloud-transport-plugins \
+    ros-${ROS_DISTRO}-rmw-zenoh-cpp  \
+    ros-${ROS_DISTRO}-foxglove-bridge && \
+    rm -rf /var/lib/apt/lists/*
+
+# =============================================================================
+# RealSense SDK from source                              [from Dockerfile.physical]
+#   WARNING: the apt block further down also installs ros-${ROS_DISTRO}-librealsense2*,
+#   which bundles ITS OWN copy of librealsense. Running both can cause a version
+#   clash. Keep both for now (nothing deleted) but if you hit conflicts, drop
+#   ONE of them — usually the source build is unnecessary once the apt wrapper
+#   pulls librealsense2 in for you.
+# =============================================================================
 RUN git clone https://github.com/realsenseai/librealsense.git /tmp/librealsense && \
     cd /tmp/librealsense && \
     mkdir build && cd build && \
-    # Using Release mode for optimization, disabling graphical examples to save space
     cmake ../ -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=false -DBUILD_GRAPHICAL_EXAMPLES=false && \
     make -j$(nproc) install && \
     rm -rf /tmp/librealsense
 
-# ==============================================================
-# 3. Setup and Build ROS 2 Workspace
-# ==============================================================
-COPY ./ /ros2_ws/src
-
+# RealSense + teleop ROS packages                        [from Dockerfile.physical]
 RUN apt-get update && apt-get install -y \
-      python3-pip \
-      ros-dev-tools \
-      ros-${ROS_DISTRO}-teleop-twist-keyboard \
-      ros-${ROS_DISTRO}-rmw-zenoh-cpp \
-      ros-${ROS_DISTRO}-librealsense2* \
-      ros-${ROS_DISTRO}-realsense2-camera \
-      ros-${ROS_DISTRO}-realsense2-description \
-      ros-${ROS_DISTRO}-realsense2-camera-msgs && \
-      rosdep update --rosdistro $ROS_DISTRO && \
-      rosdep install --from-paths src -y -i && \
-      # Build
-      bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && \
-      colcon build --symlink-install --parallel-workers 3" && \
-      bash -c "source /ros2_ws/install/setup.bash" && \
-      # Size optimization
-      apt-get remove -y ros-dev-tools && \
-      apt-get autoremove -y && \
-      apt-get clean && \
-      rm -rf /var/lib/apt/lists/* && \
-      rm -rf $APT_CACHE_DIR
+    ros-${ROS_DISTRO}-teleop-twist-keyboard \
+    ros-${ROS_DISTRO}-librealsense2* \
+    ros-${ROS_DISTRO}-realsense2-camera \
+    ros-${ROS_DISTRO}-realsense2-description \
+    ros-${ROS_DISTRO}-realsense2-camera-msgs && \
+    rm -rf /var/lib/apt/lists/*
+
+# -----------------------------------------------------------------------------
+# Initialize rosdep                                               [from ZED file]
+# -----------------------------------------------------------------------------
+RUN rosdep init && rosdep update
+
+# -----------------------------------------------------------------------------
+# Clone and build the ZED ROS 2 Wrapper (overlay workspace)       [from ZED file]
+# -----------------------------------------------------------------------------
+WORKDIR /home/zed_deps_ws/src
+RUN git clone https://github.com/stereolabs/zed-ros2-wrapper.git
+
+WORKDIR /home/zed_deps_ws
+RUN /bin/bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash && \
+    apt-get update && \
+    rosdep install --from-paths src --ignore-src -r -y && \
+    colcon build \
+        --symlink-install \
+        --cmake-args=-DCMAKE_BUILD_TYPE=Release \
+        --parallel-workers $(nproc) \
+        --packages-skip zed_debug && \
+    rm -rf /var/lib/apt/lists/*"
+
+# -----------------------------------------------------------------------------
+# Optional: ZED examples repo (ArUco, multi-cam, RViz cfgs)       [from ZED file]
+# -----------------------------------------------------------------------------
+WORKDIR /home/zed_deps_ws/src
+RUN git clone https://github.com/stereolabs/zed-ros2-examples.git
+
+WORKDIR /home/zed_deps_ws
+RUN /bin/bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash && \
+    apt-get update && \
+    rosdep install --from-paths src --ignore-src -r -y && \
+    colcon build \
+        --symlink-install \
+        --cmake-args=-DCMAKE_BUILD_TYPE=Release \
+        --parallel-workers $(nproc) \
+        --packages-skip zed_debug zed_rgb_convert zed_topic_benchmark && \
+    rm -rf /var/lib/apt/lists/*"
+
+# =============================================================================
+# OPTIONAL: bake the robot workspace          [from Dockerfile.physical, COMMENTED]
+#   The original physical file did:  COPY ./ /ros2_ws/src  then colcon build.
+#   That only works if the BUILD CONTEXT for this image contains your robot
+#   packages. The ZED compose context is the docker folder, so a blind COPY
+#   would copy the wrong files. Your compose_physical.yml already mounts the
+#   source and runs `colcon build` at RUNTIME, so baking it here is usually
+#   redundant. Uncomment + fix the context only if you want it baked into the image.
+# -----------------------------------------------------------------------------
+# WORKDIR /ros2_ws
+# COPY ./ /ros2_ws/src
+# RUN apt-get update && \
+#     rosdep update --rosdistro $ROS_DISTRO && \
+#     rosdep install --from-paths src -y -i && \
+#     /bin/bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && \
+#                   colcon build --symlink-install --parallel-workers 3" && \
+#     rm -rf /var/lib/apt/lists/*
+
+# -----------------------------------------------------------------------------
+# Shell setup                                                     [from ZED file]
+# -----------------------------------------------------------------------------
+RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /root/.bashrc && \
+    echo "source /home/zed_deps_ws/install/setup.bash" >> /root/.bashrc && \
+    echo "alias ws='source install/local_setup.bash'" >> /root/.bashrc
+
+# -----------------------------------------------------------------------------
+# OPTIONAL size optimization              [from Dockerfile.physical, ADAPTED]
+#   The physical file removed ros-dev-tools here. DO NOT enable that blindly:
+#   your compose_physical.yml runs `colcon build` at RUNTIME, which needs
+#   colcon (shipped by ros-dev-tools). Removing it would break runtime builds.
+#   The safe cleanup (autoremove + clean) is kept; the dev-tools removal is left
+#   commented so you can decide based on whether you build at runtime.
+# -----------------------------------------------------------------------------
+RUN apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/*
+# RUN apt-get remove -y ros-dev-tools && apt-get autoremove -y && apt-get clean
+
+ENV SHELL=/bin/bash
+WORKDIR /home/ws
+CMD ["/bin/bash"]
