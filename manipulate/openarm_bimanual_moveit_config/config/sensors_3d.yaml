@@ -1,0 +1,23 @@
+# 3D sensor config for MoveIt's OccupancyMapMonitor.
+#
+# Uses the "named sensor" layout (list of names + per-name scalar params)
+# because rclpy can't pass a list-of-dicts as a ROS 2 parameter — declaring it
+# inline (the newer flat list-of-dicts style) fails with
+# "Failed to handle type {...}" at move_group startup.
+#
+# The ZED head publishes the same topic name in sim (via the gz_bridge in
+# simulation/gazebo/config/gazebo/gz_bridge.yaml) and on the real robot
+# (zed_wrapper), so the default works in both. Override `head_cloud.point_cloud_topic`
+# from the launch file if a different source is needed.
+sensors:
+  - head_cloud
+
+head_cloud:
+  sensor_plugin: occupancy_map_monitor/PointCloudOctomapUpdater
+  point_cloud_topic: /zed_head/zed_node/point_cloud/cloud_registered
+  max_range: 1.5
+  point_subsample: 1
+  padding_offset: 0.02
+  padding_scale: 1.0
+  max_update_rate: 5.0
+  filtered_cloud_topic: /move_group/filtered_cloud

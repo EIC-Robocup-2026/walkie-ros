@@ -6,6 +6,7 @@ float64 roll
 float64 pitch
 float64 yaw
 bool cartesian_path
+string frame_id
 ---
 bool success
 string status

@@ -7,3 +7,6 @@
 [submodule "hardware/actuator/topic_based_ros2_control"]
 	path = hardware/actuator/topic_based_ros2_control
 	url = https://github.com/PickNikRobotics/topic_based_ros2_control.git
+[submodule "hardware/actuator/openarm/openarm_can"]
+	path = hardware/actuator/openarm/openarm_can
+	url = https://github.com/enactic/openarm_can.git
