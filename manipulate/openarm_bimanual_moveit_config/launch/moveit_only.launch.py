@@ -52,8 +52,11 @@ _HW_MAPPINGS = {
 }
 
 
-def _make_nodes(context: LaunchContext, hardware_type_lc):
+def _make_nodes(context: LaunchContext, hardware_type_lc,
+                point_cloud_topic_lc, octomap_resolution_lc):
     hardware_type = context.perform_substitution(hardware_type_lc)
+    point_cloud_topic = context.perform_substitution(point_cloud_topic_lc)
+    octomap_resolution = float(context.perform_substitution(octomap_resolution_lc))
     mappings = _HW_MAPPINGS.get(hardware_type, _HW_MAPPINGS["mock_components"])
 
     pkg_moveit = get_package_share_directory("openarm_bimanual_moveit_config")
@@ -74,6 +77,16 @@ def _make_nodes(context: LaunchContext, hardware_type_lc):
     if hardware_type not in ("gazebo", "real_robot"):
         moveit_params.pop("sensors_3d", None)
         moveit_params["octomap_resolution"] = 0.0
+    else:
+        # Octomap is anchored to base_link so voxels move with the mobile base.
+        moveit_params["octomap_frame"] = "base_link"
+        moveit_params["octomap_resolution"] = octomap_resolution
+        # Override the cloud topic at runtime; sensors_3d.yaml uses the named-sensor
+        # layout: moveit_params["<sensor_name>"]["point_cloud_topic"].
+        for _name in moveit_params.get("sensors", []) or []:
+            entry = moveit_params.get(_name)
+            if isinstance(entry, dict) and "point_cloud_topic" in entry:
+                entry["point_cloud_topic"] = point_cloud_topic
 
     # MoveItConfigsBuilder does not auto-load move_group.yaml, so merge it here.
     # Provides start_state_max_bounds_error and trajectory_execution tolerances.
@@ -110,10 +123,26 @@ def generate_launch_description():
             default_value="mock_components",
             description="Hardware backend: mock_components | gazebo | isaac | real_robot",
         ),
+        DeclareLaunchArgument(
+            "point_cloud_topic",
+            default_value="/zed_head/zed_node/point_cloud/cloud_registered",
+            description="PointCloud2 topic fed to the MoveIt octomap updater "
+                        "(same name in sim via gz_bridge and on real ZED).",
+        ),
+        DeclareLaunchArgument(
+            "octomap_resolution",
+            default_value="0.05",
+            description="Octomap voxel size in metres.",
+        ),
     ]
 
     hardware_type = LaunchConfiguration("hardware_type")
+    point_cloud_topic = LaunchConfiguration("point_cloud_topic")
+    octomap_resolution = LaunchConfiguration("octomap_resolution")
 
-    nodes_func = OpaqueFunction(function=_make_nodes, args=[hardware_type])
+    nodes_func = OpaqueFunction(
+        function=_make_nodes,
+        args=[hardware_type, point_cloud_topic, octomap_resolution],
+    )
 
     return LaunchDescription(declared_arguments + [nodes_func])
