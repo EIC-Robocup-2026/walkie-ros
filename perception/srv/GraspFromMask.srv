@@ -1,0 +1,21 @@
+# REQUEST
+sensor_msgs/Image mask
+int32 tracker_id
+vision_msgs/BoundingBox2D bbox
+int32 num_frames
+float32 score_threshold
+int32 max_grasps
+---
+# RESPONSE
+geometry_msgs/PoseArray poses
+float32[] scores
+float32[] widths
+bool success
+string message
+float32 inference_ms
+float32 total_ms
+int32 points_extracted
+int32 points_fed
+int32 grasps_raw
+int32 grasps_returned
+int32 frames_used
