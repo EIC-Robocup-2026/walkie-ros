@@ -3,17 +3,27 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist, TwistStamped
 from sensor_msgs.msg import Joy
+from action_msgs.srv import CancelGoal
+from action_msgs.msg import GoalInfo
+from unique_identifier_msgs.msg import UUID
+
+# Nav2 action servers whose goals will be cancelled when the A button is pressed
+_NAV2_ACTION_SERVERS = [
+    '/navigate_to_pose',
+    '/navigate_through_poses',
+]
 
 class JoyToTwist(Node):
     """
     Subscribes to sensor_msgs/Joy and publishes a Twist message to /cmd_vel.
     This version supports omnidirectional control (linear.x, linear.y, angular.z)
     and includes separate acceleration and deceleration limits for smooth, safe motion.
-    
+
     Control Mapping:
-    - Left Stick Up/Down (Axis 1): linear.x (Forward/Backward)
-    - Left Stick Left/Right (Axis 0): linear.y (Strafe Left/Right)
-    - Right Stick Left/Right (Axis 3): angular.z (Yaw)
+    - Left Stick Up/Down  (Axis 1): linear.x  (Forward/Backward)
+    - Left Stick L/R      (Axis 0): linear.y  (Strafe Left/Right)
+    - Right Stick L/R     (Axis 3): angular.z (Yaw)
+    - A button            (Btn  0): Cancel all active Nav2 navigation goals
     """
     def __init__(self):
         super().__init__('joy_teleop_node')
@@ -32,14 +42,16 @@ class JoyToTwist(Node):
         self.declare_parameter('linear_axis', 1)
         self.declare_parameter('angular_axis', 3)
         self.declare_parameter('strafe_axis', 0)
-        
+        # Button index for "cancel navigation" (0 = A on Xbox / X on PlayStation)
+        self.declare_parameter('cancel_nav_button', 0)
+
         # New: Separate Acceleration and Deceleration limits (max change per second)
         # Linear motion (m/s^2)
-        self.declare_parameter('accel_linear_rate', 0.2) 
-        self.declare_parameter('decel_linear_rate', 0.8) 
+        self.declare_parameter('accel_linear_rate', 0.2)
+        self.declare_parameter('decel_linear_rate', 0.8)
         # Angular motion (rad/s^2)
-        self.declare_parameter('accel_angular_rate', 1.0) 
-        self.declare_parameter('decel_angular_rate', 4.0) 
+        self.declare_parameter('accel_angular_rate', 1.0)
+        self.declare_parameter('decel_angular_rate', 4.0)
 
         self.declare_parameter('deadzone', 0.05)
         self.deadzone = self.get_parameter('deadzone').get_parameter_value().double_value
@@ -49,31 +61,67 @@ class JoyToTwist(Node):
         self.linear_axis = self.get_parameter('linear_axis').get_parameter_value().integer_value
         self.angular_axis = self.get_parameter('angular_axis').get_parameter_value().integer_value
         self.strafe_axis = self.get_parameter('strafe_axis').get_parameter_value().integer_value
-        
+        self.cancel_nav_button = self.get_parameter('cancel_nav_button').get_parameter_value().integer_value
+
         self.accel_linear_rate = self.get_parameter('accel_linear_rate').get_parameter_value().double_value
         self.decel_linear_rate = self.get_parameter('decel_linear_rate').get_parameter_value().double_value
         self.accel_angular_rate = self.get_parameter('accel_angular_rate').get_parameter_value().double_value
         self.decel_angular_rate = self.get_parameter('decel_angular_rate').get_parameter_value().double_value
-        
+
+        # --- Nav2 cancel service clients (one per action server) ---
+        self._cancel_clients = {
+            ns: self.create_client(CancelGoal, f'{ns}/_action/cancel_goal')
+            for ns in _NAV2_ACTION_SERVERS
+        }
+
         # --- State Variables for Acceleration Profile ---
         # Stores the velocity published in the last cycle
-        self.last_twist = Twist() 
+        self.last_twist = Twist()
         # Stores the timestamp of the last update
-        self.last_time = self.get_clock().now() 
+        self.last_time = self.get_clock().now()
+        # Edge-detection: last known state of the cancel button (avoid repeat calls on hold)
+        self._prev_cancel_btn = 0
+
+    def _cancel_all_nav_goals(self):
+        """Send cancel-all-goals to every known Nav2 action server."""
+        req = CancelGoal.Request()
+        # Empty GoalInfo (UUID all-zeros + zero stamp) means "cancel ALL goals"
+        req.goal_info = GoalInfo()
+        req.goal_info.goal_id = UUID()  # all-zero UUID → cancel all
+        for ns, client in self._cancel_clients.items():
+            if client.service_is_ready():
+                future = client.call_async(req)
+                future.add_done_callback(
+                    lambda fut, ns=ns: self.get_logger().info(
+                        f'[cancel_nav] Cancel sent to {ns}.'
+                    )
+                )
+            else:
+                self.get_logger().warn(
+                    f'[cancel_nav] Service {ns}/_action/cancel_goal not available.'
+                )
 
     def joy_callback(self, msg):
         """
-        Processes incoming Joy messages and converts them to Twist messages 
+        Processes incoming Joy messages and converts them to Twist messages
         with acceleration limiting applied.
         """
-        
+
+        # --- A-button: cancel active navigation (rising-edge detection) ---
+        if self.cancel_nav_button < len(msg.buttons):
+            current_btn = msg.buttons[self.cancel_nav_button]
+            if current_btn == 1 and self._prev_cancel_btn == 0:
+                self.get_logger().info('[cancel_nav] A button pressed — cancelling navigation goals.')
+                self._cancel_all_nav_goals()
+            self._prev_cancel_btn = current_btn
+
         # 0. Calculate Time Elapsed (dt)
         current_time = self.get_clock().now()
         # Time in seconds (T_current - T_last)
-        dt = (current_time - self.last_time).nanoseconds / 1e9 
+        dt = (current_time - self.last_time).nanoseconds / 1e9
         if dt <= 0.0:
             return
-        self.last_time = current_time 
+        self.last_time = current_time
 
         # 1. Calculate TARGET Velocities (based on Joystick Input)
         target_twist = Twist()
