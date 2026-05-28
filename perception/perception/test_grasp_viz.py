@@ -13,8 +13,8 @@ Usage
 
   # Override ZED topics (e.g. when namespace is 'zed' not 'zed_head')
   ros2 run walkie_perception test_grasp_viz bottle \\
-    --depth  /zed/zed_node/depth/depth_registered \\
-    --info   /zed/zed_node/depth/camera_info \\
+    --depth  /zed_head/zed_node/depth/depth_registered \\
+    --info   /zed_head/zed_node/depth/camera_info \\
     --masks  /yolo/masks \\
     --dets   /yolo/tracked_detections_2d
 
@@ -42,6 +42,10 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
+import tf2_ros
+import tf2_geometry_msgs  # noqa: F401 — registers PoseStamped transform support
+
+from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import Image, CameraInfo
 from vision_msgs.msg import Detection2DArray, BoundingBox2D
 from vision_msgs.msg import Pose2D, Point2D
@@ -52,7 +56,7 @@ except ImportError:
     sys.exit("open3d not installed.  Run: uv pip install open3d")
 
 try:
-    from graspnetAPI import GraspGroup
+    from graspnetAPI.grasp import GraspGroup
 except ImportError:
     sys.exit("graspnetAPI not found.  See README §6 for setup.")
 
@@ -150,6 +154,9 @@ class GraspVizNode(Node):
         self.create_subscription(Detection2DArray, args.dets, self._det_cb, qos)
 
         self._cli = self.create_client(GraspFromMask, '/grasp/from_mask')
+
+        self._tf_buffer   = tf2_ros.Buffer()
+        self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
 
     # ── subscribers ───────────────────────────────────────────────────────────
 
@@ -274,8 +281,55 @@ class GraspVizNode(Node):
               f'fed={resp.points_fed}  '
               f'frames={resp.frames_used}')
         print(f'  raw grasps={resp.grasps_raw}  returned={resp.grasps_returned}')
-        for i, (s, w) in enumerate(zip(resp.scores, resp.widths)):
-            print(f'  [{i}] score={s:.3f}  width={w*100:.1f} cm')
+        from scipy.spatial.transform import Rotation as R
+
+        def _print_poses(poses, scores, widths, frame_id):
+            print(f'\n  frame: {frame_id}')
+            print(f'  {"#":>3}  {"score":>6}  {"width":>7}  '
+                  f'{"pos_x":>7} {"pos_y":>7} {"pos_z":>7}  '
+                  f'{"qx":>7} {"qy":>7} {"qz":>7} {"qw":>7}  '
+                  f'{"roll°":>7} {"pitch°":>7} {"yaw°":>7}')
+            print(f'  {"---":>3}  {"------":>6}  {"-------":>7}  '
+                  f'{"-------":>7} {"-------":>7} {"-------":>7}  '
+                  f'{"-------":>7} {"-------":>7} {"-------":>7} {"-------":>7}  '
+                  f'{"-------":>7} {"-------":>7} {"-------":>7}')
+            for i, (pose, s, w) in enumerate(zip(poses, scores, widths)):
+                p = pose.position
+                q = pose.orientation
+                rpy = R.from_quat([q.x, q.y, q.z, q.w]).as_euler('xyz', degrees=True)
+                print(f'  [{i:>2}]  {s:>6.3f}  {w*100:>6.1f}cm  '
+                      f'{p.x:>7.3f} {p.y:>7.3f} {p.z:>7.3f}  '
+                      f'{q.x:>7.4f} {q.y:>7.4f} {q.z:>7.4f} {q.w:>7.4f}  '
+                      f'{rpy[0]:>7.1f} {rpy[1]:>7.1f} {rpy[2]:>7.1f}')
+
+        cam_frame = resp.poses.header.frame_id
+        stamp     = resp.poses.header.stamp
+
+        print(f'\n── Camera frame poses ({cam_frame}) ──────────────────────')
+        _print_poses(resp.poses.poses, resp.scores, resp.widths, cam_frame)
+
+        # ── Try transforming to planning frame (base_link) ────────────────────
+        planning_frame = self._args.planning_frame
+        try:
+            tf = self._tf_buffer.lookup_transform(
+                planning_frame, cam_frame, stamp,
+                timeout=rclpy.duration.Duration(seconds=1.0))
+
+            base_poses = []
+            for pose in resp.poses.poses:
+                ps = PoseStamped()
+                ps.header.frame_id = cam_frame
+                ps.header.stamp    = stamp
+                ps.pose = pose
+                base_poses.append(
+                    tf2_geometry_msgs.do_transform_pose(ps, tf).pose)
+
+            print(f'\n── Planning frame poses ({planning_frame}) ──────────────────')
+            _print_poses(base_poses, resp.scores, resp.widths, planning_frame)
+
+        except Exception as e:
+            print(f'\n── Planning frame ({planning_frame}): transform unavailable ({e})')
+            print(f'   Is TF published? Check: ros2 run tf2_ros tf2_echo {planning_frame} {cam_frame}')
 
         # ── unproject point cloud ─────────────────────────────────────────────
         with self._depth_lock:
@@ -283,8 +337,12 @@ class GraspVizNode(Node):
         with self._mask_lock:
             mask_msg = self._mask_msg
 
-        depth = np.frombuffer(depth_msg.data, dtype=np.float32).reshape(
-            depth_msg.height, depth_msg.width)
+        if depth_msg.encoding == "16UC1":
+            depth = np.frombuffer(depth_msg.data, dtype=np.uint16).reshape(
+                depth_msg.height, depth_msg.width).astype(np.float32) / 1000.0
+        else:
+            depth = np.frombuffer(depth_msg.data, dtype=np.float32).reshape(
+                depth_msg.height, depth_msg.width)
         label = np.frombuffer(mask_msg.data, dtype=np.uint16).reshape(
             mask_msg.height, mask_msg.width)
         mask = (label == tid)
@@ -330,6 +388,8 @@ def main():
                         help='YOLO mask label image topic')
     parser.add_argument('--dets',  default='/yolo/tracked_detections_2d',
                         help='YOLO Detection2DArray topic')
+    parser.add_argument('--planning-frame', default='base_link',
+                        help='MoveIt planning frame to transform poses into (default: base_link)')
 
     # argparse + ros2 run: strip ROS args before parsing
     argv = [a for a in sys.argv[1:] if not a.startswith('__')]

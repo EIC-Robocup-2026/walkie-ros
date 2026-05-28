@@ -19,7 +19,7 @@ done
 
 # ── 1. Create venv ─────────────────────────────────────────────────────────────
 echo "[1/4] Creating venv at $VENV …"
-uv venv "$VENV" --python /usr/bin/python3.12 --system-site-packages
+uv venv "$VENV" --python /usr/bin/python3.12 --system-site-packages --seed --clear
 touch "$VENV/COLCON_IGNORE"
 
 # Verify ROS bindings are accessible
@@ -30,9 +30,9 @@ touch "$VENV/COLCON_IGNORE"
 echo "[2/4] Installing Python dependencies …"
 cd "$SCRIPT_DIR"
 if $GRASP; then
-  uv sync --active --extra grasp
+  VIRTUAL_ENV="$VENV" uv sync --active --extra grasp
 else
-  uv sync --active
+  VIRTUAL_ENV="$VENV" uv sync --active
 fi
 
 # ── 3. GraspNet (only when --grasp) ───────────────────────────────────────────
@@ -43,7 +43,10 @@ if $GRASP; then
   if [ ! -d "$HOME/graspnetAPI" ]; then
     git clone https://github.com/graspnet/graspnetAPI.git "$HOME/graspnetAPI"
   fi
-  "$VENV/bin/pip" install -e "$HOME/graspnetAPI" --quiet
+  # Install graspnetAPI without its pinned deps (numpy==1.23.4, transforms3d==0.3.1
+  # are incompatible with Python 3.12 — our pyproject.toml already covers them)
+  uv pip install --python "$VENV" -e "$HOME/graspnetAPI" --no-deps --quiet
+  uv pip install --python "$VENV" transforms3d --quiet
 
   # graspnet-baseline path
   PTH="$VENV/lib/python3.12/site-packages/graspnet_baseline.pth"
@@ -54,6 +57,18 @@ if $GRASP; then
       "$HOME/graspnet-baseline/pointnet2" \
       "$HOME/graspnet-baseline/knn" > "$PTH"
     echo "  graspnet-baseline registered at $PTH"
+
+    # Re-register already-compiled CUDA extensions into the new venv (no rebuild)
+    for ext in pointnet2 knn; do
+      BUILD_DIR="$HOME/graspnet-baseline/$ext/build"
+      if [ -d "$BUILD_DIR" ]; then
+        echo "  Installing $ext extension (skip-build) …"
+        (cd "$HOME/graspnet-baseline/$ext" && \
+          "$VENV/bin/python3" setup.py install --skip-build -q 2>&1 | tail -1)
+      else
+        echo "  WARNING: $ext not yet compiled — see README §2 to build CUDA extensions."
+      fi
+    done
   else
     echo "  WARNING: ~/graspnet-baseline not found."
     echo "  Clone it and build the CUDA extensions manually (see README §3)."

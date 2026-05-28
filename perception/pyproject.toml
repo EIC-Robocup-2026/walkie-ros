@@ -22,6 +22,7 @@ grasp = [
     "autolab-core",
     "imageio",
     "scikit-learn",
+    "grasp-nms",
 ]
 
 [[tool.uv.index]]
