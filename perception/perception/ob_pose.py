@@ -26,10 +26,10 @@ class ObPoseNode(Node):
         qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, depth=10)
 
         self.create_subscription(
-            CameraInfo, "/zed_head/zed_nodedepth/camera_info", self.info_callback, qos
+            CameraInfo, "/zed_head/zed_node/depth/camera_info", self.info_callback, qos
         )
         self.create_subscription(
-            Image, "/zed_head/zed_nodedepth/depth_registered", self.depth_callback, qos
+            Image, "/zed_head/zed_node/depth/depth_registered", self.depth_callback, qos
         )
         self.create_subscription(
             Detection2DArray, "/yolo/detections_2d", self.yolo_callback, 10

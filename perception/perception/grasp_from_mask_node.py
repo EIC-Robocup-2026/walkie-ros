@@ -18,11 +18,17 @@ Standby semantics:
 """
 import gc
 import os
+import sys
 import threading
 import time
 from collections import deque
 from enum import Enum
 from typing import Optional
+
+# graspnet-baseline is not installed as a package; add its root to sys.path
+_GRASPNET_ROOT = os.path.expanduser("~/graspnet-baseline")
+if _GRASPNET_ROOT not in sys.path:
+    sys.path.insert(0, _GRASPNET_ROOT)
 
 import cv2
 import numpy as np
@@ -35,13 +41,16 @@ from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 
-from geometry_msgs.msg import Point, Pose, PoseArray
+import tf2_ros
+import tf2_geometry_msgs  # noqa: F401 — registers PoseStamped transform support
+
+from geometry_msgs.msg import Point, Pose, PoseArray, PoseStamped
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2, PointField
 from std_srvs.srv import SetBool, Trigger
 from visualization_msgs.msg import Marker, MarkerArray
 
 from models.graspnet import GraspNet, pred_decode
-from graspnetAPI import GraspGroup
+from graspnetAPI.grasp import GraspGroup
 
 from walkie_perception.srv import GraspFromMask
 
@@ -71,10 +80,18 @@ class GraspFromMaskNode(Node):
         self.declare_parameter("cache_size",   10)
         self.declare_parameter("min_points",   300)
         self.declare_parameter("debug_cloud",  True)
+        self.declare_parameter("use_mask",     True)
+        self.declare_parameter("outlier_removal",      True)
+        self.declare_parameter("outlier_nb_neighbors", 20)
+        self.declare_parameter("outlier_std_ratio",    2.0)
+        self.declare_parameter("cluster_filter",       True)
+        self.declare_parameter("cluster_eps",          0.02)
+        self.declare_parameter("cluster_min_samples",  10)
         self.declare_parameter("depth_topic",
             "/zed_head/zed_node/depth/depth_registered")
         self.declare_parameter("info_topic",
             "/zed_head/zed_node/depth/camera_info")
+        self.declare_parameter("planning_frame", "base_link")
 
         p = self.get_parameter
         self.checkpoint_path = os.path.expanduser(p("checkpoint_path").value)
@@ -84,8 +101,16 @@ class GraspFromMaskNode(Node):
         self.cache_size   = p("cache_size").value
         self.min_points   = p("min_points").value
         self.debug_cloud  = p("debug_cloud").value
-        self.depth_topic  = p("depth_topic").value
-        self.info_topic   = p("info_topic").value
+        self.use_mask     = p("use_mask").value
+        self.outlier_removal      = p("outlier_removal").value
+        self.outlier_nb_neighbors = p("outlier_nb_neighbors").value
+        self.outlier_std_ratio    = p("outlier_std_ratio").value
+        self.cluster_filter      = p("cluster_filter").value
+        self.cluster_eps         = p("cluster_eps").value
+        self.cluster_min_samples = p("cluster_min_samples").value
+        self.depth_topic     = p("depth_topic").value
+        self.info_topic      = p("info_topic").value
+        self.planning_frame  = p("planning_frame").value
 
         # ── State ────────────────────────────────────────────────────
         self._state      = NodeState.LOADING
@@ -103,6 +128,10 @@ class GraspFromMaskNode(Node):
 
         # ── Inference lock (one at a time) ───────────────────────────
         self._inference_lock = threading.Lock()
+
+        # ── TF ───────────────────────────────────────────────────────
+        self._tf_buffer   = tf2_ros.Buffer()
+        self._tf_listener = tf2_ros.TransformListener(self._tf_buffer, self)
 
         # ── Check GPU ────────────────────────────────────────────────
         if not torch.cuda.is_available():
@@ -226,15 +255,104 @@ class GraspFromMaskNode(Node):
         msg.data = pts.tobytes()
         return msg
 
+    def _remove_outliers(self, pts: np.ndarray) -> np.ndarray:
+        """Density-based outlier removal with depth weighting.
+
+        Points are normalised by (z_min / z) before statistical outlier
+        removal so near-camera points are treated as denser and harder to
+        remove, while sparse far-field noise is eliminated more aggressively.
+        """
+        if len(pts) <= self.outlier_nb_neighbors:
+            return pts
+
+        z = pts[:, 2]
+        z_min = float(z.min())
+        if z_min <= 0:
+            z_min = 0.01
+
+        # Scale each point toward origin proportionally to its depth.
+        # Near points (z ≈ z_min) → weight ≈ 1.0 (unchanged).
+        # Far points (z >> z_min) → weight < 1.0 (compressed).
+        weights = (z_min / np.clip(z, z_min, None)).reshape(-1, 1)
+        pts_norm = pts * weights
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pts_norm)
+        _, inlier_idx = pcd.remove_statistical_outlier(
+            nb_neighbors=self.outlier_nb_neighbors,
+            std_ratio=self.outlier_std_ratio,
+        )
+        return pts[inlier_idx]
+
+    def _keep_dominant_cluster(self, pts: np.ndarray) -> np.ndarray:
+        """DBSCAN clustering — keep the cluster with the most points.
+
+        Clusters are scored by point count weighted by mean proximity to the
+        camera (1/z), so a dense near cluster beats a slightly larger far one.
+        Noise label (-1) is always discarded.
+        """
+        if len(pts) < self.cluster_min_samples:
+            return pts
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pts)
+        labels = np.array(pcd.cluster_dbscan(
+            eps=self.cluster_eps,
+            min_points=self.cluster_min_samples,
+            print_progress=False,
+        ))
+
+        unique_labels = set(labels) - {-1}
+        if not unique_labels:
+            self.get_logger().warn(
+                "cluster_filter: no clusters found — returning all points")
+            return pts
+
+        # Score each cluster: count * mean(1/z) gives density × nearness
+        best_label, best_score = -1, -1.0
+        for lbl in unique_labels:
+            mask = labels == lbl
+            cluster_pts = pts[mask]
+            count = mask.sum()
+            mean_nearness = float(np.mean(1.0 / np.clip(cluster_pts[:, 2], 0.01, None)))
+            score = count * mean_nearness
+            if score > best_score:
+                best_score = score
+                best_label = lbl
+
+        result = pts[labels == best_label]
+        n_removed = len(pts) - len(result)
+        n_clusters = len(unique_labels)
+        self.get_logger().info(
+            f"cluster_filter: {n_clusters} cluster(s), kept label={best_label} "
+            f"({len(result)} pts), removed {n_removed} pts"
+        )
+        return result
+
+    def _bbox_mask(self, H: int, W: int, bbox) -> np.ndarray:
+        cx = int(bbox.center.position.x)
+        cy = int(bbox.center.position.y)
+        hw = max(1, int(bbox.size_x / 2))
+        hh = max(1, int(bbox.size_y / 2))
+        m = np.zeros((H, W), dtype=bool)
+        m[max(0, cy - hh):min(H, cy + hh),
+          max(0, cx - hw):min(W, cx + hw)] = True
+        return m
+
     def _unproject(
         self,
         depth_msg: Image,
         mask: np.ndarray,
     ) -> np.ndarray:
         """Unproject masked depth pixels to XYZ using pinhole model."""
-        depth = np.frombuffer(
-            depth_msg.data, dtype=np.float32
-        ).reshape(depth_msg.height, depth_msg.width)
+        if depth_msg.encoding == "16UC1":
+            depth = np.frombuffer(
+                depth_msg.data, dtype=np.uint16
+            ).reshape(depth_msg.height, depth_msg.width).astype(np.float32) / 1000.0
+        else:
+            depth = np.frombuffer(
+                depth_msg.data, dtype=np.float32
+            ).reshape(depth_msg.height, depth_msg.width)
 
         m = mask
         if m.shape != (depth_msg.height, depth_msg.width):
@@ -447,34 +565,41 @@ class GraspFromMaskNode(Node):
             )
             return response
 
-        # ── Parse mask ────────────────────────────────────────────
-        if request.mask.encoding != "16UC1":
-            response.success = False
-            response.message = (
-                f"Expected 16UC1 mask, got {request.mask.encoding}")
-            return response
+        # ── Build region mask (mask or bbox) ─────────────────────
+        depth_ref = cached[-1]
+        H, W = depth_ref.height, depth_ref.width
 
-        mask_img = np.frombuffer(
-            request.mask.data, dtype=np.uint16
-        ).reshape(request.mask.height, request.mask.width)
+        if self.use_mask and request.mask.data:
+            if request.mask.encoding != "16UC1":
+                response.success = False
+                response.message = (
+                    f"Expected 16UC1 mask, got {request.mask.encoding}")
+                return response
 
-        object_mask = mask_img == request.tracker_id
+            mask_img = np.frombuffer(
+                request.mask.data, dtype=np.uint16
+            ).reshape(request.mask.height, request.mask.width)
+            object_mask = mask_img == request.tracker_id
 
-        if object_mask.sum() < 10:
-            self.get_logger().warn(
-                f"Mask has {object_mask.sum()} pixels for "
-                f"tracker_id={request.tracker_id} — using bbox fallback"
+            if object_mask.sum() < 10:
+                self.get_logger().warn(
+                    f"Mask has {object_mask.sum()} pixels for "
+                    f"tracker_id={request.tracker_id} — falling back to bbox"
+                )
+                object_mask = self._bbox_mask(H, W, request.bbox)
+            else:
+                self.get_logger().info(
+                    f"mask mode: {object_mask.sum()} pixels for "
+                    f"tracker_id={request.tracker_id}"
+                )
+        else:
+            object_mask = self._bbox_mask(H, W, request.bbox)
+            self.get_logger().info(
+                f"bbox mode: centre=({int(request.bbox.center.position.x)},"
+                f"{int(request.bbox.center.position.y)}) "
+                f"size={int(request.bbox.size_x)}x{int(request.bbox.size_y)} "
+                f"pixels={object_mask.sum()}"
             )
-            H, W = mask_img.shape
-            cx = int(request.bbox.center.position.x)
-            cy = int(request.bbox.center.position.y)
-            hw = max(1, int(request.bbox.size_x / 2))
-            hh = max(1, int(request.bbox.size_y / 2))
-            object_mask = np.zeros((H, W), dtype=bool)
-            object_mask[
-                max(0, cy - hh) : min(H, cy + hh),
-                max(0, cx - hw) : min(W, cx + hw),
-            ] = True
 
         # ── Adaptive frame accumulation ───────────────────────────
         if request.num_frames == 0:
@@ -499,6 +624,17 @@ class GraspFromMaskNode(Node):
 
             merged = np.vstack(all_pts)
             actual_frames = n_frames
+
+            if self.outlier_removal:
+                before = len(merged)
+                merged = self._remove_outliers(merged)
+                self.get_logger().info(
+                    f"outlier removal: {before} → {len(merged)} pts "
+                    f"(removed {before - len(merged)})"
+                )
+
+            if self.cluster_filter:
+                merged = self._keep_dominant_cluster(merged)
 
             if len(merged) >= self.min_points:
                 pts = merged
@@ -601,9 +737,31 @@ class GraspFromMaskNode(Node):
             response.scores.append(float(gg.scores[i]))
             response.widths.append(float(gg.widths[i]))
 
+        # ── Transform poses to planning frame ────────────────────────
+        response.planning_frame = self.planning_frame
+        response.poses_base.header.frame_id = self.planning_frame
+        response.poses_base.header.stamp    = stamp
+        try:
+            tf = self._tf_buffer.lookup_transform(
+                self.planning_frame, frame_id, stamp,
+                timeout=Duration(seconds=0.5))
+            for pose in response.poses.poses:
+                ps = PoseStamped()
+                ps.header.frame_id = frame_id
+                ps.header.stamp    = stamp
+                ps.pose = pose
+                response.poses_base.poses.append(
+                    tf2_geometry_msgs.do_transform_pose(ps, tf).pose)
+            self.get_logger().info(
+                f"Transformed {len(response.poses_base.poses)} poses → {self.planning_frame}")
+        except Exception as e:
+            self.get_logger().warn(
+                f"TF {frame_id} → {self.planning_frame} unavailable: {e}. "
+                f"poses_base will be empty.")
+
         # ── Publish gripper visualisation markers ─────────────────
         ma  = MarkerArray()
-        lt  = Duration(seconds=5).to_msg()
+        lt  = Duration(seconds=0).to_msg()
 
         # Clear previous markers
         clr = Marker()
@@ -623,9 +781,9 @@ class GraspFromMaskNode(Node):
             width = float(gg.widths[i])
             sc    = gg.scores[i]
 
-            # GraspNet frame: col-0 = approach, col-2 = finger-spread axis
+            # GraspNet frame: col-0 = approach (x), col-1 = spread/width (y), col-2 = height (z)
             approach = rot[:, 0]
-            spread   = rot[:, 2]
+            spread   = rot[:, 1]
 
             # Geometry points
             palm      = trans - approach * palm_depth

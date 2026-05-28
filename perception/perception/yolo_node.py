@@ -57,7 +57,7 @@ class YoloNode(Node):
         default_model = os.path.join(
             get_package_share_directory('walkie_perception'), 'models', 'yolo11l-seg.pt')
         self.declare_parameter('model_path', default_model)
-        self.declare_parameter('image_topic', '/zed/zed_node/rgb/color/rect/image')
+        self.declare_parameter('image_topic', '/zed_head/zed_node/rgb/color/rect/image')
         self.declare_parameter('confidence_threshold', 0.3)
         self.declare_parameter('iou_threshold', 0.45)
         self.declare_parameter('tracker_config', 'bytetrack.yaml')

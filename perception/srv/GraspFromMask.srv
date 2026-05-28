@@ -7,7 +7,9 @@ float32 score_threshold
 int32 max_grasps
 ---
 # RESPONSE
-geometry_msgs/PoseArray poses
+geometry_msgs/PoseArray poses           # in camera frame
+geometry_msgs/PoseArray poses_base      # in planning frame (base_link by default), empty if TF unavailable
+string planning_frame                   # frame used for poses_base
 float32[] scores
 float32[] widths
 bool success
