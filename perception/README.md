@@ -79,8 +79,8 @@ ros2 run walkie_perception ob_pose
 | Topic | Type | Description |
 |---|---|---|
 | `/yolo/detections_2d` | `Detection2DArray` | 2D bounding boxes from any detector |
-| `/zed/zed_node/depth/depth_registered` | `Image` (32FC1) | ZED depth image |
-| `/zed/zed_node/depth/camera_info` | `CameraInfo` | Camera intrinsics |
+| `/zed_head/zed_node/depth/depth_registered` | `Image` (32FC1) | ZED depth image |
+| `/zed_head/zed_node/depth/camera_info` | `CameraInfo` | Camera intrinsics |
 
 **Publications (output)**
 
@@ -145,8 +145,8 @@ ros2 service call /get_3d_poses walkie_perception/srv/GetObPose \
 
 | Parameter | Default | Description |
 |---|---|---|
-| `depth_topic` | `/zed/zed_node/depth/depth_registered` | Depth image topic |
-| `info_topic` | `/zed/zed_node/depth/camera_info` | CameraInfo topic |
+| `depth_topic` | `/zed_head/zed_node/depth/depth_registered` | Depth image topic |
+| `info_topic` | `/zed_head/zed_node/depth/camera_info` | CameraInfo topic |
 | `target_frame` | `map` | Output TF frame |
 | `search_radius` | `3` | Pixel radius for median depth sampling |
 
@@ -168,7 +168,6 @@ ros2 run walkie_perception yolo_node \
 | Topic | Type | Description |
 |---|---|---|
 | `image_topic` (param) | `Image` / `CompressedImage` | RGB image from ZED |
-| `/zed_head/zed_node/depth/depth_registered` | `Image` | Used only for timestamp sync |
 
 **Publications (output)**
 
@@ -185,7 +184,7 @@ The `16UC1` mask is the key input to `grasp_from_mask`. Each pixel's value is th
 | Parameter | Default | Description |
 |---|---|---|
 | `model_path` | `models/yolo11l-seg.pt` | Path to `.pt` or `.onnx` model |
-| `image_topic` | `/zed/zed_node/rgb/color/rect/image` | RGB input topic |
+| `image_topic` | `/zed_head/zed_node/rgb/color/rect/image` | RGB input topic |
 | `confidence_threshold` | `0.3` | YOLO confidence cutoff |
 | `iou_threshold` | `0.45` | NMS IoU threshold |
 | `device` | `cuda` | `cuda`, `cuda:0`, or `cpu` |
@@ -200,7 +199,7 @@ The `16UC1` mask is the key input to `grasp_from_mask`. Each pixel's value is th
 Consumes detections and ZED depth to maintain a 3D object database with oriented bounding boxes (OBB). Handles ID reuse when ByteTrack loses and reacquires objects.
 
 ```bash
-ros2 run walkie_perception obb3d \
+ros2 run walkie_perception obb3d
 ```
 
 **Subscriptions (input)**
@@ -240,27 +239,38 @@ string message
 
 ### `grasp_from_mask` — grasp pose service (Grasp)
 
-Loads GraspNet-1Billion into GPU on startup. On each service call: unprojects the masked depth region to a point cloud, runs GraspNet inference, applies NMS + score filtering, and returns ranked grasp poses.
+Loads GraspNet-1Billion into GPU on startup. On each service call: unprojects the masked depth region to a point cloud, runs GraspNet inference, applies NMS + score filtering, and returns ranked grasp poses in both camera frame and planning frame.
 
 ```bash
-ros2 run walkie_perception grasp_from_mask
+# With YOLO mask (default — better quality)
+ros2 run walkie_perception grasp_from_mask \
+  --ros-args \
+  -p depth_topic:=/zed_head/zed_node/depth/depth_registered \
+  -p info_topic:=/zed_head/zed_node/depth/camera_info
+
+# Bounding box only (no mask required)
+ros2 run walkie_perception grasp_from_mask \
+  --ros-args \
+  -p use_mask:=false \
+  -p depth_topic:=/zed_head/zed_node/depth/depth_registered \
+  -p info_topic:=/zed_head/zed_node/depth/camera_info
 ```
 
 **Subscriptions (input)**
 
 | Topic | Type | Description |
 |---|---|---|
-| `depth_topic` (param) | `Image` (32FC1) | ZED depth — frames cached continuously |
+| `depth_topic` (param) | `Image` (32FC1 or 16UC1) | Depth frames cached continuously |
 | `info_topic` (param) | `CameraInfo` | Camera intrinsics |
 
-The node also accepts the mask and tracker ID directly in the service request — it does not subscribe to `/yolo/masks` automatically.
+Both `32FC1` (ZED, metres) and `16UC1` (RealSense, millimetres) depth encodings are supported automatically.
 
 **Publications (output)**
 
 | Topic | Type | Description |
 |---|---|---|
 | `/grasp/debug/masked_cloud` | `PointCloud2` | Points fed to GraspNet (camera frame) |
-| `/grasp/debug/grasp_markers` | `MarkerArray` | Top-10 gripper poses as LINE_LIST in RViz |
+| `/grasp/debug/grasp_markers` | `MarkerArray` | Top-10 gripper poses as LINE_LIST in RViz (permanent until next call) |
 
 **Services**
 
@@ -280,18 +290,32 @@ ros2 service call /grasp/standby std_srvs/srv/SetBool '{data: false}'
 
 | Field | Type | Description |
 |---|---|---|
-| `mask` | `Image` (16UC1) | Label image from `/yolo/masks` |
+| `mask` | `Image` (16UC1) | Label image from `/yolo/masks` — ignored when `use_mask:=false` |
 | `tracker_id` | `int32` | ByteTrack ID of the target object |
-| `bbox` | `BoundingBox2D` | Fallback ROI used if mask has fewer than 10 pixels |
+| `bbox` | `BoundingBox2D` | Bounding box ROI — used when `use_mask:=false` or mask has fewer than 10 pixels |
 | `num_frames` | `int32` | Depth frames to merge (`0` = adaptive: tries 1 → 3 → 5) |
 | `score_threshold` | `float32` | Minimum grasp score to return (`0` = no filter) |
 | `max_grasps` | `int32` | Cap on returned poses (`0` = up to 20) |
+
+**Calling with bbox only (no mask):**
+
+```bash
+# Load model first
+ros2 service call /grasp/standby std_srvs/srv/SetBool '{data: true}'
+
+# Call with bounding box — set centre and size to cover the target object
+ros2 service call /grasp/from_mask walkie_perception/srv/GraspFromMask \
+  "{tracker_id: 1, num_frames: 5, score_threshold: 0.5, max_grasps: 5,
+    bbox: {center: {position: {x: 320.0, y: 240.0}}, size_x: 200.0, size_y: 200.0}}"
+```
 
 **`/grasp/from_mask` response**
 
 | Field | Type | Description |
 |---|---|---|
-| `poses` | `PoseArray` | Grasp poses in ZED camera optical frame — position (metres) + orientation (quaternion `{x,y,z,w}`) |
+| `poses` | `PoseArray` | Grasp poses in **camera optical frame** |
+| `poses_base` | `PoseArray` | Grasp poses in **planning frame** (`base_link` by default) — empty if TF unavailable |
+| `planning_frame` | `string` | Frame used for `poses_base` |
 | `scores` | `float32[]` | Quality scores 0–1, sorted highest first |
 | `widths` | `float32[]` | Required gripper opening in metres per grasp |
 | `success` | `bool` | `true` if at least one grasp was returned |
@@ -310,6 +334,8 @@ ros2 service call /grasp/standby std_srvs/srv/SetBool '{data: false}'
 |---|---|---|
 | `depth_topic` | `/zed_head/zed_node/depth/depth_registered` | Depth image topic |
 | `info_topic` | `/zed_head/zed_node/depth/camera_info` | CameraInfo topic |
+| `planning_frame` | `base_link` | Target TF frame for `poses_base` in the response |
+| `use_mask` | `true` | `true` = use YOLO mask, `false` = use bounding box only |
 | `checkpoint_path` | `~/graspnet-baseline/logs/log_rs/checkpoint-rs.tar` | GraspNet checkpoint |
 | `num_point` | `10000` | Points sampled per inference call |
 | `num_view` | `300` | GraspNet view anchors |
@@ -317,12 +343,18 @@ ros2 service call /grasp/standby std_srvs/srv/SetBool '{data: false}'
 | `min_points` | `300` | Minimum points required to attempt inference |
 | `cache_size` | `10` | Max depth frames cached |
 | `debug_cloud` | `true` | Publish `/grasp/debug/masked_cloud` |
+| `outlier_removal` | `true` | Depth-weighted statistical outlier removal |
+| `outlier_nb_neighbors` | `20` | Neighbours for outlier removal |
+| `outlier_std_ratio` | `2.0` | Std ratio threshold for outlier removal |
+| `cluster_filter` | `true` | DBSCAN dominant cluster filter (removes background noise) |
+| `cluster_eps` | `0.02` | DBSCAN neighbourhood radius (metres) |
+| `cluster_min_samples` | `10` | DBSCAN minimum points per cluster |
 
 ---
 
 ### `test_grasp_viz` — test and visualise (Grasp)
 
-Waits for a live detection matching the target, calls `/grasp/from_mask`, unprojects the point cloud locally, and opens an Open3D window with the object cloud and gripper poses.
+Waits for a live detection matching the target, calls `/grasp/from_mask`, unprojects the point cloud locally, and opens an Open3D window with the object cloud and gripper poses. Also prints poses in both camera frame and planning frame.
 
 ```bash
 ros2 run walkie_perception test_grasp_viz bottle          # by COCO class name
@@ -330,12 +362,13 @@ ros2 run walkie_perception test_grasp_viz cell phone      # multi-word class
 ros2 run walkie_perception test_grasp_viz --id 42         # by ByteTrack ID
 ros2 run walkie_perception test_grasp_viz                 # first detected object
 
-ros2 run walkie_perception test_grasp_viz bottle --score 0.3 --grasps 5
+ros2 run walkie_perception test_grasp_viz bottle --score 0.5 --grasps 5
 
-# Override ZED namespace if not zed_head
+# Override camera topics (e.g. RealSense D455)
 ros2 run walkie_perception test_grasp_viz bottle \
-  --depth /zed/zed_node/depth/depth_registered \
-  --info  /zed/zed_node/depth/camera_info
+  --depth /camera/camera/aligned_depth_to_color/image_raw \
+  --info  /camera/camera/aligned_depth_to_color/camera_info \
+  --planning-frame base_link
 ```
 
 **Arguments**
@@ -344,19 +377,21 @@ ros2 run walkie_perception test_grasp_viz bottle \
 |---|---|
 | `class_name` | COCO class name (positional, space-separated for multi-word) |
 | `--id INT` | Target a specific ByteTrack tracker ID instead of a class name |
-| `--score FLOAT` | Minimum grasp score (default `0.1`) |
+| `--score FLOAT` | Minimum grasp score filter (default `0.1`) |
 | `--grasps INT` | Max grasps to request (default `10`) |
 | `--depth TOPIC` | Depth image topic (default `/zed_head/zed_node/depth/depth_registered`) |
 | `--info TOPIC` | CameraInfo topic (default `/zed_head/zed_node/depth/camera_info`) |
+| `--planning-frame FRAME` | TF frame to print transformed poses in (default `base_link`) |
 
 ---
 
 ## Grasp output — coordinate frame and conventions
 
-### Reference frame
+### Reference frames
 
-All poses in the `/grasp/from_mask` response are in the **ZED left camera optical frame** (`zed_left_camera_frame_optical`). The node applies no TF transform.
+The response contains poses in **two frames**:
 
+**`poses`** — camera optical frame (e.g. `zed_left_camera_frame_optical`):
 ```
        Z  (forward — depth direction)
       /
@@ -365,29 +400,28 @@ All poses in the `/grasp/from_mask` response are in the **ZED left camera optica
     |
     Y  (down)
 ```
-
 `position {x: 0.142, y: -0.031, z: 0.487}` → grasp centre is 48.7 cm in front of the camera, 14.2 cm to the right, 3.1 cm above the lens centre.
+
+**`poses_base`** — planning frame (`base_link` by default). Ready to send directly to MoveIt. Empty with a log warning if TF is unavailable.
 
 ### Quaternion orientation
 
-Orientation is a standard ROS 2 quaternion `{x, y, z, w}`, converted from the GraspNet rotation matrix by the node. It encodes the **gripper frame**:
+Orientation is a standard ROS 2 quaternion `{x, y, z, w}`, converted from the GraspNet rotation matrix. It encodes the **gripper frame**:
 
-| Axis | Meaning |
-|---|---|
-| Rotation matrix column 0 (approach) | Direction the finger tips point toward the object |
-| Rotation matrix column 1 (closing) | Axis along which the fingers close |
-| Rotation matrix column 2 (spread) | Left-to-right axis across the two fingers |
+| Rotation matrix column | Axis | Meaning |
+|---|---|---|
+| col 0 | X | Approach direction — finger tips point toward the object |
+| col 1 | Y | Spread axis — left-to-right across the two fingers |
+| col 2 | Z | Height axis — thin dimension of the gripper |
 
 ### Using the output in an arm controller
 
-Before sending to MoveIt or the arm commander, transform the pose from the camera frame to `base_link` (or whichever planning frame your arm uses) via TF2.
+Use `poses_base.poses[0]` (top-scored grasp) directly as the MoveIt end-effector target — it is already in `base_link` frame.
 
-The `widths[i]` value is the required gripper opening in metres — open the gripper to at least this width before approaching.
-
-The grasp pose is the **contact point** at the finger tips. Approach from ~10 cm back along the approach vector (rotation column 0) and advance to the pose before closing.
+The `widths[i]` value is the required gripper opening in metres.
 
 Execution order:
 1. Open gripper to `widths[0]`
-2. Move arm to pre-grasp pose (10 cm back along approach direction)
+2. Move arm to pre-grasp pose (~10 cm back along approach direction, i.e. `pose - rot[:,0] * 0.10`)
 3. Move arm to grasp pose
 4. Close gripper
