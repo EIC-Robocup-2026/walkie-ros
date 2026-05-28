@@ -53,7 +53,9 @@ services:
       bash -c "source /opt/ros/jazzy/setup.bash &&
                source /home/zed_deps_ws/install/setup.bash &&
                { ros2 run rmw_zenoh_cpp rmw_zenohd & } &&
-               exec ros2 launch zed_display_rviz2 display_zed_cam.launch.py camera_model:=zed2i"
+               { ros2 launch joy_interface joy_control_smooth.launch.py &} &&
+               { ros2 launch robot_bringup real_omnibot.launch.py &} &&
+               ros2 launch robot_navigation localization_Nav2_real.launch.py"
 
 volumes:
   zed_resources:
