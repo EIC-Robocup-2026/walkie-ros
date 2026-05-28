@@ -334,7 +334,7 @@ ros2 service call /grasp/from_mask walkie_perception/srv/GraspFromMask \
 |---|---|---|
 | `depth_topic` | `/zed_head/zed_node/depth/depth_registered` | Depth image topic |
 | `info_topic` | `/zed_head/zed_node/depth/camera_info` | CameraInfo topic |
-| `planning_frame` | `base_link` | Target TF frame for `poses_base` in the response |
+| `planning_frame` | `base_link` | Target TF frame for `poses_base` — changeable at runtime via `ros2 param set` |
 | `use_mask` | `true` | `true` = use YOLO mask, `false` = use bounding box only |
 | `checkpoint_path` | `~/graspnet-baseline/logs/log_rs/checkpoint-rs.tar` | GraspNet checkpoint |
 | `num_point` | `10000` | Points sampled per inference call |
@@ -349,6 +349,16 @@ ros2 service call /grasp/from_mask walkie_perception/srv/GraspFromMask \
 | `cluster_filter` | `true` | DBSCAN dominant cluster filter (removes background noise) |
 | `cluster_eps` | `0.02` | DBSCAN neighbourhood radius (metres) |
 | `cluster_min_samples` | `10` | DBSCAN minimum points per cluster |
+
+`planning_frame` is read on every service call so it can be changed without restarting the node:
+
+```bash
+# Change planning frame at runtime
+ros2 param set /grasp_from_mask planning_frame map
+
+# Check current value
+ros2 param get /grasp_from_mask planning_frame
+```
 
 ---
 
