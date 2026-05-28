@@ -108,9 +108,9 @@ class GraspFromMaskNode(Node):
         self.cluster_filter      = p("cluster_filter").value
         self.cluster_eps         = p("cluster_eps").value
         self.cluster_min_samples = p("cluster_min_samples").value
-        self.depth_topic     = p("depth_topic").value
-        self.info_topic      = p("info_topic").value
-        self.planning_frame  = p("planning_frame").value
+        self.depth_topic  = p("depth_topic").value
+        self.info_topic   = p("info_topic").value
+        # planning_frame is read dynamically each call — changeable via ros2 param set
 
         # ── State ────────────────────────────────────────────────────
         self._state      = NodeState.LOADING
@@ -738,12 +738,13 @@ class GraspFromMaskNode(Node):
             response.widths.append(float(gg.widths[i]))
 
         # ── Transform poses to planning frame ────────────────────────
-        response.planning_frame = self.planning_frame
-        response.poses_base.header.frame_id = self.planning_frame
+        planning_frame = self.get_parameter("planning_frame").value
+        response.planning_frame = planning_frame
+        response.poses_base.header.frame_id = planning_frame
         response.poses_base.header.stamp    = stamp
         try:
             tf = self._tf_buffer.lookup_transform(
-                self.planning_frame, frame_id, stamp,
+                planning_frame, frame_id, stamp,
                 timeout=Duration(seconds=0.5))
             for pose in response.poses.poses:
                 ps = PoseStamped()
@@ -753,10 +754,10 @@ class GraspFromMaskNode(Node):
                 response.poses_base.poses.append(
                     tf2_geometry_msgs.do_transform_pose(ps, tf).pose)
             self.get_logger().info(
-                f"Transformed {len(response.poses_base.poses)} poses → {self.planning_frame}")
+                f"Transformed {len(response.poses_base.poses)} poses → {planning_frame}")
         except Exception as e:
             self.get_logger().warn(
-                f"TF {frame_id} → {self.planning_frame} unavailable: {e}. "
+                f"TF {frame_id} → {planning_frame} unavailable: {e}. "
                 f"poses_base will be empty.")
 
         # ── Publish gripper visualisation markers ─────────────────
