@@ -477,54 +477,25 @@ class TMotorBridgeNode(Node):
             f"FollowJointTrajectory: {len(trajectory.points)} waypoints"
         )
 
-        # Process each waypoint at its scheduled time
-        start_ns = self.get_clock().now().nanoseconds
-        for point in trajectory.points:
-            if goal_handle.is_cancel_requested:
-                self.get_logger().info("FollowJointTrajectory: cancelled")
-                goal_handle.canceled()
-                return FollowJointTrajectory.Result()
-
-            pos_m = float(point.positions[idx])
-            pos_m = max(self.lift_min_cm * 0.01, min(self.lift_max_cm * 0.01, pos_m))
-
-            vel_ms = min(self.max_vel_cms, self.hw_max_vel_cms) * 0.01
-            if point.velocities and idx < len(point.velocities):
-                v = abs(float(point.velocities[idx]))
-                if v > 0:
-                    vel_ms = min(v, self.hw_max_vel_cms * 0.01)
-
-            # Update SW trajectory target
-            self.traj_target_m = pos_m
-            self.traj_max_vel_ms = vel_ms
-            self.traj_max_acc_ms2 = self.max_acc_cms2 * 0.01
-            self.traj_active = True
-
-            # Wait until this waypoint's scheduled time OR the motor has already
-            # reached this waypoint position — whichever comes first.
-            # The trajectory's time_from_start may be based on MoveIt's planner
-            # velocity (which may differ from actual hardware speed), so we must
-            # not block longer than necessary: succeed as soon as the motor arrives.
-            POSITION_TOLERANCE_M = 0.01  # 1 cm
-            point_ns = int(
-                point.time_from_start.sec * 1e9 + point.time_from_start.nanosec
-            )
-            deadline_ns = start_ns + point_ns
-            while self.get_clock().now().nanoseconds < deadline_ns:
-                if goal_handle.is_cancel_requested:
-                    goal_handle.canceled()
-                    return FollowJointTrajectory.Result()
-                # Early exit: motor reached this waypoint already
-                if (abs(self.traj_current_pos_m - pos_m) < POSITION_TOLERANCE_M
-                        and not self.traj_active):
-                    break
-                time.sleep(0.02)
-
-        # Wait for the lift to physically reach the final position
+        # The lift is a single prismatic DOF with its own SW trapezoidal
+        # profile, so following MoveIt's intermediate waypoints adds nothing:
+        # the profile to the goal is the same monotonic ramp. Crucially, the
+        # waypoint time_from_start stamps are paced by MoveIt's planner velocity
+        # (lift max_velocity x scaling in joint_limits.yaml), which is slower
+        # than the hardware can actually move. Pacing to those deadlines made
+        # execute() report success long after the lift had physically arrived.
+        # Instead, command the final target once at hardware speed and return
+        # as soon as the lift reaches it.
         final_pos_m = max(
             self.lift_min_cm * 0.01,
             min(self.lift_max_cm * 0.01, float(trajectory.points[-1].positions[idx])),
         )
+        self.traj_target_m = final_pos_m
+        self.traj_max_vel_ms = min(self.max_vel_cms, self.hw_max_vel_cms) * 0.01
+        self.traj_max_acc_ms2 = self.max_acc_cms2 * 0.01
+        self.traj_active = True
+
+        # Wait for the lift to physically reach the final position
         POSITION_TOLERANCE_M = 0.01  # 1 cm
         TIMEOUT_S = 60.0
         t0 = time.time()
