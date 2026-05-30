@@ -26,11 +26,12 @@ def generate_launch_description():
         name='joy_teleop_translator',
         output='screen',
         parameters=[
-            {'max_linear_vel': 0.45},   # Max linear speed (for both X and Y)
-            {'max_angular_vel': 1.0},  # Max angular speed
-            {'linear_axis': 1},        # Left Stick Vertical (Y-axis) -> linear.x (FWD/BWD)
-            {'angular_axis': 3},       # Right Stick Horizontal (X-axis) -> angular.z (YAW)
-            {'strafe_axis': 0},        # Left Stick Horizontal (X-axis) -> linear.y (Strafe) <-- UPDATED
+            {'max_linear_vel': 0.45},    # Max linear speed (for both X and Y)
+            {'max_angular_vel': 1.0},    # Max angular speed
+            {'linear_axis': 1},          # Left Stick Vertical  -> linear.x (FWD/BWD)
+            {'angular_axis': 3},         # Right Stick Horizontal -> angular.z (YAW)
+            {'strafe_axis': 0},          # Left Stick Horizontal -> linear.y (Strafe)
+            {'cancel_nav_button': 0},    # A button (Xbox) / X button (PS) -> Cancel Nav2 goals
         ]
     )
     

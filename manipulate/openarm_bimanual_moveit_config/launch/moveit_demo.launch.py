@@ -116,6 +116,16 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc,
         else:
             moveit_params[_k] = _v
 
+    # MoveItConfigsBuilder does not auto-load move_group.yaml, so merge it here.
+    # Provides start_state_max_bounds_error and trajectory_execution tolerances.
+    with open(os.path.join(pkg_moveit, "config", "move_group.yaml")) as _f:
+        _mg = yaml.safe_load(_f)
+    for _k, _v in _mg.items():
+        if isinstance(_v, dict) and isinstance(moveit_params.get(_k), dict):
+            moveit_params[_k].update(_v)
+        else:
+            moveit_params[_k] = _v
+
     rsp = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
