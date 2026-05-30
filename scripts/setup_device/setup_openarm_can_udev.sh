@@ -1,8 +1,8 @@
 #!/bin/bash
 # setup_openarm_can_udev.sh
 # Auto-detects the openarm USB CAN adapter (PCAN USB Pro FD) by asking you to
-# plug it in, then installs a systemd service that automatically runs
-#   openarm-can-configure-socketcan-4-arms -fd
+# plug it in, then installs a systemd service that automatically configures
+# CAN FD (bitrate 1Mbps / dbitrate 5Mbps) using native ip-link commands
 # whenever the adapter is plugged in.
 #
 # Usage:
@@ -14,8 +14,8 @@ set -euo pipefail
 trap 'echo -e "\033[0;31m[ERROR]\033[0m Script failed at line $LINENO: $BASH_COMMAND" >&2' ERR
 
 SERVICE_FILE="/etc/systemd/system/openarm-can-up.service"
-CMD="/usr/bin/openarm-can-configure-socketcan-4-arms"
-CMD_ARGS="-fd"
+BITRATE=1000000
+DBITRATE=5000000
 DETECT_TIMEOUT=30
 IFACE_SETTLE_SEC=2   # seconds to wait after first interface for multi-channel devices
 
@@ -128,7 +128,6 @@ detect_device() {
 write_service() {
     local primary_iface="${DETECTED_IFACES[0]}"
 
-    # Build After= lines for every interface beyond the first
     local after_lines=""
     local binds_lines=""
     for iface in "${DETECTED_IFACES[@]}"; do
@@ -137,11 +136,22 @@ write_service() {
         binds_lines+="BindsTo=${unit}"$'\n'
     done
 
-    # Build WantedBy= for ALL detected interfaces so the service starts
-    # as soon as the last channel device unit becomes active.
     local wantedby_lines=""
     for iface in "${DETECTED_IFACES[@]}"; do
         wantedby_lines+="WantedBy=sys-subsystem-net-devices-${iface}.device"$'\n'
+    done
+
+    # Build ExecStart lines: bring down → configure FD → bring up for each iface
+    local exec_lines=""
+    for iface in "${DETECTED_IFACES[@]}"; do
+        exec_lines+="-ExecStart=/sbin/ip link set ${iface} down"$'\n'
+        exec_lines+="ExecStart=/sbin/ip link set ${iface} type can bitrate ${BITRATE} dbitrate ${DBITRATE} fd on"$'\n'
+        exec_lines+="ExecStart=/sbin/ip link set ${iface} up"$'\n'
+    done
+
+    local stop_lines=""
+    for iface in "${DETECTED_IFACES[@]}"; do
+        stop_lines+="-ExecStop=/sbin/ip link set ${iface} down"$'\n'
     done
 
     [[ -f "$SERVICE_FILE" ]] && { cp "$SERVICE_FILE" "${SERVICE_FILE}.bak"; warn "Backed up → ${SERVICE_FILE}.bak"; }
@@ -152,15 +162,13 @@ write_service() {
 # Device  : ${DETECTED_MODEL:-unknown}  (${DETECTED_VENDOR:-?}:${DETECTED_PRODUCT:-?})
 # Ifaces  : ${DETECTED_IFACES[*]}
 [Unit]
-Description=Configure openarm CAN interfaces (FD, 1M/5M)
+Description=Configure openarm CAN interfaces (FD, ${BITRATE}/${DBITRATE})
 # Wait until ALL channels from the PCAN adapter are present
 ${after_lines}${binds_lines}
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=${CMD} ${CMD_ARGS}
-ExecStop=-/usr/sbin/ip link set ${primary_iface} down
-StandardOutput=journal
+${exec_lines}${stop_lines}StandardOutput=journal
 StandardError=journal
 
 [Install]
@@ -173,10 +181,6 @@ EOF
 # ── install ───────────────────────────────────────────────────────────────────
 install() {
     require_root
-
-    # Check the command is available
-    [[ -x "$CMD" ]] || error "Command not found: ${CMD}\nInstall the openarm package first."
-
     detect_device   # populates DETECTED_* globals
 
     echo ""
@@ -185,7 +189,7 @@ install() {
     printf "  ${BOLD}%-14s${NC} %s\n" "USB ID:"   "${DETECTED_VENDOR:-?}:${DETECTED_PRODUCT:-?}"
     printf "  ${BOLD}%-14s${NC} %s\n" "Serial:"   "${DETECTED_SERIAL:-(none — model-based match)}"
     printf "  ${BOLD}%-14s${NC} %s\n" "Channels:" "${DETECTED_IFACES[*]}"
-    printf "  ${BOLD}%-14s${NC} %s %s\n" "Command:"  "$CMD" "$CMD_ARGS"
+    printf "  ${BOLD}%-14s${NC} %s / %s bps (FD)\n" "Bitrate:"  "$BITRATE" "$DBITRATE"
     printf "  ${BOLD}%-14s${NC} %s\n" "Service:"  "$SERVICE_FILE"
     div
     echo ""
@@ -199,9 +203,15 @@ install() {
     systemctl enable openarm-can-up.service
     info "Service enabled."
 
-    # Run the command now since interfaces are already live
-    info "Running ${CMD} ${CMD_ARGS} on current interfaces..."
-    "$CMD" $CMD_ARGS && info "Interfaces configured." || warn "Command exited non-zero (may be partial — check above)."
+    # Apply native CAN FD config now since interfaces are already live
+    info "Configuring CAN FD on current interfaces..."
+    for iface in "${DETECTED_IFACES[@]}"; do
+        ip link set "$iface" down 2>/dev/null || true
+        ip link set "$iface" type can bitrate "$BITRATE" dbitrate "$DBITRATE" fd on \
+            && ip link set "$iface" up \
+            && info "  ${iface} → up (FD, ${BITRATE}/${DBITRATE})" \
+            || warn "  ${iface} → failed (check above)"
+    done
 
     echo ""
     div
