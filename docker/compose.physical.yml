@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.physical
-    container_name: zed_wrapper_container
+    container_name: robot_physical-zed_wrapper
     runtime: nvidia
 
     # Network and permissions
@@ -41,22 +41,38 @@ services:
       # X11 for RViz / ZED tools
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       # Your local workspace (optional — only if you have custom packages)
-      - ../:/home/ws/src
+      - ../../../:/ros2_ws/src
       # Persistent ZED SDK AI models (avoids re-optimizing on every run)
       - zed_resources:/usr/local/zed/resources
       - zed_settings:/usr/local/zed/settings
+      # USE NAMED VOLUMES FOR CACHING
+      - ros_build_cache:/ros2_ws/build
+      - ros_install_cache:/ros2_ws/install
+      - ros_log_cache:/ros2_ws/log
       # Device passthrough for the camera (USB)
       - /dev:/dev
 
     # Just launch the ZED 2i wrapper
     command: >
       bash -c "source /opt/ros/jazzy/setup.bash &&
-               source /home/zed_deps_ws/install/setup.bash &&
+               cd /ros2_ws &&
+               if [ ! -f install/setup.bash ]; then
+                 echo 'First run detected! Installing dependencies and building...' &&
+                 apt-get update && \
+                 rosdep update && \
+                 rosdep install --from-paths src -y -i && \
+                 source /home/zed_deps_ws/install/setup.bash && \
+                 colcon build --symlink-install --parallel-workers 1;
+               else
+                 echo 'Workspace already built! Skipping setup...' ;
+               fi &&
+               source install/setup.bash &&
                { ros2 run rmw_zenoh_cpp rmw_zenohd & } &&
-               { ros2 launch joy_interface joy_control_smooth.launch.py &} &&
-               { ros2 launch robot_bringup real_omnibot.launch.py &} &&
-               ros2 launch robot_navigation localization_Nav2_real.launch.py"
+               { ros2 launch joy_interface joy_control_smooth.launch.py & }"
 
 volumes:
   zed_resources:
   zed_settings:
+  ros_build_cache:
+  ros_install_cache:
+  ros_log_cache:

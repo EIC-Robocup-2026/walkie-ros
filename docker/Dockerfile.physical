@@ -88,14 +88,6 @@ RUN git clone https://github.com/realsenseai/librealsense.git /tmp/librealsense 
     make -j$(nproc) install && \
     rm -rf /tmp/librealsense
 
-# RealSense + teleop ROS packages                        [from Dockerfile.physical]
-RUN apt-get update && apt-get install -y \
-    ros-${ROS_DISTRO}-teleop-twist-keyboard \
-    ros-${ROS_DISTRO}-librealsense2* \
-    ros-${ROS_DISTRO}-realsense2-camera \
-    ros-${ROS_DISTRO}-realsense2-description \
-    ros-${ROS_DISTRO}-realsense2-camera-msgs && \
-    rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
 # Initialize rosdep                                               [from ZED file]
@@ -145,20 +137,37 @@ RUN /bin/bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash && \
 #   source and runs `colcon build` at RUNTIME, so baking it here is usually
 #   redundant. Uncomment + fix the context only if you want it baked into the image.
 # -----------------------------------------------------------------------------
-# WORKDIR /ros2_ws
-# COPY ./ /ros2_ws/src
-# RUN apt-get update && \
-#     rosdep update --rosdistro $ROS_DISTRO && \
-#     rosdep install --from-paths src -y -i && \
-#     /bin/bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && \
-#                   colcon build --symlink-install --parallel-workers 3" && \
-#     rm -rf /var/lib/apt/lists/*
+WORKDIR /ros2_ws
+COPY ./src /ros2_ws/src
+
+RUN apt-get update && apt-get install -y \
+      python3-pip \
+      ros-dev-tools \
+      ros-${ROS_DISTRO}-teleop-twist-keyboard \
+      ros-${ROS_DISTRO}-rmw-zenoh-cpp \
+      ros-${ROS_DISTRO}-librealsense2* \
+      ros-${ROS_DISTRO}-realsense2-camera \
+      ros-${ROS_DISTRO}-realsense2-description \
+      ros-${ROS_DISTRO}-realsense2-camera-msgs && \
+      r && \
+      rosdep install --from-paths src -y -i && \
+      # Build
+      bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && \
+      colcon build --symlink-install --parallel-workers 3" && \
+      bash -c "source /ros2_ws/install/setup.bash" && \
+      # Size optimization
+      apt-get remove -y ros-dev-tools && \
+      apt-get autoremove -y && \
+      apt-get clean && \
+      rm -rf /var/lib/apt/lists/* && \
+      rm -rf $APT_CACHE_DIR
 
 # -----------------------------------------------------------------------------
 # Shell setup                                                     [from ZED file]
 # -----------------------------------------------------------------------------
 RUN echo "source /opt/ros/${ROS_DISTRO}/setup.bash" >> /root/.bashrc && \
     echo "source /home/zed_deps_ws/install/setup.bash" >> /root/.bashrc && \
+    echo "source /home/ros2_ws/install/setup.bash" >> /root/.bashrc && \
     echo "alias ws='source install/local_setup.bash'" >> /root/.bashrc
 
 # -----------------------------------------------------------------------------
