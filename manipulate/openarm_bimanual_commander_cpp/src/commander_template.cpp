@@ -24,6 +24,7 @@
 #include <moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>
 #include <moveit/robot_state/robot_state.hpp>
 #include <thread>
+#include <map>
 
 using MoveGroupInterface = moveit::planning_interface::MoveGroupInterface;
 using PlanningSceneInterface = moveit::planning_interface::PlanningSceneInterface;
@@ -101,6 +102,21 @@ public:
         right_arm_lift_->setNumPlanningAttempts(10000);
         both_arms_->setNumPlanningAttempts(10000);
         both_arms_lift_->setNumPlanningAttempts(10000);
+
+        // Software gripper speed cap (command-position units per second).
+        // GripperActionController has no velocity limit, so controlGripper()
+        // ramps the setpoint at this rate. Lower = slower/gentler; <= 0
+        // disables the ramp (commands jump straight to the target). Tune live
+        // with the ROS param without recompiling.
+        gripper_speed_ = node_->declare_parameter<double>("gripper_speed", 1.0);
+
+        // Resting/open gripper command at startup, in GripperCommand position
+        // units (NOT joint_states units — those use a different scale). Seeds
+        // last_gripper_cmd_ so the *first* command after launch also ramps
+        // instead of jumping. Set to wherever the grippers actually rest.
+        double gripper_init = node_->declare_parameter<double>("gripper_init_pos", 0.0);
+        last_gripper_cmd_["left_gripper"]  = gripper_init;
+        last_gripper_cmd_["right_gripper"] = gripper_init;
 
         // 3. Gripper Action Clients (GripperActionController)
         left_gripper_client_ = rclcpp_action::create_client<GripperCommand>(
@@ -233,6 +249,39 @@ public:
     }
 
     // --- Gripper control via GripperActionController ---
+    // Send one GripperCommand goal. With wait_result, block up to 5 s for the
+    // controller's result and return whether it SUCCEEDED. Without it, return
+    // true as soon as the goal is accepted — used for the intermediate steps
+    // of the software ramp, which are paced by sleeps rather than results.
+    bool sendGripperGoal(rclcpp_action::Client<GripperCommand>::SharedPtr client,
+                         double position, double max_effort, bool wait_result)
+    {
+        GripperCommand::Goal goal;
+        goal.command.position   = position;
+        goal.command.max_effort = max_effort;
+
+        auto send_opts = rclcpp_action::Client<GripperCommand>::SendGoalOptions();
+        auto future = client->async_send_goal(goal, send_opts);
+
+        if (future.wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
+            RCLCPP_ERROR(node_->get_logger(), "Gripper goal send timed out");
+            return false;
+        }
+        auto goal_handle = future.get();
+        if (!goal_handle) {
+            RCLCPP_ERROR(node_->get_logger(), "Gripper goal rejected");
+            return false;
+        }
+        if (!wait_result) return true;
+
+        auto result_future = client->async_get_result(goal_handle);
+        if (result_future.wait_for(std::chrono::seconds(5)) == std::future_status::ready) {
+            auto result = result_future.get();
+            return (result.code == rclcpp_action::ResultCode::SUCCEEDED);
+        }
+        return false;
+    }
+
     bool controlGripper(const std::string & group_name, double position)
     {
         auto client = getGripperClient(group_name);
@@ -247,32 +296,47 @@ public:
             return false;
         }
 
-        GripperCommand::Goal goal;
-        goal.command.position   = position;
-        goal.command.max_effort = 50.0;
+        constexpr double MAX_EFFORT = 50.0;
 
-        RCLCPP_INFO(node_->get_logger(), "Setting %s to position %.3f", group_name.c_str(), position);
+        // GripperActionController commands position with no speed control, so
+        // we cap the gripper velocity here by ramping the setpoint at
+        // gripper_speed_ (command-position units per second, a ROS param).
+        // We ramp in command space from the last commanded position so units
+        // always match — the joint_states reading uses a different scale than
+        // the GripperCommand goal, so it cannot be used as the ramp start.
+        auto it = last_gripper_cmd_.find(group_name);
+        const bool have_start = (it != last_gripper_cmd_.end());
+        const double start = have_start ? it->second : position;
 
-        auto send_opts = rclcpp_action::Client<GripperCommand>::SendGoalOptions();
-        auto future = client->async_send_goal(goal, send_opts);
+        RCLCPP_INFO(node_->get_logger(),
+                    "Setting %s to %.3f (from %.3f @ %.2f units/s)",
+                    group_name.c_str(), position, start, gripper_speed_);
 
-        if (future.wait_for(std::chrono::seconds(2)) != std::future_status::ready) {
-            RCLCPP_ERROR(node_->get_logger(), "Gripper goal send timed out");
-            return false;
+        bool ok;
+        if (!have_start || gripper_speed_ <= 0.0 || start == position) {
+            // First command for this gripper (no known start) or ramp disabled:
+            // command directly. Subsequent calls ramp from here.
+            ok = sendGripperGoal(client, position, MAX_EFFORT, true);
+        } else {
+            const double period_s = 0.02;                 // 50 Hz ramp
+            const double step = gripper_speed_ * period_s; // units per tick
+            const double dist = std::abs(position - start);
+            const int steps = std::max(1, static_cast<int>(std::ceil(dist / step)));
+
+            ok = true;
+            for (int i = 1; i <= steps && ok; ++i) {
+                const double frac = static_cast<double>(i) / steps;
+                const double cmd = start + (position - start) * frac;
+                const bool last = (i == steps);
+                ok = sendGripperGoal(client, cmd, MAX_EFFORT, last);
+                if (!last) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                }
+            }
         }
 
-        auto goal_handle = future.get();
-        if (!goal_handle) {
-            RCLCPP_ERROR(node_->get_logger(), "Gripper goal rejected");
-            return false;
-        }
-
-        auto result_future = client->async_get_result(goal_handle);
-        if (result_future.wait_for(std::chrono::seconds(5)) == std::future_status::ready) {
-            auto result = result_future.get();
-            return (result.code == rclcpp_action::ResultCode::SUCCEEDED);
-        }
-        return false;
+        if (ok) last_gripper_cmd_[group_name] = position;
+        return ok;
     }
 
     // ========== GetJointStates Service ==========
@@ -786,8 +850,16 @@ public:
         group->setPoseReferenceFrame("base_footprint");
         group->setGoalTolerance(0.01);
 
-        std::vector<double> home_joints(group->getVariableCount(), 0.0);
-        group->setJointValueTarget(home_joints);
+        // Use the SRDF "home" state rather than a fabricated all-zeros target.
+        // For lift-inclusive groups "home" sets lift_joint = 0.7435 (the homed
+        // top of travel); forcing it to 0.0 lands the lift on its lower joint
+        // limit with the arm folded against the body, which OMPL cannot sample
+        // as a valid goal ("Insufficient states in sampleable goal region").
+        // both_arms has no "home" state defined, so fall back to all-zeros there.
+        if (!group->setNamedTarget("home")) {
+            std::vector<double> home_joints(group->getVariableCount(), 0.0);
+            group->setJointValueTarget(home_joints);
+        }
 
         MoveGroupInterface::Plan plan;
         bool plan_success = (group->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
@@ -927,6 +999,12 @@ private:
     rclcpp_action::Server<SetJointPosition>::SharedPtr set_joint_position_server_;
     rclcpp::Service<GetJointStates>::SharedPtr get_joint_states_service_;
     rclcpp::Service<GetEEPose>::SharedPtr get_ee_pose_service_;
+
+    // Software gripper speed cap and last commanded position per gripper group,
+    // used by controlGripper() to ramp the setpoint (GripperActionController
+    // has no built-in velocity limit).
+    double gripper_speed_;
+    std::map<std::string, double> last_gripper_cmd_;
 };
 
 int main(int argc, char ** argv)
