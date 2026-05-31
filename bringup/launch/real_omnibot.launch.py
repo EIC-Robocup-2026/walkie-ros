@@ -362,6 +362,18 @@ def generate_launch_description():
             parameters=[{'use_sim_time': use_sim_time}]
         )
 
+    # Relay lift_homing_node's SW-trajectory joint state into /joint_states so
+    # robot_state_publisher (and RViz) reflect real lift motion.
+    # joint_broad is configured to exclude lift_joint (real_controllers.yaml)
+    # so there is no duplicate/conflicting publisher on that joint.
+    lift_joint_state_relay = Node(
+        package='topic_tools',
+        executable='relay',
+        name='lift_joint_state_relay',
+        arguments=['lift/joint_states', '/joint_states'],
+        output='screen',
+    )
+
     ld = LaunchDescription()
     # Add launch arguments
     ld.add_action(declare_use_zed)
@@ -389,5 +401,6 @@ def generate_launch_description():
     ld.add_action(rosbridge_launch)
     ld.add_action(foxgloveBridge_cmd)
     ld.add_action(rviz2)
+    ld.add_action(lift_joint_state_relay)
 
     return ld
