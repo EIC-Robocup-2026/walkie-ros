@@ -397,7 +397,7 @@ def generate_launch_description():
     ld.add_action(current_pose_publisher)
     ld.add_action(unitree_lidar_node)
     # ld.add_action(realsense_camera_node)
-    # ld.add_action(zed_camera_launch)
+    ld.add_action(zed_camera_launch)
     ld.add_action(rosbridge_launch)
     ld.add_action(foxgloveBridge_cmd)
     ld.add_action(rviz2)
