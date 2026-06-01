@@ -720,10 +720,13 @@ class GraspFromMaskNode(Node):
         response.poses.header.frame_id = frame_id
         response.poses.header.stamp    = stamp
 
+        # GraspNet's approach axis is Z; rotate −90° around Y so X becomes approach.
+        _q_ee = R.from_euler('y', -90, degrees=True)
+
         for i in range(len(gg)):
             rot   = gg.rotation_matrices[i]
             trans = gg.translations[i]
-            quat  = R.from_matrix(rot).as_quat()
+            quat  = (R.from_matrix(rot) * _q_ee).as_quat()
 
             pose = Pose()
             pose.position.x    = float(trans[0])
