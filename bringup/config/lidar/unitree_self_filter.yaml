@@ -32,6 +32,15 @@
     invert: false
     min_sensor_dist: 0.1
 
+    # Static exclusion box (replaces the old pointcloud_self_filter crop-box node,
+    # folded into this node so there's no extra topic hop / latency). Removes all
+    # points inside an axis-aligned box in `box_filter_frame` -- here the robot's
+    # central column/mast envelope that has no collision geometry to self-filter.
+    # Set box_filter_frame to "" to disable. Values mirror the old node.
+    box_filter_frame: "base_footprint"
+    box_filter_min: [-0.45, -0.45, 0.0]
+    box_filter_max: [0.45, 0.45, 1.9]
+
     # Robot links to filter out of the cloud
     self_see_links:
       names:

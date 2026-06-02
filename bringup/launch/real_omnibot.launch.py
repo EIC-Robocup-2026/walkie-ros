@@ -205,7 +205,7 @@ def generate_launch_description():
             'ros2', 'topic', 'pub', '--times', '1',
             '/head_servo_controller/commands',
             'std_msgs/msg/Float64MultiArray',
-            '{"layout": {"dim": [{"label": "", "size": 1, "stride": 1}], "data_offset": 0}, "data": [0.0]}',
+            '{"layout": {"dim": [{"label": "", "size": 1, "stride": 1}], "data_offset": 0}, "data": [0.25]}',
         ],
         output='screen',
     )
@@ -250,6 +250,45 @@ def generate_launch_description():
         event_handler=OnProcessStart(
             target_action=controller_manager_spawner,
             on_start=[arm_gripper_spawner],
+        )
+    )
+
+    # Startup pose: drive each arm to a home configuration instead of all-zeros.
+    # Left:  joint1 = +15 deg, joint4 = +15 deg, rest 0   (0.2618 rad)
+    # Right: joint1 = -15 deg, joint4 = +15 deg, rest 0
+    # Sent once the trajectory controllers are active; time_from_start ramps the
+    # motion (use a longer time for the first power-on if joints start far away).
+    arm_home_left = ExecuteProcess(
+        cmd=[
+            'ros2', 'topic', 'pub', '--times', '1',
+            '/left_joint_trajectory_controller/joint_trajectory',
+            'trajectory_msgs/msg/JointTrajectory',
+            '{joint_names: [openarm_left_joint1, openarm_left_joint2, openarm_left_joint3, '
+            'openarm_left_joint4, openarm_left_joint5, openarm_left_joint6, openarm_left_joint7], '
+            'points: [{positions: [0.2618, 0.0, 0.0, 0.2618, 0.0, 0.0, 0.0], '
+            'time_from_start: {sec: 5, nanosec: 0}}]}',
+        ],
+        output='screen',
+        condition=IfCondition(use_arm),
+    )
+    arm_home_right = ExecuteProcess(
+        cmd=[
+            'ros2', 'topic', 'pub', '--times', '1',
+            '/right_joint_trajectory_controller/joint_trajectory',
+            'trajectory_msgs/msg/JointTrajectory',
+            '{joint_names: [openarm_right_joint1, openarm_right_joint2, openarm_right_joint3, '
+            'openarm_right_joint4, openarm_right_joint5, openarm_right_joint6, openarm_right_joint7], '
+            'points: [{positions: [-0.2618, 0.0, 0.0, 0.2618, 0.0, 0.0, 0.0], '
+            'time_from_start: {sec: 5, nanosec: 0}}]}',
+        ],
+        output='screen',
+        condition=IfCondition(use_arm),
+    )
+
+    delayed_arm_home = RegisterEventHandler(
+        event_handler=OnProcessExit(
+            target_action=arm_trajectory_spawner,
+            on_exit=[arm_home_left, arm_home_right],
         )
     )
 
@@ -301,23 +340,30 @@ def generate_launch_description():
         ]
     )
 
-    unitree_pointcloud_filter = Node(
-        package="robot_navigation",
-        executable="pointcloud_self_filter_node.py",
-        name="unitree_pointcloud_self_filter",
-        output="screen",
-        parameters=[
-            {"input_topic": "/unilidar/cloud"},
-            {"output_topic": "/unilidar/cloud/filtered"},
-            {"filter_frame": "base_footprint"},
-            {"min_x": -0.45},
-            {"max_x": 0.45},
-            {"min_y": -0.45},
-            {"max_y": 0.45},
-            {"min_z": 0.0},
-            {"max_z": 1.9},
-            {"min_range": 0.75},
-        ],
+    # Self-filter the Unitree lidar cloud using the robot's URDF collision geometry.
+    unitree_self_filter_config = os.path.join(
+        get_package_share_directory(package_name),
+        "config",
+        "lidar",
+        "unitree_self_filter.yaml",
+    )
+    unitree_self_filter = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("robot_self_filter"),
+                "launch",
+                "self_filter.launch.py",
+            )
+        ),
+        launch_arguments={
+            "robot_description": robot_description_content,
+            "filter_config": unitree_self_filter_config,
+            "in_pointcloud_topic": "/unilidar/cloud",
+            "out_pointcloud_topic": "/unilidar/cloud/filtered",
+            "lidar_sensor_type": "0",
+            "use_sim_time": use_sim_time,
+        }.items(),
+        condition=IfCondition(use_unitree_lidar),
     )
 
     # Depth camera launch (RealsenseD415)
@@ -415,13 +461,15 @@ def generate_launch_description():
     ld.add_action(delayed_joint_broad_spawner)
     ld.add_action(delayed_arm_trajectory_spawner)
     ld.add_action(delayed_arm_gripper_spawner)
+    ld.add_action(delayed_arm_home)
     # delayed_lift_controller_spawner removed — see comment above
     ld.add_action(dual_lidar_launch)
     ld.add_action(delayed_servo_controller_spawner)
     ld.add_action(delayed_head_servo_init)
     ld.add_action(current_pose_publisher)
     ld.add_action(unitree_lidar_node)
-    ld.add_action(unitree_pointcloud_filter)
+    # ld.add_action(unitree_pointcloud_filter)
+    ld.add_action(unitree_self_filter)
     # ld.add_action(realsense_camera_node)
     ld.add_action(zed_camera_launch)
     ld.add_action(rosbridge_launch)
