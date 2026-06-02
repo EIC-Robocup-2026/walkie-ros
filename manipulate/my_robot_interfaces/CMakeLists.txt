@@ -14,6 +14,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GetPosition.srv"
   "srv/GetEEPose.srv"
   "srv/GetJointStates.srv"
+  "srv/SetCollisionObject.srv"
   "action/GoToPose.action"
   "action/GoToPoseRelative.action"
   "action/GoToPoseQuaternion.action"

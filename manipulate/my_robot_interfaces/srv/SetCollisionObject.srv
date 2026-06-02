@@ -1,0 +1,25 @@
+# Add, update, or remove a box collision object in the planning scene.
+# Re-sending the same id updates that box in place. operation "remove"
+# deletes the box with the given id (pose/size ignored).
+
+string id                 # unique name (e.g. "table", "wall")
+string operation          # "add" (default if empty) or "remove"
+
+# Box pose, expressed in frame_id (defaults to base_link when empty)
+float64 x
+float64 y
+float64 z
+float64 qx
+float64 qy
+float64 qz
+float64 qw
+
+# Box full dimensions (metres)
+float64 size_x
+float64 size_y
+float64 size_z
+
+string frame_id           # default "base_link" if empty
+---
+bool success
+string message

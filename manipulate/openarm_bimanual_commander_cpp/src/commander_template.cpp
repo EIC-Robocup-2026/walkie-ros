@@ -1,6 +1,8 @@
 #include <rclcpp/rclcpp.hpp>
 #include <moveit/move_group_interface/move_group_interface.hpp>
 #include <moveit/planning_scene_interface/planning_scene_interface.hpp>
+#include <moveit_msgs/msg/collision_object.hpp>
+#include <shape_msgs/msg/solid_primitive.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2/LinearMath/Quaternion.h>
@@ -20,7 +22,9 @@
 #include <my_robot_interfaces/action/set_joint_position.hpp>
 #include <my_robot_interfaces/srv/get_ee_pose.hpp>
 #include <my_robot_interfaces/srv/get_joint_states.hpp>
+#include <my_robot_interfaces/srv/set_collision_object.hpp>
 #include <control_msgs/action/gripper_command.hpp>
+#include <std_srvs/srv/empty.hpp>
 #include <moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>
 #include <moveit/robot_state/robot_state.hpp>
 #include <thread>
@@ -43,6 +47,7 @@ using GoalHandleSetJointPosition = rclcpp_action::ServerGoalHandle<SetJointPosit
 using GripperCommand = control_msgs::action::GripperCommand;
 using GetEEPose = my_robot_interfaces::srv::GetEEPose;
 using GetJointStates = my_robot_interfaces::srv::GetJointStates;
+using SetCollisionObject = my_robot_interfaces::srv::SetCollisionObject;
 
 using namespace std::placeholders;
 
@@ -118,6 +123,18 @@ public:
         last_gripper_cmd_["left_gripper"]  = gripper_init;
         last_gripper_cmd_["right_gripper"] = gripper_init;
 
+        // Octomap clearing: when planning to a perceived object (e.g. a bottle),
+        // the object's own pointcloud voxels sit on the goal/approach and make
+        // MoveIt report the goal as in-collision -> "Planning Failed". Clearing
+        // the octomap right before planning removes those voxels so the reach
+        // can plan. Note: /clear_octomap wipes the WHOLE octomap (it repopulates
+        // from the sensor at the updater's rate), so gate it behind a parameter
+        // for moves where you want to keep the live obstacle map.
+        clear_octomap_before_plan_ =
+            node_->declare_parameter<bool>("clear_octomap_before_plan", true);
+        clear_octomap_client_ =
+            node_->create_client<std_srvs::srv::Empty>("/clear_octomap");
+
         // 3. Gripper Action Clients (GripperActionController)
         left_gripper_client_ = rclcpp_action::create_client<GripperCommand>(
             node_, "/left_gripper_controller/gripper_cmd");
@@ -173,6 +190,19 @@ public:
             rclcpp::ServicesQoS(),
             callback_group_);
 
+        // 5. Dynamic environment collision (table, wall, ...).
+        // Boxes are added/updated/removed at runtime via the set_collision_object
+        // service rather than hardcoded, so perception (or the CLI) can place them
+        // live. They are explicit CollisionObjects, so they are ALWAYS enforced
+        // during planning and are never wiped by clearOctomap().
+        planning_scene_ = std::make_shared<PlanningSceneInterface>();
+
+        set_collision_object_service_ = node_->create_service<SetCollisionObject>(
+            "set_collision_object",
+            std::bind(&Commander::handle_set_collision_object, this, _1, _2),
+            rclcpp::ServicesQoS(),
+            callback_group_);
+
         RCLCPP_INFO(node_->get_logger(), "Bimanual Commander Node Initialized");
     }
 
@@ -200,6 +230,104 @@ public:
         if (group_name == "both_arms")      return both_arms_;
         if (group_name == "both_arms_lift") return both_arms_lift_;
         return nullptr;
+    }
+
+    // --- Helper: clear the octomap before planning to a perceived object ---
+    // Fire-and-forget: we don't block on the response because the goal is just
+    // to drop the stale voxels before the next plan(); they repopulate anyway.
+    void clearOctomap()
+    {
+        if (!clear_octomap_before_plan_) return;
+        if (!clear_octomap_client_->service_is_ready()) {
+            RCLCPP_WARN(node_->get_logger(),
+                        "/clear_octomap not available — skipping octomap clear");
+            return;
+        }
+        clear_octomap_client_->async_send_request(
+            std::make_shared<std_srvs::srv::Empty::Request>());
+        RCLCPP_INFO(node_->get_logger(), "Cleared octomap before planning");
+    }
+
+    // --- Helper: build a box collision object ---
+    moveit_msgs::msg::CollisionObject makeBox(
+        const std::string & id, const std::string & frame,
+        const geometry_msgs::msg::Pose & pose,
+        double sx, double sy, double sz)
+    {
+        moveit_msgs::msg::CollisionObject obj;
+        obj.id              = id;
+        obj.header.frame_id = frame;
+        obj.operation       = moveit_msgs::msg::CollisionObject::ADD;
+
+        shape_msgs::msg::SolidPrimitive box;
+        box.type       = shape_msgs::msg::SolidPrimitive::BOX;
+        box.dimensions = {sx, sy, sz};
+
+        obj.primitives.push_back(box);
+        obj.primitive_poses.push_back(pose);
+        return obj;
+    }
+
+    // --- Service: add / update / remove a box collision object at runtime ---
+    void handle_set_collision_object(
+        const std::shared_ptr<SetCollisionObject::Request> req,
+        std::shared_ptr<SetCollisionObject::Response> res)
+    {
+        if (req->id.empty()) {
+            res->success = false;
+            res->message = "id must not be empty";
+            return;
+        }
+
+        const std::string op = req->operation.empty() ? "add" : req->operation;
+
+        if (op == "remove") {
+            planning_scene_->removeCollisionObjects({req->id});
+            res->success = true;
+            res->message = "removed '" + req->id + "'";
+            RCLCPP_INFO(node_->get_logger(), "Removed collision object '%s'",
+                        req->id.c_str());
+            return;
+        }
+
+        if (op != "add") {
+            res->success = false;
+            res->message = "unknown operation '" + op + "' (use 'add' or 'remove')";
+            return;
+        }
+
+        if (req->size_x <= 0.0 || req->size_y <= 0.0 || req->size_z <= 0.0) {
+            res->success = false;
+            res->message = "box dimensions must be > 0";
+            return;
+        }
+
+        const std::string frame = req->frame_id.empty() ? "base_link" : req->frame_id;
+
+        geometry_msgs::msg::Pose pose;
+        pose.position.x = req->x;
+        pose.position.y = req->y;
+        pose.position.z = req->z;
+        // Default to identity orientation if the caller left the quaternion zero.
+        if (req->qx == 0.0 && req->qy == 0.0 && req->qz == 0.0 && req->qw == 0.0) {
+            pose.orientation.w = 1.0;
+        } else {
+            pose.orientation.x = req->qx;
+            pose.orientation.y = req->qy;
+            pose.orientation.z = req->qz;
+            pose.orientation.w = req->qw;
+        }
+
+        // applyCollisionObjects with an existing id updates that box in place.
+        planning_scene_->applyCollisionObjects(
+            {makeBox(req->id, frame, pose, req->size_x, req->size_y, req->size_z)});
+
+        res->success = true;
+        res->message = "applied '" + req->id + "' in frame '" + frame + "'";
+        RCLCPP_INFO(node_->get_logger(),
+                    "Applied collision box '%s' @ (%.2f,%.2f,%.2f) size (%.2f,%.2f,%.2f) frame '%s'",
+                    req->id.c_str(), req->x, req->y, req->z,
+                    req->size_x, req->size_y, req->size_z, frame.c_str());
     }
 
     // --- Helper: gripper client selection ---
@@ -471,6 +599,8 @@ public:
         RCLCPP_INFO(node_->get_logger(), "[%s] Planning to X:%.2f Y:%.2f Z:%.2f",
                     goal->group_name.c_str(), goal->x, goal->y, goal->z);
 
+        clearOctomap();   // drop object voxels so reach-to-target isn't self-blocked
+
         bool plan_success = false;
         MoveGroupInterface::Plan plan;
 
@@ -711,6 +841,8 @@ public:
                     "[%s] Planning to X:%.2f Y:%.2f Z:%.2f | Q:[%.2f,%.2f,%.2f,%.2f]",
                     goal->group_name.c_str(), goal->x, goal->y, goal->z,
                     q.x(), q.y(), q.z(), q.w());
+
+        clearOctomap();   // drop object voxels so reach-to-target isn't self-blocked
 
         bool plan_success = false;
         MoveGroupInterface::Plan plan;
@@ -991,6 +1123,9 @@ private:
     rclcpp_action::Client<GripperCommand>::SharedPtr left_gripper_client_;
     rclcpp_action::Client<GripperCommand>::SharedPtr right_gripper_client_;
 
+    rclcpp::Client<std_srvs::srv::Empty>::SharedPtr clear_octomap_client_;
+    bool clear_octomap_before_plan_ = true;
+
     rclcpp_action::Server<GoToPose>::SharedPtr go_to_pose_server_;
     rclcpp_action::Server<GoToPoseRelative>::SharedPtr go_to_pose_relative_server_;
     rclcpp_action::Server<ControlGripper>::SharedPtr control_gripper_server_;
@@ -999,6 +1134,9 @@ private:
     rclcpp_action::Server<SetJointPosition>::SharedPtr set_joint_position_server_;
     rclcpp::Service<GetJointStates>::SharedPtr get_joint_states_service_;
     rclcpp::Service<GetEEPose>::SharedPtr get_ee_pose_service_;
+    rclcpp::Service<SetCollisionObject>::SharedPtr set_collision_object_service_;
+
+    std::shared_ptr<PlanningSceneInterface> planning_scene_;
 
     // Software gripper speed cap and last commanded position per gripper group,
     // used by controlGripper() to ramp the setpoint (GripperActionController
