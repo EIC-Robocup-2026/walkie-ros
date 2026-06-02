@@ -163,29 +163,21 @@ def generate_launch_description():
         arguments=["lift_controller", "--switch-timeout", "30.0"],
     )
 
-    left_arm_controller_spawner = Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=["left_joint_trajectory_controller", "--switch-timeout", "30.0"],
-    )
-
-    right_arm_controller_spawner = Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=["right_joint_trajectory_controller", "--switch-timeout", "30.0"],
-    )
-
-    left_gripper_controller_spawner = Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=["left_gripper_controller", "--switch-timeout", "30.0"],
-    )
-
-    right_gripper_controller_spawner = Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=["right_gripper_controller", "--switch-timeout", "30.0"],
-    )
+    # Arm and gripper controllers that MoveIt executes through
+    # (see openarm_bimanual_moveit_config/config/moveit_controllers.yaml).
+    arm_spawners = [
+        Node(
+            package="controller_manager",
+            executable="spawner",
+            arguments=[name, "--switch-timeout", "30.0"],
+        )
+        for name in (
+            "left_joint_trajectory_controller",
+            "right_joint_trajectory_controller",
+            "left_gripper_controller",
+            "right_gripper_controller",
+        )
+    ]
 
     delayed_spawners = RegisterEventHandler(
         OnProcessExit(
@@ -194,11 +186,8 @@ def generate_launch_description():
                 # forward_velocity_spawner,
                 omni_controller_spawner,
                 joint_broad_spawner,
-                left_arm_controller_spawner,
-                right_arm_controller_spawner,
-                left_gripper_controller_spawner,
-                right_gripper_controller_spawner,
                 lift_position_spawner,
+                *arm_spawners,
             ],
         )
     )

@@ -58,15 +58,19 @@ _HW_MAPPINGS = {
 }
 
 
-def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
+def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc,
+                point_cloud_topic_lc, octomap_resolution_lc):
     hardware_type = context.perform_substitution(hardware_type_lc)
     controllers_file = context.perform_substitution(controllers_file_lc)
+    point_cloud_topic = context.perform_substitution(point_cloud_topic_lc)
+    octomap_resolution = float(context.perform_substitution(octomap_resolution_lc))
 
     mappings = _HW_MAPPINGS.get(hardware_type, _HW_MAPPINGS["mock_components"])
 
     pkg_walkie = get_package_share_directory("walkie_description")
     pkg_moveit = get_package_share_directory("openarm_bimanual_moveit_config")
     pkg_ros_gz = get_package_share_directory("ros_gz_sim")
+    pkg_robot_sim = get_package_share_directory("robot_simulation")
 
     xacro_path = os.path.join(pkg_walkie, "robots", "gz_walkie.urdf.xacro")
     robot_description_xml = xacro.process_file(
@@ -90,6 +94,27 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
     if hardware_type not in ("gazebo", "real_robot"):
         moveit_params.pop("sensors_3d", None)
         moveit_params["octomap_resolution"] = 0.0
+    else:
+        # Octomap is anchored to base_link so voxels move with the mobile base.
+        moveit_params["octomap_frame"] = "base_link"
+        moveit_params["octomap_resolution"] = octomap_resolution
+        # Override the cloud topic at runtime so sim/real can share sensors_3d.yaml.
+        # Layout: moveit_params["<sensor_name>"]["point_cloud_topic"] — see
+        # config/sensors_3d.yaml for the named-sensor layout rationale.
+        for _name in moveit_params.get("sensors", []) or []:
+            entry = moveit_params.get(_name)
+            if isinstance(entry, dict) and "point_cloud_topic" in entry:
+                entry["point_cloud_topic"] = point_cloud_topic
+
+    # MoveItConfigsBuilder does not auto-load move_group.yaml, so merge it here.
+    # Provides start_state_max_bounds_error and trajectory_execution tolerances.
+    with open(os.path.join(pkg_moveit, "config", "move_group.yaml")) as _f:
+        _mg = yaml.safe_load(_f)
+    for _k, _v in _mg.items():
+        if isinstance(_v, dict) and isinstance(moveit_params.get(_k), dict):
+            moveit_params[_k].update(_v)
+        else:
+            moveit_params[_k] = _v
 
     # MoveItConfigsBuilder does not auto-load move_group.yaml, so merge it here.
     # Provides start_state_max_bounds_error and trajectory_execution tolerances.
@@ -135,10 +160,19 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
                 "gz_args": "-r --physics-engine gz-physics-bullet-featherstone-plugin"
             }.items(),
         )
+        # Use the project-wide gz_bridge.yaml so sensor topic names (incl. the
+        # ZED head point cloud at /zed_head/zed_node/point_cloud/cloud_registered)
+        # match the real ZED wrapper. sensors_3d.yaml relies on that naming.
+        gz_bridge_params = os.path.join(
+            pkg_robot_sim, "config", "gazebo", "gz_bridge.yaml"
+        )
         bridge = Node(
             package="ros_gz_bridge",
             executable="parameter_bridge",
-            arguments=["/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock"],
+            arguments=[
+                "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
+                f"config_file:={gz_bridge_params}",
+            ],
             output="screen",
         )
         spawn = Node(
@@ -242,14 +276,27 @@ def generate_launch_description():
                 "ros2_controllers.yaml",
             ),
         ),
+        DeclareLaunchArgument(
+            "point_cloud_topic",
+            default_value="/zed_head/zed_node/point_cloud/cloud_registered",
+            description="PointCloud2 topic fed to the MoveIt octomap updater "
+                        "(same name in sim via gz_bridge and on real ZED).",
+        ),
+        DeclareLaunchArgument(
+            "octomap_resolution",
+            default_value="0.05",
+            description="Octomap voxel size in metres.",
+        ),
     ]
 
     hardware_type = LaunchConfiguration("hardware_type")
     controllers_file = LaunchConfiguration("controllers_file")
+    point_cloud_topic = LaunchConfiguration("point_cloud_topic")
+    octomap_resolution = LaunchConfiguration("octomap_resolution")
 
     nodes_func = OpaqueFunction(
         function=_make_nodes,
-        args=[hardware_type, controllers_file],
+        args=[hardware_type, controllers_file, point_cloud_topic, octomap_resolution],
     )
 
     return LaunchDescription(declared_arguments + [nodes_func])
