@@ -466,8 +466,6 @@ def generate_launch_description():
     ld.add_action(dual_lidar_launch)
     ld.add_action(delayed_servo_controller_spawner)
     ld.add_action(delayed_head_servo_init)
-    ld.add_action(delayed_servo_controller_spawner)
-    ld.add_action(delayed_head_servo_init)
     ld.add_action(current_pose_publisher)
     ld.add_action(unitree_lidar_node)
     # ld.add_action(unitree_pointcloud_filter)
