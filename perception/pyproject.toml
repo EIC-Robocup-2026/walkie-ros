@@ -1,9 +1,35 @@
 [project]
-name = "perception"
-version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = ">=3.11"
+name = "walkie-perception"
+version = "0.0.0"
+requires-python = ">=3.12"
+# Base: covers yolo_node + obb3d (no grasp)
 dependencies = [
-    "ultralytics>=8.4.52",
+    "torch>=2.0",
+    "torchvision",
+    "ultralytics>=8.0",
+    "opencv-python-headless",
+    "open3d>=0.18",
+    "scipy",
+    "numpy>=1.26,<2.0",
 ]
+
+# Full grasp pipeline: uv sync --extra grasp
+# Also requires graspnet-baseline + graspnetAPI (see README)
+[project.optional-dependencies]
+grasp = [
+    "cvxopt",
+    "trimesh",
+    "autolab-core",
+    "imageio",
+    "scikit-learn",
+    "grasp-nms",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cuda" }]
+torchvision = [{ index = "pytorch-cuda" }]

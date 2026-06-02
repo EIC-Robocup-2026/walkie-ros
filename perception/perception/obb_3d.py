@@ -1,4 +1,5 @@
-#!/usr/bin/env python3
+#!/bin/sh
+"exec" "${PERCEPTION_VENV:-$HOME/perception-venv/bin/python3}" "$0" "$@"
 
 import json
 import threading
@@ -147,7 +148,7 @@ class OBB3D(Node):
         self.declare_parameter('marker_lifetime_s',        0.5)
         self.declare_parameter('max_frame_age_s',          0.30)
         self.declare_parameter('confidence_topic',
-            '/zed_head/zed_nodeconfidence/confidence_map')
+            '/zed_head/zed_node/confidence/confidence_map')
         self.declare_parameter('min_confidence',           70)
         self.declare_parameter('decay_miss_frames',        5)
         self.declare_parameter('ransac_enabled',           True)
@@ -229,7 +230,7 @@ class OBB3D(Node):
         qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, depth=5)
 
         self.create_subscription(CameraInfo,
-            '/zed_head/zed_nodedepth/camera_info', self._info_cb, qos)
+            '/zed_head/zed_node/depth/camera_info', self._info_cb, qos)
 
         if self.confidence_topic:
             self.create_subscription(Image, self.confidence_topic,
@@ -241,7 +242,7 @@ class OBB3D(Node):
         self.create_subscription(Image, '/yolo/masks', self._mask_cb, 10)
 
         depth_sub = message_filters.Subscriber(
-            self, Image, '/zed_head/zed_nodedepth/depth_registered',
+            self, Image, '/zed_head/zed_node/depth/depth_registered',
             qos_profile=qos)
         yolo_sub  = message_filters.Subscriber(
             self, Detection2DArray, '/yolo/tracked_detections_2d',

@@ -1,0 +1,40 @@
+obb3d:
+  ros__parameters:
+    max_frame_age_s:         0.35
+
+    confidence_topic:        "/zed/zed_node/confidence/confidence_map"
+    min_confidence:          60
+
+    min_depth_m:             0.3
+    max_depth_m:             5.0
+
+    voxel_size_m:            0.025
+    dbscan_eps_m:            0.05
+    dbscan_min_points:       10
+    max_cluster_extent_m:    2.0
+    max_dbscan_points:       2000
+
+    ransac_enabled:          true
+    ransac_distance_thr:     0.02
+    ransac_n_iterations:     100
+    ransac_min_plane_pts:    50
+
+    decay_miss_frames:       5
+    centroid_drift_thr:      0.3
+    id_reuse_distance_thr:   1.0
+
+    pca_debounce_views:      20
+    eigenvalue_flat_thr:     0.0001
+    eigenvalue_cyl_ratio:    0.2
+
+    promotion_views:         3
+    sliding_window_frames:   30
+    max_database_size:       100
+
+    iou_skip_threshold:      0.3
+    min_detection_score:     0.3
+    marker_lifetime_s:       1.0
+    per_frame_budget_ms:     50.0
+    target_frame:            "map"
+    initial_box_size_m:      0.05
+    min_cluster_points:      10

@@ -24,6 +24,7 @@ list(APPEND ${PROJECT_NAME}_MEMBER_OF_GROUPS "rosidl_interface_packages")
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GetObPose.srv"
   "srv/GetObjectCloud.srv"
+  "srv/GraspFromMask.srv"
   DEPENDENCIES geometry_msgs vision_msgs sensor_msgs
 )
 
@@ -42,28 +43,24 @@ rosidl_get_typesupport_target(cpp_typesupport_target
 target_link_libraries(ob_pose_service_cpp "${cpp_typesupport_target}")
 install(TARGETS ob_pose_service_cpp DESTINATION lib/${PROJECT_NAME})
 
-
-install(PROGRAMS perception/ob_detection.py
-  RENAME ob_detection DESTINATION lib/${PROJECT_NAME})
-
+# ── Python nodes ──────────────────────────────────────────────────────────────
 install(PROGRAMS perception/ob_pose.py
   RENAME ob_pose DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS perception/yolo_node.py
   RENAME yolo_node DESTINATION lib/${PROJECT_NAME})
 
-install(PROGRAMS
-  perception/obb_3d.py
-  RENAME obb3d
-  DESTINATION lib/${PROJECT_NAME}
-)
+install(PROGRAMS perception/obb_3d.py
+  RENAME obb3d DESTINATION lib/${PROJECT_NAME})
 
-install(DIRECTORY
-  config
-  models
-  srv
-  DESTINATION share/${PROJECT_NAME}
-)
+install(PROGRAMS perception/grasp_from_mask_node.py
+  RENAME grasp_from_mask DESTINATION lib/${PROJECT_NAME})
+
+install(PROGRAMS perception/test_grasp_viz.py
+  RENAME test_grasp_viz DESTINATION lib/${PROJECT_NAME})
+
+install(DIRECTORY models srv
+  DESTINATION share/${PROJECT_NAME})
 
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()
