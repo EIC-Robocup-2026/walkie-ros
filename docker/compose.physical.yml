@@ -1,59 +1,85 @@
-x-gpu-config: &gpu-config
-  runtime: nvidia
-  environment:
-    - USER
-    - DISPLAY=${DISPLAY:?err}
-    - NVIDIA_VISIBLE_DEVICES=all
-    - NVIDIA_DRIVER_CAPABILITIES=all
-    - XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}
-    - RMW_IMPLEMENTATION=rmw_zenoh_cpp
-
-x-cpu-config: &cpu-config
-  environment:
-    - USER
-    - DISPLAY=${DISPLAY:?err}
-    - XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}
-    - RMW_IMPLEMENTATION=rmw_zenoh_cpp
-  devices:
-    - /dev/dri
-
 services:
-  robot_simulation:
-    image: ghcr.io/eic-robocup-2026/walkie-ros/walkie-physical:feat-github_action_ci-cd
-    <<: [*cpu-config]
-    container_name: robot-physical
+  zed_wrapper:
+    image: zed-docker-zed_wrapper:latest
+    user: root
+    build:
+      context: ../../..
+      dockerfile: src/walkie-ros/docker/Dockerfile.physical
+    container_name: robot_physical-zed_wrapper
+    runtime: nvidia
+
+    # Network and permissions
     network_mode: host
     ipc: host
-    group_add:
-      - dialout
+    pid: host
     privileged: true
     tty: true
     stdin_open: true
+    group_add:
+      - dialout
+
+    # Environment
+    environment:
+      - USER
+      - DISPLAY=${DISPLAY:?err}
+      - XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - ROS_DOMAIN_ID=23
+      # Uncomment if you actually use Zenoh:
+      - RMW_IMPLEMENTATION=rmw_zenoh_cpp
+
+    # GPU passthrough
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # Volumes
     volumes:
+      # X11 for RViz / ZED tools
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      # 1. FIX THE SRC MOUNT: Point it explicitly to your host's src folder
-      - ../:/ros2_ws/src
-      # 2. USE NAMED VOLUMES FOR CACHING
+      # Your local workspace (optional — only if you have custom packages)
+      - ../../../src:/ros2_ws/src
+      # Persistent ZED SDK AI models (avoids re-optimizing on every run)
+      - zed_resources:/usr/local/zed/resources
+      - zed_settings:/usr/local/zed/settings
+      # USE NAMED VOLUMES FOR CACHING
       - ros_build_cache:/ros2_ws/build
       - ros_install_cache:/ros2_ws/install
       - ros_log_cache:/ros2_ws/log
+      # Device passthrough for the camera (USB)
       - /dev:/dev
-    command: >
-      bash -c "source /opt/ros/jazzy/setup.bash &&
-               colcon build --symlink-install --parallel-workers 1 &&
-               source install/setup.bash &&
-               { ros2 run rmw_zenoh_cpp rmw_zenohd & } &&
-               sleep 2 &&
-               echo Start_Joy_Controller========================================= &&
-               { ros2 launch joy_interface joy_control_smooth.launch.py < /dev/null & } &&
-               sleep 2 &&
-               echo Start_Real_Hardware========================================== &&
-               { ros2 launch robot_bringup real_omnibot.launch.py &} &&
-               echo Start_Navigation========================================== &&
-               exec ros2 launch robot_navigation localization_Nav2_real.launch.py"
 
-# 3. DECLARE THE NAMED VOLUMES AT THE BOTTOM OF THE FILE
+    # Just launch the ZED 2i wrapper
+    command: >
+      bash -c "source /opt/ros/jazzy/setup.bash 
+               cd /ros2_ws   
+              #  apt update && 
+              #  rosdep update 
+              #  rosdep install --from-paths src -y -i  
+               source /home/zed_deps_ws/install/setup.bash 
+               colcon build --symlink-install --parallel-workers 1 
+               source install/setup.bash 
+               cd src/walkie-ros/bringup
+               uv sync 
+               cd /ros2_ws  
+               ros2 run rmw_zenoh_cpp rmw_zenohd &
+               ros2 launch robot_bringup lift_homing.launch.py &
+               sleep 10
+               ros2 launch robot_bringup real_omnibot.launch.py &
+               sleep 5
+               ros2 launch joy_interface joy_control_smooth.launch.py &
+               ros2 launch robot_navigation localization_Nav2_real.launch.py &
+               ros2 run walkie_perception ob_pose_service_cpp &
+               ros2 launch openarm_bimanual_moveit_config  moveit_only.launch.py &
+               ros2 launch openarm_bimanual_commander_cpp commander.launch.py"
+
 volumes:
+  zed_resources:
+  zed_settings:
   ros_build_cache:
   ros_install_cache:
-  ros_log_cache:
+  ros_log_cache:  

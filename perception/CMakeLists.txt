@@ -59,8 +59,8 @@ install(PROGRAMS perception/grasp_from_mask_node.py
 install(PROGRAMS perception/test_grasp_viz.py
   RENAME test_grasp_viz DESTINATION lib/${PROJECT_NAME})
 
-install(DIRECTORY models srv
-  DESTINATION share/${PROJECT_NAME})
+#install(DIRECTORY models srv
+#  DESTINATION share/${PROJECT_NAME})
 
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()
