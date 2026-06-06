@@ -21,3 +21,11 @@ int32 points_fed
 int32 grasps_raw
 int32 grasps_returned
 int32 frames_used
+
+# Object bounding box in planning frame — use to build a MoveIt CollisionObject
+geometry_msgs/Vector3 object_size       # AABB dimensions (x, y, z) in metres
+geometry_msgs/Pose    object_bbox_pose  # centre of AABB in planning frame (identity orientation)
+
+# Per-grasp vertical decomposition (planning frame Z = up)
+float32[] height_below_grasp           # metres from object bottom to each grasp point
+float32[] height_above_grasp           # metres from each grasp point to object top

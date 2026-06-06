@@ -59,6 +59,9 @@ install(PROGRAMS perception/grasp_from_mask_node.py
 install(PROGRAMS perception/test_grasp_viz.py
   RENAME test_grasp_viz DESTINATION lib/${PROJECT_NAME})
 
+install(PROGRAMS perception/grasp_client.py
+  RENAME grasp_client DESTINATION lib/${PROJECT_NAME})
+
 install(DIRECTORY models srv
   DESTINATION share/${PROJECT_NAME})
 

@@ -314,8 +314,8 @@ ros2 service call /grasp/from_mask walkie_perception/srv/GraspFromMask \
 | Field | Type | Description |
 |---|---|---|
 | `poses` | `PoseArray` | Grasp poses in **camera optical frame** |
-| `poses_base` | `PoseArray` | Grasp poses in **planning frame** (`base_link` by default) — empty if TF unavailable |
-| `planning_frame` | `string` | Frame used for `poses_base` |
+| `poses_base` | `PoseArray` | Grasp poses in **planning frame** (`base_footprint` by default) — empty if TF unavailable |
+| `planning_frame` | `string` | Frame used for `poses_base`, `object_bbox_pose`, and height fields |
 | `scores` | `float32[]` | Quality scores 0–1, sorted highest first |
 | `widths` | `float32[]` | Required gripper opening in metres per grasp |
 | `success` | `bool` | `true` if at least one grasp was returned |
@@ -327,6 +327,38 @@ ros2 service call /grasp/from_mask walkie_perception/srv/GraspFromMask \
 | `grasps_raw` | `int32` | GraspNet candidates before NMS (typically ~2000) |
 | `grasps_returned` | `int32` | Final poses after NMS + score filter + cap |
 | `frames_used` | `int32` | Depth frames merged |
+| `object_size` | `Vector3` | AABB dimensions of the object in planning frame (x, y, z) in metres — use for MoveIt `CollisionObject` box size |
+| `object_bbox_pose` | `Pose` | Centre of the AABB in planning frame with identity orientation — use for MoveIt `CollisionObject` pose |
+| `height_below_grasp` | `float32[]` | Per-grasp: metres from object bottom to each grasp point (planning frame Z) |
+| `height_above_grasp` | `float32[]` | Per-grasp: metres from each grasp point to object top (planning frame Z) |
+
+**Using the bounding box with MoveIt**
+
+`object_size` and `object_bbox_pose` form a ready-made axis-aligned box (AABB) in the planning frame. Pass them directly to a MoveIt `CollisionObject`:
+
+```python
+from moveit_msgs.msg import CollisionObject
+from shape_msgs.msg import SolidPrimitive
+
+obj = CollisionObject()
+obj.id = "grasped_object"
+obj.header.frame_id = result.planning_frame
+
+box = SolidPrimitive()
+box.type = SolidPrimitive.BOX
+box.dimensions = [result.object_size.x, result.object_size.y, result.object_size.z]
+
+obj.primitives = [box]
+obj.primitive_poses = [result.object_bbox_pose]
+obj.operation = CollisionObject.ADD
+```
+
+`height_below_grasp[i]` and `height_above_grasp[i]` give the vertical split for grasp `i` — how much of the object hangs below the gripper and how much sticks up above it (planning frame Z = up). Use these to check table clearance and arm-collision risk before executing the grasp:
+
+```python
+print(f"below gripper: {result.height_below_grasp[0]*100:.1f} cm")  # table clearance
+print(f"above gripper: {result.height_above_grasp[0]*100:.1f} cm")  # collision risk
+```
 
 **Parameters**
 
@@ -334,7 +366,7 @@ ros2 service call /grasp/from_mask walkie_perception/srv/GraspFromMask \
 |---|---|---|
 | `depth_topic` | `/zed_head/zed_node/depth/depth_registered` | Depth image topic |
 | `info_topic` | `/zed_head/zed_node/depth/camera_info` | CameraInfo topic |
-| `planning_frame` | `base_link` | Target TF frame for `poses_base` — changeable at runtime via `ros2 param set` |
+| `planning_frame` | `base_footprint` | Target TF frame for `poses_base` and object AABB — changeable at runtime via `ros2 param set` |
 | `use_mask` | `true` | `true` = use YOLO mask, `false` = use bounding box only |
 | `checkpoint_path` | `~/graspnet-baseline/logs/log_rs/checkpoint-rs.tar` | GraspNet checkpoint |
 | `num_point` | `10000` | Points sampled per inference call |
