@@ -374,6 +374,13 @@ def generate_launch_description():
         output='screen',
     )
 
+    walkie_tf_server = Node(
+        package='walkie_tf',
+        executable='tf_server',
+        name='walkie_tf_server',
+        output='screen',
+    )
+
     ld = LaunchDescription()
     # Add launch arguments
     ld.add_action(declare_use_zed)
@@ -402,5 +409,6 @@ def generate_launch_description():
     ld.add_action(foxgloveBridge_cmd)
     ld.add_action(rviz2)
     ld.add_action(lift_joint_state_relay)
+    ld.add_action(walkie_tf_server)
 
     return ld
