@@ -213,6 +213,13 @@ def generate_launch_description():
         launch_arguments={"rviz_config": rviz_config_file}.items(),
     )
 
+    walkie_tf_server = Node(
+        package='walkie_tf',
+        executable='tf_server',
+        name='walkie_tf_server',
+        output='screen',
+    )
+
     ld = LaunchDescription()
 
     # Add the commands to the launch description
@@ -233,5 +240,6 @@ def generate_launch_description():
     ld.add_action(declare_use_rviz_cmd)
     ld.add_action(declare_rviz_config_file_cmd)
     ld.add_action(rviz_cmd)
+    ld.add_action(walkie_tf_server)
 
     return ld

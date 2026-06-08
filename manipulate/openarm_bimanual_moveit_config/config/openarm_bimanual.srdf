@@ -67,20 +67,20 @@
     <!-- ARM ONLY GROUP STATES (No Lift Joint)          -->
     <!-- ============================================== -->
     <group_state name="home" group="left_arm">
-        <joint name="openarm_left_joint1" value="0"/>
+        <joint name="openarm_left_joint1" value="0.2618"/>
         <joint name="openarm_left_joint2" value="0"/>
         <joint name="openarm_left_joint3" value="0"/>
-        <joint name="openarm_left_joint4" value="0"/>
+        <joint name="openarm_left_joint4" value="0.2618"/>
         <joint name="openarm_left_joint5" value="0"/>
         <joint name="openarm_left_joint6" value="0"/>
         <joint name="openarm_left_joint7" value="0"/>
     </group_state>
 
     <group_state name="home" group="right_arm">
-        <joint name="openarm_right_joint1" value="0"/>
+        <joint name="openarm_right_joint1" value="-0.2618"/>
         <joint name="openarm_right_joint2" value="0"/>
         <joint name="openarm_right_joint3" value="0"/>
-        <joint name="openarm_right_joint4" value="0"/>
+        <joint name="openarm_right_joint4" value="0.2618"/>
         <joint name="openarm_right_joint5" value="0"/>
         <joint name="openarm_right_joint6" value="0"/>
         <joint name="openarm_right_joint7" value="0"/>
@@ -106,15 +106,52 @@
         <joint name="openarm_right_joint7" value="0"/>
     </group_state>
 
+    <group_state name="standby" group="left_arm">
+        <joint name="openarm_left_joint1" value="0.9076"/>
+        <joint name="openarm_left_joint2" value="-0.2793"/>
+        <joint name="openarm_left_joint3" value="-0.1745"/>
+        <joint name="openarm_left_joint4" value="2.4435"/>
+        <joint name="openarm_left_joint5" value="-0.2967"/>
+        <joint name="openarm_left_joint6" value="0.1222"/>
+        <joint name="openarm_left_joint7" value="0"/>
+    </group_state>
+
+    <group_state name="standby" group="right_arm">
+        <joint name="openarm_right_joint1" value="-0.9076"/>
+        <joint name="openarm_right_joint2" value="0.2793"/>
+        <joint name="openarm_right_joint3" value="0.1745"/>
+        <joint name="openarm_right_joint4" value="2.4435"/>
+        <joint name="openarm_right_joint5" value="0.2967"/>
+        <joint name="openarm_right_joint6" value="-0.1222"/>
+        <joint name="openarm_right_joint7" value="0"/>
+    </group_state>
+
+    <group_state name="standby" group="both_arms">
+        <joint name="openarm_left_joint1" value="0.9076"/>
+        <joint name="openarm_left_joint2" value="-0.2793"/>
+        <joint name="openarm_left_joint3" value="-0.1745"/>
+        <joint name="openarm_left_joint4" value="2.4435"/>
+        <joint name="openarm_left_joint5" value="-0.2967"/>
+        <joint name="openarm_left_joint6" value="0.1222"/>
+        <joint name="openarm_left_joint7" value="0"/>
+        <joint name="openarm_right_joint1" value="-0.9076"/>
+        <joint name="openarm_right_joint2" value="0.2793"/>
+        <joint name="openarm_right_joint3" value="0.1745"/>
+        <joint name="openarm_right_joint4" value="2.4435"/>
+        <joint name="openarm_right_joint5" value="0.2967"/>
+        <joint name="openarm_right_joint6" value="-0.1222"/>
+        <joint name="openarm_right_joint7" value="0"/>
+    </group_state>
+
     <!-- ============================================== -->
     <!-- WHOLE BODY GROUP STATES (Includes Lift Joint)  -->
     <!-- ============================================== -->
     <group_state name="home" group="left_arm_lift">
         <joint name="lift_joint" value="0.7435"/>
-        <joint name="openarm_left_joint1" value="0"/>
+        <joint name="openarm_left_joint1" value="0.2618"/>
         <joint name="openarm_left_joint2" value="0"/>
         <joint name="openarm_left_joint3" value="0"/>
-        <joint name="openarm_left_joint4" value="0"/>
+        <joint name="openarm_left_joint4" value="0.2618"/>
         <joint name="openarm_left_joint5" value="0"/>
         <joint name="openarm_left_joint6" value="0"/>
         <joint name="openarm_left_joint7" value="0"/>
@@ -122,10 +159,10 @@
 
     <group_state name="home" group="right_arm_lift">
         <joint name="lift_joint" value="0.7435"/>
-        <joint name="openarm_right_joint1" value="0"/>
+        <joint name="openarm_right_joint1" value="-0.2618"/>
         <joint name="openarm_right_joint2" value="0"/>
         <joint name="openarm_right_joint3" value="0"/>
-        <joint name="openarm_right_joint4" value="0"/>
+        <joint name="openarm_right_joint4" value="0.2618"/>
         <joint name="openarm_right_joint5" value="0"/>
         <joint name="openarm_right_joint6" value="0"/>
         <joint name="openarm_right_joint7" value="0"/>
@@ -133,17 +170,17 @@
 
     <group_state name="home" group="both_arms_lift">
         <joint name="lift_joint" value="0.7435"/>
-        <joint name="openarm_left_joint1" value="0"/>
+        <joint name="openarm_left_joint1" value="0.2618"/>
         <joint name="openarm_left_joint2" value="0"/>
         <joint name="openarm_left_joint3" value="0"/>
-        <joint name="openarm_left_joint4" value="0"/>
+        <joint name="openarm_left_joint4" value="0.2618"/>
         <joint name="openarm_left_joint5" value="0"/>
         <joint name="openarm_left_joint6" value="0"/>
         <joint name="openarm_left_joint7" value="0"/>
-        <joint name="openarm_right_joint1" value="0"/>
+        <joint name="openarm_right_joint1" value="-0.2618"/>
         <joint name="openarm_right_joint2" value="0"/>
         <joint name="openarm_right_joint3" value="0"/>
-        <joint name="openarm_right_joint4" value="0"/>
+        <joint name="openarm_right_joint4" value="0.2618"/>
         <joint name="openarm_right_joint5" value="0"/>
         <joint name="openarm_right_joint6" value="0"/>
         <joint name="openarm_right_joint7" value="0"/>
@@ -349,17 +386,7 @@
     <disable_collisions link1="back_lidar_link"  link2="openarm_left_link1"  reason="Never"/>
     <disable_collisions link1="back_lidar_link"  link2="openarm_right_link0" reason="Never"/>
     <disable_collisions link1="back_lidar_link"  link2="openarm_right_link1" reason="Never"/>
-    <!-- ===== lift_link vs more distal arm links (in addition to link0-3 already listed) ===== -->
-    <disable_collisions link1="lift_link" link2="openarm_left_link4"  reason="Never"/>
-    <disable_collisions link1="lift_link" link2="openarm_left_link5"  reason="Never"/>
-    <disable_collisions link1="lift_link" link2="openarm_left_link6"  reason="Never"/>
-    <disable_collisions link1="lift_link" link2="openarm_left_link7"  reason="Never"/>
-    <disable_collisions link1="lift_link" link2="openarm_left_hand"   reason="Never"/>
-    <disable_collisions link1="lift_link" link2="openarm_right_link4" reason="Never"/>
-    <disable_collisions link1="lift_link" link2="openarm_right_link5" reason="Never"/>
-    <disable_collisions link1="lift_link" link2="openarm_right_link6" reason="Never"/>
-    <disable_collisions link1="lift_link" link2="openarm_right_link7" reason="Never"/>
-    <disable_collisions link1="lift_link" link2="openarm_right_hand"  reason="Never"/>
+
     <!-- ===== Head/camera vs arm links ===== -->
     <!-- head_servo_link has no collision geometry (commented out in xacro) -->
     <disable_collisions link1="head_servo_link"    link2="openarm_left_link0"  reason="Never"/>
@@ -394,11 +421,9 @@
     <disable_collisions link1="lift_link" link2="openarm_left_link0" reason="Adjacent"/>
     <disable_collisions link1="lift_link" link2="openarm_left_link1" reason="Never"/>
     <disable_collisions link1="lift_link" link2="openarm_left_link2" reason="Never"/>
-    <disable_collisions link1="lift_link" link2="openarm_left_link3" reason="Never"/>
     <disable_collisions link1="lift_link" link2="openarm_right_link0" reason="Adjacent"/>
     <disable_collisions link1="lift_link" link2="openarm_right_link1" reason="Never"/>
     <disable_collisions link1="lift_link" link2="openarm_right_link2" reason="Never"/>
-    <disable_collisions link1="lift_link" link2="openarm_right_link3" reason="Never"/>
     <!-- Left hand and fingers -->
     <disable_collisions link1="openarm_left_hand" link2="openarm_left_left_finger" reason="Adjacent"/>
     <disable_collisions link1="openarm_left_hand" link2="openarm_left_link2" reason="Never"/>
