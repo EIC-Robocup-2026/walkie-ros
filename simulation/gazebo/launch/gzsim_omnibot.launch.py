@@ -220,6 +220,17 @@ def generate_launch_description():
         output='screen',
     )
 
+    cloud_to_map = Node(
+        package='walkie_perception',
+        executable='cloud_to_map',
+        name='cloud_to_map',
+        output='screen',
+        parameters=[{
+            'source_topic': '/zed_head/zed_node/point_cloud/cloud_registered',
+            'use_sim_time': use_sim_time,
+        }],
+    )
+
     ld = LaunchDescription()
 
     # Add the commands to the launch description
@@ -241,5 +252,6 @@ def generate_launch_description():
     ld.add_action(declare_rviz_config_file_cmd)
     ld.add_action(rviz_cmd)
     ld.add_action(walkie_tf_server)
+    ld.add_action(cloud_to_map)
 
     return ld
