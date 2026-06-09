@@ -451,6 +451,15 @@ def generate_launch_description():
         output='screen',
     )
 
+    cloud_to_map = Node(
+        package='walkie_perception',
+        executable='cloud_to_map',
+        name='cloud_to_map',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}],
+        condition=IfCondition(use_zed),
+    )
+
     ld = LaunchDescription()
     # Add launch arguments
     ld.add_action(declare_use_zed)
@@ -484,5 +493,6 @@ def generate_launch_description():
     ld.add_action(rviz2)
     ld.add_action(lift_joint_state_relay)
     ld.add_action(walkie_tf_server)
+    ld.add_action(cloud_to_map)
 
     return ld
