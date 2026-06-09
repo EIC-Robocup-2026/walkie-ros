@@ -288,7 +288,7 @@ class GraspVizNode(Node):
             print(f'  {"#":>3}  {"score":>6}  {"width":>7}  '
                   f'{"pos_x":>7} {"pos_y":>7} {"pos_z":>7}  '
                   f'{"qx":>7} {"qy":>7} {"qz":>7} {"qw":>7}  '
-                  f'{"roll°":>7} {"pitch°":>7} {"yaw°":>7}')
+                  f'{"roll":>7} {"pitch":>7} {"yaw":>7}  (rad)')
             print(f'  {"---":>3}  {"------":>6}  {"-------":>7}  '
                   f'{"-------":>7} {"-------":>7} {"-------":>7}  '
                   f'{"-------":>7} {"-------":>7} {"-------":>7} {"-------":>7}  '
@@ -296,11 +296,11 @@ class GraspVizNode(Node):
             for i, (pose, s, w) in enumerate(zip(poses, scores, widths)):
                 p = pose.position
                 q = pose.orientation
-                rpy = R.from_quat([q.x, q.y, q.z, q.w]).as_euler('xyz', degrees=True)
+                rpy = R.from_quat([q.x, q.y, q.z, q.w]).as_euler('xyz', degrees=False)
                 print(f'  [{i:>2}]  {s:>6.3f}  {w*100:>6.1f}cm  '
                       f'{p.x:>7.3f} {p.y:>7.3f} {p.z:>7.3f}  '
                       f'{q.x:>7.4f} {q.y:>7.4f} {q.z:>7.4f} {q.w:>7.4f}  '
-                      f'{rpy[0]:>7.1f} {rpy[1]:>7.1f} {rpy[2]:>7.1f}')
+                      f'{rpy[0]:>7.4f} {rpy[1]:>7.4f} {rpy[2]:>7.4f}')
 
         cam_frame = resp.poses.header.frame_id
         stamp     = resp.poses.header.stamp
@@ -308,28 +308,43 @@ class GraspVizNode(Node):
         print(f'\n── Camera frame poses ({cam_frame}) ──────────────────────')
         _print_poses(resp.poses.poses, resp.scores, resp.widths, cam_frame)
 
-        # ── Try transforming to planning frame (base_link) ────────────────────
+        # ── Try transforming to planning frame ───────────────────────────────
         planning_frame = self._args.planning_frame
-        try:
+
+        # EE alignment: −90° about Y in the planning (base_footprint) world
+        # frame so the gripper approach points along the arm EE's local Z.
+        ee_pitch = R.from_euler('y', -90, degrees=True)
+
+        def _lookup_and_transform(tf_stamp):
             tf = self._tf_buffer.lookup_transform(
-                planning_frame, cam_frame, stamp,
+                planning_frame, cam_frame, tf_stamp,
                 timeout=rclpy.duration.Duration(seconds=1.0))
-
-            base_poses = []
+            poses_out = []
             for pose in resp.poses.poses:
-                ps = PoseStamped()
-                ps.header.frame_id = cam_frame
-                ps.header.stamp    = stamp
-                ps.pose = pose
-                base_poses.append(
-                    tf2_geometry_msgs.do_transform_pose(ps, tf).pose)
+                # Jazzy: do_transform_pose takes a bare Pose and returns a Pose.
+                p = tf2_geometry_msgs.do_transform_pose(pose, tf)
+                # Pre-multiply (world/base_footprint frame) −90° pitch about Y.
+                q_in = R.from_quat([p.orientation.x, p.orientation.y,
+                                    p.orientation.z, p.orientation.w])
+                p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = (
+                    float(v) for v in (ee_pitch * q_in).as_quat())
+                poses_out.append(p)
+            return poses_out
 
+        base_poses = None
+        try:
+            base_poses = _lookup_and_transform(stamp)
             print(f'\n── Planning frame poses ({planning_frame}) ──────────────────')
             _print_poses(base_poses, resp.scores, resp.widths, planning_frame)
-
         except Exception as e:
-            print(f'\n── Planning frame ({planning_frame}): transform unavailable ({e})')
-            print(f'   Is TF published? Check: ros2 run tf2_ros tf2_echo {planning_frame} {cam_frame}')
+            print(f'\n── TF at stamp failed ({e}), retrying with latest transform…')
+            try:
+                base_poses = _lookup_and_transform(rclpy.time.Time())
+                print(f'\n── Planning frame poses ({planning_frame}, latest TF) ──────')
+                _print_poses(base_poses, resp.scores, resp.widths, planning_frame)
+            except Exception as e2:
+                print(f'\n── Planning frame ({planning_frame}): transform unavailable ({e2})')
+                print(f'   Check: ros2 run tf2_ros tf2_echo {planning_frame} {cam_frame}')
 
         # ── unproject point cloud ─────────────────────────────────────────────
         with self._depth_lock:
@@ -388,8 +403,8 @@ def main():
                         help='YOLO mask label image topic')
     parser.add_argument('--dets',  default='/yolo/tracked_detections_2d',
                         help='YOLO Detection2DArray topic')
-    parser.add_argument('--planning-frame', default='base_link',
-                        help='MoveIt planning frame to transform poses into (default: base_link)')
+    parser.add_argument('--planning-frame', default='base_footprint',
+                        help='MoveIt planning frame to transform poses into (default: base_footprint)')
 
     # argparse + ros2 run: strip ROS args before parsing
     argv = [a for a in sys.argv[1:] if not a.startswith('__')]

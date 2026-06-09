@@ -231,6 +231,19 @@ def generate_launch_description():
         }],
     )
 
+    ob_pose_service = Node(
+        package='walkie_perception',
+        executable='ob_pose_service_cpp',
+        name='ob_pose_service_cpp',
+        output='screen',
+        parameters=[{
+            'depth_topic': '/zed_head/zed_node/depth/depth_registered',
+            'info_topic': '/zed_head/zed_node/depth/camera_info',
+            'target_frame': 'map',
+            'use_sim_time': use_sim_time,
+        }],
+    )
+
     ld = LaunchDescription()
 
     # Add the commands to the launch description
@@ -253,5 +266,6 @@ def generate_launch_description():
     ld.add_action(rviz_cmd)
     ld.add_action(walkie_tf_server)
     ld.add_action(cloud_to_map)
+    ld.add_action(ob_pose_service)
 
     return ld

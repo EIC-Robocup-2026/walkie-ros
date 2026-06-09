@@ -51,7 +51,11 @@ def generate_launch_description():
         DeclareLaunchArgument("abs_current_cap", default_value="4.0"),
         DeclareLaunchArgument("control_frequency", default_value="100.0"),
         DeclareLaunchArgument("max_velocity_cm_s", default_value="5.0"),
-        DeclareLaunchArgument("max_acceleration_cm_s2", default_value="20.0"),
+        # 2.0 cm/s² = 0.02 m/s² — matches lift_joint max_acceleration in
+        # joint_limits.yaml so the real lift ramps at the same rate MoveIt plans
+        # (and RViz animates). A faster ramp here makes the real lift reach
+        # cruise speed sooner and arrive ahead of the RViz visualization.
+        DeclareLaunchArgument("max_acceleration_cm_s2", default_value="2.0"),
         DeclareLaunchArgument("homing_backoff_time_s", default_value="3.0"),
         DeclareLaunchArgument("hardware_max_cm_s", default_value="3.0",
                               description="Hard ceiling for sustainable lift speed (cm/s). Caps the SW trajectory so the RViz visualization (which mirrors traj_current_pos_m) cannot outrun what the motor can physically follow."),

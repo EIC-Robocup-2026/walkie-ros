@@ -26,18 +26,18 @@
     <!--GROUPS-->
     <!-- WHOLE BODY GROUPS (Includes lift_joint) -->
     <group name="left_arm_lift">
-        <chain base_link="base_link" tip_link="openarm_left_link7"/>
+        <chain base_link="base_link" tip_link="openarm_left_hand"/>
     </group>
     <group name="right_arm_lift">
-        <chain base_link="base_link" tip_link="openarm_right_link7"/>
+        <chain base_link="base_link" tip_link="openarm_right_hand"/>
     </group>
 
     <!-- ARM ONLY GROUPS (Ignores lift_joint) -->
     <group name="left_arm">
-        <chain base_link="lift_link" tip_link="openarm_left_link7"/>
+        <chain base_link="lift_link" tip_link="openarm_left_hand"/>
     </group>
     <group name="right_arm">
-        <chain base_link="lift_link" tip_link="openarm_right_link7"/>
+        <chain base_link="lift_link" tip_link="openarm_right_hand"/>
     </group>
 
     <!-- COMBINED DUAL-ARM GROUPS -->
@@ -86,61 +86,95 @@
         <joint name="openarm_right_joint7" value="0"/>
     </group_state>
 
-    <group_state name="hands_up" group="left_arm">
-        <joint name="openarm_left_joint1" value="0"/>
+    <group_state name="home" group="both_arms">
+        <joint name="openarm_left_joint1" value="0.2618"/>
         <joint name="openarm_left_joint2" value="0"/>
         <joint name="openarm_left_joint3" value="0"/>
-        <joint name="openarm_left_joint4" value="2"/>
+        <joint name="openarm_left_joint4" value="0.2618"/>
         <joint name="openarm_left_joint5" value="0"/>
         <joint name="openarm_left_joint6" value="0"/>
         <joint name="openarm_left_joint7" value="0"/>
-    </group_state>
-
-    <group_state name="hands_up" group="right_arm">
-        <joint name="openarm_right_joint1" value="0"/>
+        <joint name="openarm_right_joint1" value="-0.2618"/>
         <joint name="openarm_right_joint2" value="0"/>
         <joint name="openarm_right_joint3" value="0"/>
-        <joint name="openarm_right_joint4" value="2"/>
+        <joint name="openarm_right_joint4" value="0.2618"/>
         <joint name="openarm_right_joint5" value="0"/>
         <joint name="openarm_right_joint6" value="0"/>
         <joint name="openarm_right_joint7" value="0"/>
     </group_state>
 
+    <group_state name="hands_up" group="left_arm">
+        <joint name="openarm_left_joint1" value="0.6458"/>
+        <joint name="openarm_left_joint2" value="0"/>
+        <joint name="openarm_left_joint3" value="0"/>
+        <joint name="openarm_left_joint4" value="2.0769"/>
+        <joint name="openarm_left_joint5" value="0"/>
+        <joint name="openarm_left_joint6" value="0"/>
+        <joint name="openarm_left_joint7" value="-0.2094"/>
+    </group_state>
+
+    <group_state name="hands_up" group="right_arm">
+        <joint name="openarm_right_joint1" value="-0.6458"/>
+        <joint name="openarm_right_joint2" value="0"/>
+        <joint name="openarm_right_joint3" value="0"/>
+        <joint name="openarm_right_joint4" value="2.0769"/>
+        <joint name="openarm_right_joint5" value="0"/>
+        <joint name="openarm_right_joint6" value="0"/>
+        <joint name="openarm_right_joint7" value="0.2094"/>
+    </group_state>
+
+    <group_state name="hands_up" group="both_arms">
+        <joint name="openarm_left_joint1" value="0.6458"/>
+        <joint name="openarm_left_joint2" value="0"/>
+        <joint name="openarm_left_joint3" value="0"/>
+        <joint name="openarm_left_joint4" value="2.0769"/>
+        <joint name="openarm_left_joint5" value="0"/>
+        <joint name="openarm_left_joint6" value="0"/>
+        <joint name="openarm_left_joint7" value="-0.2094"/>
+        <joint name="openarm_right_joint1" value="-0.6458"/>
+        <joint name="openarm_right_joint2" value="0"/>
+        <joint name="openarm_right_joint3" value="0"/>
+        <joint name="openarm_right_joint4" value="2.0769"/>
+        <joint name="openarm_right_joint5" value="0"/>
+        <joint name="openarm_right_joint6" value="0"/>
+        <joint name="openarm_right_joint7" value="0.2094"/>
+    </group_state>
+
     <group_state name="standby" group="left_arm">
-        <joint name="openarm_left_joint1" value="0.9076"/>
-        <joint name="openarm_left_joint2" value="-0.2793"/>
-        <joint name="openarm_left_joint3" value="-0.1745"/>
-        <joint name="openarm_left_joint4" value="2.4435"/>
-        <joint name="openarm_left_joint5" value="-0.2967"/>
-        <joint name="openarm_left_joint6" value="0.1222"/>
-        <joint name="openarm_left_joint7" value="0"/>
+        <joint name="openarm_left_joint1" value="0.6458"/>
+        <joint name="openarm_left_joint2" value="0"/>
+        <joint name="openarm_left_joint3" value="0"/>
+        <joint name="openarm_left_joint4" value="2.0769"/>
+        <joint name="openarm_left_joint5" value="0"/>
+        <joint name="openarm_left_joint6" value="0"/>
+        <joint name="openarm_left_joint7" value="-1.5708"/>
     </group_state>
 
     <group_state name="standby" group="right_arm">
-        <joint name="openarm_right_joint1" value="-0.9076"/>
-        <joint name="openarm_right_joint2" value="0.2793"/>
-        <joint name="openarm_right_joint3" value="0.1745"/>
-        <joint name="openarm_right_joint4" value="2.4435"/>
-        <joint name="openarm_right_joint5" value="0.2967"/>
-        <joint name="openarm_right_joint6" value="-0.1222"/>
-        <joint name="openarm_right_joint7" value="0"/>
+        <joint name="openarm_right_joint1" value="-0.6458"/>
+        <joint name="openarm_right_joint2" value="0"/>
+        <joint name="openarm_right_joint3" value="0"/>
+        <joint name="openarm_right_joint4" value="2.0769"/>
+        <joint name="openarm_right_joint5" value="0"/>
+        <joint name="openarm_right_joint6" value="0"/>
+        <joint name="openarm_right_joint7" value="1.5708"/>
     </group_state>
 
     <group_state name="standby" group="both_arms">
-        <joint name="openarm_left_joint1" value="0.9076"/>
-        <joint name="openarm_left_joint2" value="-0.2793"/>
-        <joint name="openarm_left_joint3" value="-0.1745"/>
-        <joint name="openarm_left_joint4" value="2.4435"/>
-        <joint name="openarm_left_joint5" value="-0.2967"/>
-        <joint name="openarm_left_joint6" value="0.1222"/>
-        <joint name="openarm_left_joint7" value="0"/>
-        <joint name="openarm_right_joint1" value="-0.9076"/>
-        <joint name="openarm_right_joint2" value="0.2793"/>
-        <joint name="openarm_right_joint3" value="0.1745"/>
-        <joint name="openarm_right_joint4" value="2.4435"/>
-        <joint name="openarm_right_joint5" value="0.2967"/>
-        <joint name="openarm_right_joint6" value="-0.1222"/>
-        <joint name="openarm_right_joint7" value="0"/>
+        <joint name="openarm_left_joint1" value="0.6458"/>
+        <joint name="openarm_left_joint2" value="0"/>
+        <joint name="openarm_left_joint3" value="0"/>
+        <joint name="openarm_left_joint4" value="2.0769"/>
+        <joint name="openarm_left_joint5" value="0"/>
+        <joint name="openarm_left_joint6" value="0"/>
+        <joint name="openarm_left_joint7" value="-1.5708"/>
+        <joint name="openarm_right_joint1" value="-0.6458"/>
+        <joint name="openarm_right_joint2" value="0"/>
+        <joint name="openarm_right_joint3" value="0"/>
+        <joint name="openarm_right_joint4" value="2.0769"/>
+        <joint name="openarm_right_joint5" value="0"/>
+        <joint name="openarm_right_joint6" value="0"/>
+        <joint name="openarm_right_joint7" value="1.5708"/>
     </group_state>
 
     <!-- ============================================== -->
@@ -228,8 +262,8 @@
     </group_state>
 
     <!--END EFFECTORS-->
-    <end_effector name="left_ee" parent_link="openarm_left_link7" group="left_gripper"/>
-    <end_effector name="right_ee" parent_link="openarm_right_link7" group="right_gripper"/>
+    <end_effector name="left_ee" parent_link="openarm_left_hand" group="left_gripper"/>
+    <end_effector name="right_ee" parent_link="openarm_right_hand" group="right_gripper"/>
 
     <!--PASSIVE JOINTS-->
     <passive_joint name="openarm_left_finger_joint2"/>

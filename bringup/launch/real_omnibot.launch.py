@@ -317,7 +317,7 @@ def generate_launch_description():
         output="screen",
         parameters=[
             {"initialize_type": 2},
-            {"work_mode": 5},
+            {"work_mode": 4},
             {"use_system_timestamp": True},
             {"range_min": 0.0},
             {"range_max": 100.0},
@@ -397,6 +397,35 @@ def generate_launch_description():
         condition=IfCondition(use_zed),
     )
 
+    # Self-filter the ZED 2i registered cloud using the robot's URDF collision
+    # geometry. Unlike the unitree filter, NO static crop box is applied -- only
+    # the robot's own body (base + arms) is removed (box_filter_frame: "" in the
+    # config). cloud_registered is XYZRGB, so lidar_sensor_type=1.
+    zed_self_filter_config = os.path.join(
+        get_package_share_directory(package_name),
+        "config",
+        "camera",
+        "zed2i_self_filter.yaml",
+    )
+    zed_self_filter = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("robot_self_filter"),
+                "launch",
+                "self_filter.launch.py",
+            )
+        ),
+        launch_arguments={
+            "robot_description": robot_description_content,
+            "filter_config": zed_self_filter_config,
+            "in_pointcloud_topic": "/zed_head/zed_node/point_cloud/cloud_registered",
+            "out_pointcloud_topic": "/zed_head/zed_node/point_cloud/cloud_registered/filtered",
+            "lidar_sensor_type": "1",
+            "use_sim_time": use_sim_time,
+        }.items(),
+        condition=IfCondition(use_zed),
+    )
+
     rosbridge_launch = IncludeLaunchDescription(
         AnyLaunchDescriptionSource(
             os.path.join(
@@ -460,6 +489,20 @@ def generate_launch_description():
         condition=IfCondition(use_zed),
     )
 
+    ob_pose_service = Node(
+        package='walkie_perception',
+        executable='ob_pose_service_cpp',
+        name='ob_pose_service_cpp',
+        output='screen',
+        parameters=[{
+            'depth_topic': '/zed_head/zed_node/depth/depth_registered',
+            'info_topic': '/zed_head/zed_node/depth/camera_info',
+            'target_frame': 'map',
+            'use_sim_time': use_sim_time,
+        }],
+        condition=IfCondition(use_zed),
+    )
+
     ld = LaunchDescription()
     # Add launch arguments
     ld.add_action(declare_use_zed)
@@ -488,11 +531,13 @@ def generate_launch_description():
     ld.add_action(unitree_self_filter)
     # ld.add_action(realsense_camera_node)
     ld.add_action(zed_camera_launch)
+    ld.add_action(zed_self_filter)
     ld.add_action(rosbridge_launch)
     ld.add_action(foxgloveBridge_cmd)
     ld.add_action(rviz2)
     ld.add_action(lift_joint_state_relay)
     ld.add_action(walkie_tf_server)
     ld.add_action(cloud_to_map)
+    ld.add_action(ob_pose_service)
 
     return ld

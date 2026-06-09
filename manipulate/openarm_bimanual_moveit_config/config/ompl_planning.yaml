@@ -1,0 +1,74 @@
+# OMPL planning pipeline config.
+#
+# This file REPLACES the moveit_configs_utils default ompl_planning.yaml (the
+# builder loads this one because it exists in config/). The plugins/adapters
+# block below is copied verbatim from that default so OMPL still loads.
+#
+# `planner_configs` is intentionally NOT defined here: MoveItConfigsBuilder has a
+# special rule (moveit_configs_builder.py) that auto-merges the full default
+# planner_configs from ompl_defaults.yaml whenever this file omits them. Keeping
+# them out avoids duplicating ~150 lines that we don't need to change.
+#
+# SAFETY TUNING — denser path checking:
+#   longest_valid_segment_fraction sets how finely OMPL checks for collisions
+#   ALONG each motion segment, as a fraction of the state space's maximum extent.
+#   When unset, OMPL uses its loose internal default (0.01), which can let the
+#   planner "tunnel" the arm through thin obstacles between checked waypoints.
+#   Lowering it to 0.005 doubles the collision-check density (safer, slightly
+#   more planning CPU). Drop to 0.002/0.001 for even denser checking if thin
+#   obstacles still get clipped.
+planning_plugins:
+  - ompl_interface/OMPLPlanner
+# The order of the elements in the adapter corresponds to the order they are processed by the motion planning pipeline.
+request_adapters:
+  - default_planning_request_adapters/ResolveConstraintFrames
+  - default_planning_request_adapters/ValidateWorkspaceBounds
+  - default_planning_request_adapters/CheckStartStateBounds
+  - default_planning_request_adapters/CheckStartStateCollision
+response_adapters:
+  - default_planning_response_adapters/AddTimeOptimalParameterization
+  - default_planning_response_adapters/ValidateSolution
+  - default_planning_response_adapters/DisplayMotionPath
+
+# Per-group dense collision checking along planned segments.
+#
+# `planner_configs` lists which planners are selectable for each group. The
+# referenced names (RRT, RRTstar) come from the
+# default planner_configs auto-merged from ompl_defaults.yaml. The first entry
+# is used as the default when no planner_id is requested.
+left_arm:
+  longest_valid_segment_fraction: 0.02
+  default_planner_config: RRT
+  planner_configs:
+    - RRT
+    - RRTstar
+right_arm:
+  longest_valid_segment_fraction: 0.02
+  default_planner_config: RRT
+  planner_configs:
+    - RRT
+    - RRTstar
+both_arms:
+  longest_valid_segment_fraction: 0.02
+  default_planner_config: RRT
+  planner_configs:
+    - RRT
+    - RRTstar
+left_arm_lift:
+  longest_valid_segment_fraction: 0.02
+  default_planner_config: RRT
+  planner_configs:
+    - RRT
+    - RRTstar
+right_arm_lift:
+  longest_valid_segment_fraction: 0.02
+  default_planner_config: RRT
+  planner_configs:
+    - RRT
+    - RRTstar
+both_arms_lift:
+  longest_valid_segment_fraction: 0.02
+  default_planner_config: RRT
+  planner_configs:
+    - RRT
+    - RRTstar

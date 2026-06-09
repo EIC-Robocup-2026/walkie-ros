@@ -1,0 +1,5 @@
+string group_name      # "left_gripper" | "right_gripper"
+bool   enable          # true = collision checked (normal), false = gripper links ignored vs world
+---
+bool success
+string status

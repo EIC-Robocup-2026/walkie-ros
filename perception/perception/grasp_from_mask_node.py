@@ -76,7 +76,7 @@ class GraspFromMaskNode(Node):
         )
         self.declare_parameter("num_point",    10000)
         self.declare_parameter("num_view",     300)
-        self.declare_parameter("voxel_size_m", 0.0001)
+        self.declare_parameter("voxel_size_m", 0.005)
         self.declare_parameter("cache_size",   10)
         self.declare_parameter("min_points",   300)
         self.declare_parameter("debug_cloud",  True)
@@ -91,7 +91,7 @@ class GraspFromMaskNode(Node):
             "/zed_head/zed_node/depth/depth_registered")
         self.declare_parameter("info_topic",
             "/zed_head/zed_node/depth/camera_info")
-        self.declare_parameter("planning_frame", "base_link")
+        self.declare_parameter("planning_frame", "base_footprint")
 
         p = self.get_parameter
         self.checkpoint_path = os.path.expanduser(p("checkpoint_path").value)
@@ -625,6 +625,13 @@ class GraspFromMaskNode(Node):
             merged = np.vstack(all_pts)
             actual_frames = n_frames
 
+            # Downsample early so outlier removal and DBSCAN run on a small cloud.
+            pcd = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(merged)
+            merged = np.asarray(
+                pcd.voxel_down_sample(self.voxel_size_m).points
+            ).astype(np.float32)
+
             if self.outlier_removal:
                 before = len(merged)
                 merged = self._remove_outliers(merged)
@@ -658,12 +665,6 @@ class GraspFromMaskNode(Node):
         response.points_extracted = len(pts)
         response.frames_used      = actual_frames
 
-        # ── Voxel downsample ──────────────────────────────────────
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(pts)
-        pcd = pcd.voxel_down_sample(self.voxel_size_m)
-        pts = np.asarray(pcd.points).astype(np.float32)
-
         # ── Sample to num_point ───────────────────────────────────
         if len(pts) >= self.num_point:
             idx = np.random.choice(len(pts), self.num_point, replace=False)
@@ -696,7 +697,7 @@ class GraspFromMaskNode(Node):
 
         # ── Post-process ──────────────────────────────────────────
         gg = GraspGroup(preds[0].cpu().numpy())
-        gg = gg.nms().sort_by_score()
+        gg = gg.sort_by_score()[:2000].nms()
 
         if request.score_threshold > 0:
             gg = gg[gg.scores >= request.score_threshold]
@@ -742,23 +743,45 @@ class GraspFromMaskNode(Node):
         response.planning_frame = planning_frame
         response.poses_base.header.frame_id = planning_frame
         response.poses_base.header.stamp    = stamp
-        try:
+
+        # EE alignment: after transforming into the planning frame, rotate
+        # −90° about Y in that (base_footprint) world frame so the gripper
+        # approach points along the arm EE's local Z. Pre-multiply = world frame.
+        ee_pitch = R.from_euler("y", -90.0, degrees=True)
+        # Z compensation: shift grasp along base_footprint +Z (calibration).
+        z_offset_m = 0.025
+
+        def _do_tf(tf_stamp):
             tf = self._tf_buffer.lookup_transform(
-                planning_frame, frame_id, stamp,
-                timeout=Duration(seconds=0.5))
+                planning_frame, frame_id, tf_stamp,
+                timeout=Duration(seconds=0.1))
+            response.poses_base.poses.clear()
             for pose in response.poses.poses:
-                ps = PoseStamped()
-                ps.header.frame_id = frame_id
-                ps.header.stamp    = stamp
-                ps.pose = pose
-                response.poses_base.poses.append(
-                    tf2_geometry_msgs.do_transform_pose(ps, tf).pose)
+                # Jazzy: do_transform_pose takes a bare Pose and returns a Pose.
+                p = tf2_geometry_msgs.do_transform_pose(pose, tf)
+                q_in = R.from_quat([p.orientation.x, p.orientation.y,
+                                    p.orientation.z, p.orientation.w])
+                p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = (
+                    float(v) for v in (ee_pitch * q_in).as_quat())
+                p.position.z += z_offset_m
+                response.poses_base.poses.append(p)
+
+        try:
+            _do_tf(stamp)
             self.get_logger().info(
                 f"Transformed {len(response.poses_base.poses)} poses → {planning_frame}")
         except Exception as e:
             self.get_logger().warn(
-                f"TF {frame_id} → {planning_frame} unavailable: {e}. "
-                f"poses_base will be empty.")
+                f"TF at stamp failed ({e}), retrying with latest transform…")
+            try:
+                _do_tf(rclpy.time.Time())
+                self.get_logger().info(
+                    f"Transformed {len(response.poses_base.poses)} poses → "
+                    f"{planning_frame} (latest TF)")
+            except Exception as e2:
+                self.get_logger().warn(
+                    f"TF {frame_id} → {planning_frame} unavailable: {e2}. "
+                    f"poses_base will be empty.")
 
         # ── Publish gripper visualisation markers ─────────────────
         ma  = MarkerArray()

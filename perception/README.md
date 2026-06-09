@@ -336,6 +336,7 @@ ros2 service call /grasp/from_mask walkie_perception/srv/GraspFromMask \
 | `depth_topic` | `/zed_head/zed_node/depth/depth_registered` | Depth image topic |
 | `info_topic` | `/zed_head/zed_node/depth/camera_info` | CameraInfo topic |
 | `planning_frame` | `base_link` | Target TF frame for `poses_base` — changeable at runtime via `ros2 param set` |
+| `ee_pitch_offset_deg` | `-90.0` | Body-frame pitch (about Y) applied to every grasp orientation so the gripper approach points along the EE's local Z — changeable at runtime via `ros2 param set` |
 | `use_mask` | `true` | `true` = use YOLO mask, `false` = use bounding box only |
 | `checkpoint_path` | `~/graspnet-baseline/logs/log_rs/checkpoint-rs.tar` | GraspNet checkpoint |
 | `num_point` | `10000` | Points sampled per inference call |

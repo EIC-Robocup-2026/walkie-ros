@@ -135,13 +135,14 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "point_cloud_topic",
-            default_value="/zed_head/zed_node/point_cloud/cloud_registered",
+            default_value="/zed_head/zed_node/point_cloud/cloud_registered/filtered",
             description="PointCloud2 topic fed to the MoveIt octomap updater "
-                        "(same name in sim via gz_bridge and on real ZED).",
+                        "(self-filtered ZED cloud; same name in sim via gz_bridge "
+                        "and on real ZED).",
         ),
         DeclareLaunchArgument(
             "octomap_resolution",
-            default_value="0.05",
+            default_value="0.008",
             description="Octomap voxel size in metres.",
         ),
     ]

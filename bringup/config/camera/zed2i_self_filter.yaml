@@ -1,0 +1,92 @@
+# Self-filter config for the ZED 2i camera point cloud
+# (/zed_head/point_cloud/cloud_registered).
+# Removes points that fall on Walkie's own body using the URDF collision geometry.
+# Same approach as unitree_self_filter.yaml, but WITHOUT the static crop box --
+# only the robot's own collision geometry (base + arms) is removed.
+# Top-level "/**" matches the node regardless of name/namespace (node is "self_filter").
+/**:
+  ros__parameters:
+    # Leave sensor_frame EMPTY to do containment-only filtering: only points
+    # that fall *inside* the robot's collision geometry are removed. Setting it
+    # to the camera frame instead enables ray/occlusion (shadow) removal, which
+    # for a head-mounted camera drops most of the background.
+    sensor_frame: ""
+
+    # Default shape parameters.
+    # sphere_* values are what MESH links (the arms/hands/fingers) use for their
+    # uniform scale/padding. Padding (metres) is the knob that absorbs TF/backlash
+    # error: with exact-fit collision meshes, surface returns land on the boundary,
+    # so some padding is required for them to be removed at all.
+    default_sphere_scale: 1.0
+    default_sphere_padding: 0.08
+
+    default_box_scale: [1.0, 1.0, 1.0]      # [x, y, z]
+    default_box_padding: [0.06, 0.06, 0.06] # [x, y, z]
+
+    default_cylinder_scale: [1.0, 1.0]      # [radial, vertical]
+    default_cylinder_padding: [0.06, 0.06]  # [radial, vertical]
+
+    # Filtering parameters
+    keep_organized: false
+    zero_for_removed_points: false
+    invert: false
+    min_sensor_dist: 0.1
+
+    # No static crop box for the ZED -- only the robot's collision geometry is
+    # filtered (arm + body). Empty frame disables the box filter entirely.
+    box_filter_frame: ""
+
+    # Robot links to filter out of the cloud
+    self_see_links:
+      names:
+        - base_link
+        - lift_link
+        - bl_wheel_link
+        - br_wheel_link
+        - fr_wheel_link
+        - fl_wheel_link
+        - bottom_link
+        - head_servo_link
+        - zed_head_camera_center
+        - openarm_left_link0
+        - openarm_left_link1
+        - openarm_left_link2
+        - openarm_left_link3
+        - openarm_left_link4
+        - openarm_left_link5
+        - openarm_left_link6
+        - openarm_left_link7
+        - openarm_left_hand
+        - openarm_left_left_finger
+        - openarm_left_right_finger
+        - openarm_left_wristcam_bracket
+        - openarm_right_link0
+        - openarm_right_link1
+        - openarm_right_link2
+        - openarm_right_link3
+        - openarm_right_link4
+        - openarm_right_link5
+        - openarm_right_link6
+        - openarm_right_link7
+        - openarm_right_hand
+        - openarm_right_left_finger
+        - openarm_right_right_finger
+        - openarm_right_wristcam_bracket
+
+      # Per-link overrides. Backlash accumulates down the arm, so distal links
+      # (wrist/hand/fingers) need more padding than the shoulder. Tune to taste:
+      # too much erases nearby environment, too little leaves a shell on the arm.
+      openarm_left_link5:          { padding: 0.05 }
+      openarm_left_link6:          { padding: 0.06 }
+      openarm_left_link7:          { padding: 0.06 }
+      openarm_left_hand:           { padding: 0.06 }
+      openarm_left_left_finger:    { padding: 0.18 }
+      openarm_left_right_finger:   { padding: 0.18 }
+      openarm_left_wristcam_bracket: { padding: 0.06 }
+      openarm_right_link5:         { padding: 0.05 }
+      openarm_right_link6:         { padding: 0.06 }
+      openarm_right_link7:         { padding: 0.06 }
+      openarm_right_hand:          { padding: 0.06 }
+      openarm_right_left_finger:   { padding: 0.18 }
+      openarm_right_right_finger:  { padding: 0.18 }
+      openarm_right_wristcam_bracket: { padding: 0.06 }
