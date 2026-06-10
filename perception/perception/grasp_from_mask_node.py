@@ -683,28 +683,37 @@ class GraspFromMaskNode(Node):
                 return response
 
         if self.use_mask and request.mask.data:
-            if request.mask.encoding != "16UC1":
+            if request.mask.encoding in ("16UC1", "mono16"):
+                mask_dtype = np.uint16
+            elif request.mask.encoding in ("mono8", "8UC1"):
+                mask_dtype = np.uint8
+            else:
                 response.success = False
                 response.message = (
-                    f"Expected 16UC1 mask, got {request.mask.encoding}")
+                    f"Expected mono8 or 16UC1 mask, got {request.mask.encoding}")
                 return response
 
             mask_img = np.frombuffer(
-                request.mask.data, dtype=np.uint16
+                request.mask.data, dtype=mask_dtype
             ).reshape(request.mask.height, request.mask.width)
-            object_mask = mask_img == request.tracker_id
+            # tracker_id > 0 selects that label in a multi-object mask;
+            # otherwise treat the mask as single-object (any non-zero pixel).
+            if request.tracker_id > 0:
+                object_mask = mask_img == request.tracker_id
+                sel = f"tracker_id={request.tracker_id}"
+            else:
+                object_mask = mask_img > 0
+                sel = "all non-zero pixels"
 
             if object_mask.sum() < 10:
                 self.get_logger().warn(
-                    f"Mask has {object_mask.sum()} pixels for "
-                    f"tracker_id={request.tracker_id} — falling back to bbox"
+                    f"Mask has {int(object_mask.sum())} pixels ({sel}) "
+                    f"— falling back to bbox"
                 )
                 object_mask = self._bbox_mask(H, W, request.bbox)
             else:
                 self.get_logger().info(
-                    f"mask mode: {object_mask.sum()} pixels for "
-                    f"tracker_id={request.tracker_id}"
-                )
+                    f"mask mode: {int(object_mask.sum())} pixels ({sel})")
         else:
             object_mask = self._bbox_mask(H, W, request.bbox)
             self.get_logger().info(

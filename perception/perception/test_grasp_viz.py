@@ -341,9 +341,15 @@ class GraspVizNode(Node):
             self.get_logger().error('/grasp/from_mask service not available')
             return
 
-        req = GraspFromMask.Request()
+        # /yolo/masks is a multi-object label image; pass it straight through
+        # with the target tracker_id and let the node select that object.
         with self._mask_lock:
-            req.mask = self._mask_msg
+            mask_msg = self._mask_msg
+        label = np.frombuffer(mask_msg.data, dtype=np.uint16).reshape(
+            mask_msg.height, mask_msg.width)
+
+        req = GraspFromMask.Request()
+        req.mask            = mask_msg
         req.tracker_id      = tid
         req.bbox            = bbox
         req.num_frames      = 0
@@ -463,10 +469,8 @@ class GraspVizNode(Node):
                 print(f'  total height  : {s.z*100:6.1f} cm')
 
         # ── build point cloud (ZED cloud or depth unprojection) ───────────────
-        with self._mask_lock:
-            mask_msg = self._mask_msg
-        label = np.frombuffer(mask_msg.data, dtype=np.uint16).reshape(
-            mask_msg.height, mask_msg.width)
+        # Reuse the label image read above; the viewer mask matches the object
+        # the node selects from the multi-object mask via tracker_id.
         mask = (label == tid)
 
         if self._use_cloud:

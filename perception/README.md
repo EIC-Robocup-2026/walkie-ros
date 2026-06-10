@@ -291,16 +291,18 @@ ros2 service call /grasp/standby std_srvs/srv/SetBool '{data: false}'   # unload
 
 | Field | Type | Description |
 |---|---|---|
-| `mask` | `Image` (16UC1) | Label image from `/yolo/masks` — pixel value = tracker ID. Used in mask mode |
-| `tracker_id` | `int32` | ByteTrack ID of the target object (selects pixels in `mask`) |
-| `bbox` | `BoundingBox2D` | ROI used in bbox mode, or when the mask has fewer than 10 pixels for `tracker_id` |
+| `mask` | `Image` (mono8 / 16UC1) | Mask image — by default **any non-zero pixel is the object**. Used in mask mode |
+| `tracker_id` | `int32` | **Optional.** `> 0` selects that label in a multi-object mask; `0` (default) = use all non-zero pixels |
+| `bbox` | `BoundingBox2D` | ROI used in bbox mode, or when the selected mask has fewer than 10 pixels |
 | `num_frames` | `int32` | Frames to merge (`0` = adaptive: 1 → 3 → 5) |
 | `score_threshold` | `float32` | Minimum grasp score (`0` = no filter) |
 | `max_grasps` | `int32` | Cap on returned poses (`0` = up to 20) |
 
+If the mask carries a single object you can leave `tracker_id` at `0` and the node uses every non-zero pixel. For a multi-object label image (e.g. raw `/yolo/masks`, where the pixel value is the tracker ID) set `tracker_id` to pick one object — no need to isolate it yourself.
+
 **Region selection** — the node decides which pixels become the object cloud in this order:
 
-1. `use_mask:=true` (default) **and** `tracker_id` matches ≥ 10 pixels in `mask` → use those mask pixels.
+1. `use_mask:=true` (default) **and** the selected mask has ≥ 10 pixels → use those mask pixels (`tracker_id > 0` → that label; else all non-zero pixels).
 2. Otherwise → fall back to `bbox`.
 3. `use_mask:=false` → always use `bbox` (the `mask` field is ignored).
 
@@ -308,7 +310,7 @@ Mask/bbox coordinates are in the full RGB image resolution; the node resizes the
 
 ##### (A) With a segmentation mask
 
-This is the normal, higher-quality path: the object's exact silhouette is used. The request needs a live `/yolo/masks` image plus the object's `tracker_id`, so it is called from code (or via `test_grasp_viz`), not by hand on the CLI.
+This is the normal, higher-quality path: the object's exact silhouette is used. The request needs a live mask, so it is called from code (or via `test_grasp_viz`), not by hand on the CLI.
 
 Quickest way to test — `test_grasp_viz` grabs the live mask + detection and calls the service for you:
 
@@ -317,18 +319,19 @@ ros2 run walkie_perception test_grasp_viz --id 42      # by ByteTrack ID
 ros2 run walkie_perception test_grasp_viz bottle       # by COCO class
 ```
 
-To call it programmatically, copy the latest `/yolo/masks` message into the request:
+To call it programmatically, copy the latest `/yolo/masks` message into the request and set `tracker_id` to pick one object out of the multi-object label image:
 
 ```python
-# node has: self.mask = None  (updated by a /yolo/masks subscription)
 req = GraspFromMask.Request()
-req.mask            = self.mask          # latest 16UC1 label image
-req.tracker_id      = 42                 # target object's ByteTrack ID
+req.mask            = self.mask          # latest /yolo/masks label image
+req.tracker_id      = 42                 # select tracker 42's pixels
 req.num_frames      = 0                  # adaptive
 req.score_threshold = 0.3
 req.max_grasps      = 5
 future = self.cli.call_async(req)
 ```
+
+If your mask already contains exactly one object, leave `tracker_id` at `0` (the default) and the node uses every non-zero pixel.
 
 ##### (B) Without a segmentation mask (bounding box)
 
@@ -343,7 +346,7 @@ ros2 service call /grasp/standby std_srvs/srv/SetBool '{data: true}'
 
 # 3. call with a bounding box — centre + size cover the target object (RGB image pixels)
 ros2 service call /grasp/from_mask walkie_perception/srv/GraspFromMask \
-  "{tracker_id: 1, num_frames: 5, score_threshold: 0.5, max_grasps: 5,
+  "{num_frames: 5, score_threshold: 0.5, max_grasps: 5,
     bbox: {center: {position: {x: 960.0, y: 540.0}}, size_x: 200.0, size_y: 300.0}}"
 ```
 
@@ -373,7 +376,7 @@ ros2 service call /grasp/from_mask walkie_perception/srv/GraspFromMask \
 
 #### Python client example
 
-A self-contained node that subscribes to `/yolo/masks`, calls `/grasp/from_mask`, and reads the result. It supports both modes — pass a `tracker_id` for mask mode, or set `USE_MASK = False` to call with a bounding box only.
+A self-contained node that subscribes to `/yolo/masks`, calls `/grasp/from_mask`, and reads the result. It supports both modes — send a mask for mask mode, or set `USE_MASK = False` to call with a bounding box only.
 
 ```python
 #!/usr/bin/env python3
@@ -386,7 +389,7 @@ from vision_msgs.msg import BoundingBox2D
 from walkie_perception.srv import GraspFromMask
 
 USE_MASK   = True       # True = segmentation mask, False = bounding box only
-TRACKER_ID = 42         # ByteTrack ID of the target object
+TRACKER_ID = 42         # multi-object mask: pick this label; 0 = all non-zero pixels
 
 
 class GraspClient(Node):
@@ -408,16 +411,17 @@ class GraspClient(Node):
 
     def request_grasp(self):
         req = GraspFromMask.Request()
-        req.tracker_id      = TRACKER_ID
         req.num_frames      = 0       # adaptive: 1 → 3 → 5
         req.score_threshold = 0.3
         req.max_grasps      = 5
 
         if USE_MASK:
-            # Mask mode: wait for a live mask, then attach it.
+            # Mask mode: wait for a live mask, then attach it. tracker_id picks
+            # one object from a multi-object mask (0 = use all non-zero pixels).
             while self._mask is None and rclpy.ok():
                 rclpy.spin_once(self, timeout_sec=0.2)
-            req.mask = self._mask
+            req.mask       = self._mask
+            req.tracker_id = TRACKER_ID
         else:
             # Bounding-box mode: centre + size in full RGB image pixels.
             bbox = BoundingBox2D()

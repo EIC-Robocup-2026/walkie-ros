@@ -1,7 +1,7 @@
 # REQUEST
-sensor_msgs/Image mask
-int32 tracker_id
-vision_msgs/BoundingBox2D bbox
+sensor_msgs/Image mask          # mask image; any non-zero pixel = object
+int32 tracker_id                # optional: >0 selects that label in a multi-object mask; 0 = use all non-zero pixels
+vision_msgs/BoundingBox2D bbox  # fallback region used when the mask is empty
 int32 num_frames
 float32 score_threshold
 int32 max_grasps
