@@ -46,7 +46,7 @@ import tf2_ros
 import tf2_geometry_msgs  # noqa: F401 — registers PoseStamped transform support
 
 from geometry_msgs.msg import PoseStamped
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from vision_msgs.msg import Detection2DArray, BoundingBox2D
 from vision_msgs.msg import Pose2D, Point2D
 
@@ -84,6 +84,77 @@ def _depth_to_xyz(depth: np.ndarray, mask: np.ndarray,
     x = (us - cx) * z / fx
     y = (vs - cy) * z / fy
     return np.stack([x, y, z], axis=1).astype(np.float32)
+
+
+def _remove_outliers(pts: np.ndarray, nb_neighbors: int = 20,
+                     std_ratio: float = 2.0) -> np.ndarray:
+    """Depth-weighted statistical outlier removal (mirrors the node)."""
+    if len(pts) <= nb_neighbors:
+        return pts
+    z = pts[:, 2]
+    z_min = float(z.min())
+    if z_min <= 0:
+        z_min = 0.01
+    weights = (z_min / np.clip(z, z_min, None)).reshape(-1, 1)
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pts * weights)
+    _, inlier_idx = pcd.remove_statistical_outlier(
+        nb_neighbors=nb_neighbors, std_ratio=std_ratio)
+    return pts[inlier_idx]
+
+
+def _keep_dominant_cluster(pts: np.ndarray, eps: float = 0.02,
+                           min_samples: int = 10) -> np.ndarray:
+    """DBSCAN — keep the densest×nearest cluster (mirrors the node)."""
+    if len(pts) < min_samples:
+        return pts
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pts)
+    labels = np.array(pcd.cluster_dbscan(
+        eps=eps, min_points=min_samples, print_progress=False))
+    unique_labels = set(labels) - {-1}
+    if not unique_labels:
+        return pts
+    best_label, best_score = -1, -1.0
+    for lbl in unique_labels:
+        mask = labels == lbl
+        cluster_pts = pts[mask]
+        score = mask.sum() * float(
+            np.mean(1.0 / np.clip(cluster_pts[:, 2], 0.01, None)))
+        if score > best_score:
+            best_score, best_label = score, lbl
+    return pts[labels == best_label]
+
+
+def _cloud_to_xyz(cloud_msg, mask: np.ndarray) -> np.ndarray:
+    """Pull masked XYZ from ZED's organized cloud (body frame) → optical
+    convention (X-right, Y-down, Z-fwd), matching the node's extraction."""
+    H, W = cloud_msg.height, cloud_msg.width
+    buf = np.frombuffer(cloud_msg.data, dtype=np.uint8).reshape(
+        H, W, cloud_msg.point_step)
+    xyz = buf[:, :, 0:12].copy().view(np.float32).reshape(H, W, 3)
+    if mask.shape != (H, W):
+        mask = cv2.resize(mask.astype(np.uint8), (W, H),
+                          interpolation=cv2.INTER_NEAREST).astype(bool)
+    pts = xyz[mask]
+    pts = pts[np.isfinite(pts).all(axis=1)]
+    if len(pts) == 0:
+        return np.empty((0, 3), dtype=np.float32)
+    fwd = pts[:, 0]
+    pts = pts[(fwd > 0.1) & (fwd < 3.0)]
+    if len(pts) == 0:
+        return np.empty((0, 3), dtype=np.float32)
+    # body (X-fwd, Y-left, Z-up) → optical (X-right, Y-down, Z-fwd)
+    return np.stack([-pts[:, 1], -pts[:, 2], pts[:, 0]], axis=1).astype(np.float32)
+
+
+def _filter_cloud(pts: np.ndarray) -> np.ndarray:
+    """Same cleanup the node applies before GraspNet: outlier + DBSCAN."""
+    if len(pts) == 0:
+        return pts
+    pts = _remove_outliers(pts)
+    pts = _keep_dominant_cluster(pts)
+    return pts
 
 
 def _xyz_to_pcd(pts: np.ndarray) -> o3d.geometry.PointCloud:
@@ -133,12 +204,15 @@ class GraspVizNode(Node):
 
         self._info_lock   = threading.Lock()
         self._depth_lock  = threading.Lock()
+        self._cloud_lock  = threading.Lock()
         self._mask_lock   = threading.Lock()
         self._det_lock    = threading.Lock()
 
         self._fx = self._fy = self._cx = self._cy = None
         self._depth_msg  = None
+        self._cloud_msg  = None
         self._mask_msg   = None
+        self._use_cloud  = not args.use_depth
         self._target_tid = args.id       # set when filtering by id
         self._target_cls = ' '.join(args.class_name) if args.class_name else None
         self._bbox       = None          # BoundingBox2D
@@ -149,7 +223,11 @@ class GraspVizNode(Node):
         qos = QoSProfile(reliability=be, history=kl, depth=5)
 
         self.create_subscription(CameraInfo, args.info,  self._info_cb,  10)
-        self.create_subscription(Image,      args.depth, self._depth_cb, qos)
+        if self._use_cloud:
+            self.create_subscription(
+                PointCloud2, args.cloud_topic, self._cloud_cb, qos)
+        else:
+            self.create_subscription(Image, args.depth, self._depth_cb, qos)
         self.create_subscription(Image,      args.masks, self._mask_cb,  qos)
         self.create_subscription(Detection2DArray, args.dets, self._det_cb, qos)
 
@@ -172,6 +250,10 @@ class GraspVizNode(Node):
     def _depth_cb(self, msg: Image):
         with self._depth_lock:
             self._depth_msg = msg
+
+    def _cloud_cb(self, msg: PointCloud2):
+        with self._cloud_lock:
+            self._cloud_msg = msg
 
     def _mask_cb(self, msg: Image):
         with self._mask_lock:
@@ -223,13 +305,17 @@ class GraspVizNode(Node):
     def run(self):
         args = self._args
 
-        print('Waiting for CameraInfo …')
-        if not self._wait('CameraInfo', lambda: self._fx is not None):
-            return
-
-        print('Waiting for depth frame …')
-        if not self._wait('depth frame', lambda: self._depth_msg is not None):
-            return
+        if self._use_cloud:
+            print('Waiting for point cloud …')
+            if not self._wait('point cloud', lambda: self._cloud_msg is not None):
+                return
+        else:
+            print('Waiting for CameraInfo …')
+            if not self._wait('CameraInfo', lambda: self._fx is not None):
+                return
+            print('Waiting for depth frame …')
+            if not self._wait('depth frame', lambda: self._depth_msg is not None):
+                return
 
         print('Waiting for mask frame …')
         if not self._wait('mask frame', lambda: self._mask_msg is not None):
@@ -317,6 +403,8 @@ class GraspVizNode(Node):
         # EE alignment: −90° about Y in the planning (base_footprint) world
         # frame so the gripper approach points along the arm EE's local Z.
         ee_pitch = R.from_euler('y', -90, degrees=True)
+        # Z compensation: shift grasp along base_footprint +Z (calibration).
+        z_offset_m = 0.025
 
         def _lookup_and_transform(tf_stamp):
             tf = self._tf_buffer.lookup_transform(
@@ -326,30 +414,37 @@ class GraspVizNode(Node):
             for pose in resp.poses.poses:
                 # Jazzy: do_transform_pose takes a bare Pose and returns a Pose.
                 p = tf2_geometry_msgs.do_transform_pose(pose, tf)
-                # Pre-multiply (world/base_footprint frame) −90° pitch about Y.
+                # Pre-multiply (world/base_footprint frame) +90° pitch about Y.
                 q_in = R.from_quat([p.orientation.x, p.orientation.y,
                                     p.orientation.z, p.orientation.w])
                 p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = (
                     float(v) for v in (ee_pitch * q_in).as_quat())
+                p.position.z += z_offset_m
                 poses_out.append(p)
             return poses_out
 
         base_poses = None
         try:
             base_poses = _lookup_and_transform(stamp)
-            print(f'\n── Planning frame poses ({planning_frame}) ──────────────────')
+            print(f'\n── Grasp poses ({planning_frame}) ───────────────────────────')
             _print_poses(base_poses, resp.scores, resp.widths, planning_frame,
                          resp.height_below_grasp, resp.height_above_grasp)
         except Exception as e:
             print(f'\n── TF at stamp failed ({e}), retrying with latest transform…')
             try:
                 base_poses = _lookup_and_transform(rclpy.time.Time())
-                print(f'\n── Planning frame poses ({planning_frame}, latest TF) ──────')
+                print(f'\n── Grasp poses ({planning_frame}, latest TF) ────────────')
                 _print_poses(base_poses, resp.scores, resp.widths, planning_frame,
                              resp.height_below_grasp, resp.height_above_grasp)
             except Exception as e2:
                 print(f'\n── Planning frame ({planning_frame}): transform unavailable ({e2})')
                 print(f'   Check: ros2 run tf2_ros tf2_echo {planning_frame} {cam_frame}')
+
+        # Approach poses come directly from the service response.
+        if resp.approach_poses_base.poses:
+            print(f'\n── Approach poses ({planning_frame}) — move here FIRST ──────')
+            _print_poses(resp.approach_poses_base.poses,
+                         resp.scores, resp.widths, planning_frame)
 
         # ── Object bounding box + height decomposition ────────────────────────
         if resp.object_size.x > 0:
@@ -367,36 +462,52 @@ class GraspVizNode(Node):
                       f'← grasp point to object top')
                 print(f'  total height  : {s.z*100:6.1f} cm')
 
-        # ── unproject point cloud ─────────────────────────────────────────────
-        with self._depth_lock:
-            depth_msg = self._depth_msg
+        # ── build point cloud (ZED cloud or depth unprojection) ───────────────
         with self._mask_lock:
             mask_msg = self._mask_msg
-
-        if depth_msg.encoding == "16UC1":
-            depth = np.frombuffer(depth_msg.data, dtype=np.uint16).reshape(
-                depth_msg.height, depth_msg.width).astype(np.float32) / 1000.0
-        else:
-            depth = np.frombuffer(depth_msg.data, dtype=np.float32).reshape(
-                depth_msg.height, depth_msg.width)
         label = np.frombuffer(mask_msg.data, dtype=np.uint16).reshape(
             mask_msg.height, mask_msg.width)
         mask = (label == tid)
 
-        with self._info_lock:
-            fx, fy, cx, cy = self._fx, self._fy, self._cx, self._cy
-
-        pts = _depth_to_xyz(depth, mask, fx, fy, cx, cy)
-        print(f'\nVisualising {len(pts)} points + {len(resp.scores)} grippers …')
+        if self._use_cloud:
+            with self._cloud_lock:
+                cloud_msg = self._cloud_msg
+            pts_raw = _cloud_to_xyz(cloud_msg, mask)
+        else:
+            with self._depth_lock:
+                depth_msg = self._depth_msg
+            if depth_msg.encoding == "16UC1":
+                depth = np.frombuffer(depth_msg.data, dtype=np.uint16).reshape(
+                    depth_msg.height, depth_msg.width).astype(np.float32) / 1000.0
+            else:
+                depth = np.frombuffer(depth_msg.data, dtype=np.float32).reshape(
+                    depth_msg.height, depth_msg.width)
+            with self._info_lock:
+                fx, fy, cx, cy = self._fx, self._fy, self._cx, self._cy
+            pts_raw = _depth_to_xyz(depth, mask, fx, fy, cx, cy)
+        # Same cleanup the node applies before GraspNet (outlier + DBSCAN),
+        # so the viewer cloud + AABB match what the grasps were computed on.
+        pts = _filter_cloud(pts_raw)
+        print(f'\nVisualising {len(pts)} points '
+              f'(raw {len(pts_raw)}) + {len(resp.scores)} grippers …')
 
         pcd   = _xyz_to_pcd(pts)
         frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
+
+        # AABB in camera frame — computed from the local point cloud so it
+        # aligns with the grippers (which are also in camera frame).
+        geoms = [pcd, frame]
+        if len(pts) > 0:
+            aabb = o3d.geometry.AxisAlignedBoundingBox.create_from_points(
+                o3d.utility.Vector3dVector(pts))
+            aabb.color = (1.0, 0.5, 0.0)   # orange wireframe
+            geoms.append(aabb)
 
         gg = _rebuild_grasp_group(resp.poses, resp.scores, resp.widths)
         grippers = gg.to_open3d_geometry_list()
 
         o3d.visualization.draw_geometries(
-            [pcd, frame] + grippers,
+            geoms + grippers,
             window_name=f'GraspNet — {target_str}',
             width=1280, height=720,
         )
@@ -420,6 +531,12 @@ def main():
                         help='Depth image topic')
     parser.add_argument('--info',  default='/zed_head/zed_node/depth/camera_info',
                         help='CameraInfo topic')
+    parser.add_argument('--cloud-topic',
+                        default='/zed_head/zed_node/point_cloud/cloud_registered',
+                        help='ZED organized point cloud topic')
+    parser.add_argument('--use-depth', action='store_true',
+                        help='Build the viewer cloud by unprojecting depth '
+                             'instead of using the ZED cloud (default: cloud)')
     parser.add_argument('--masks', default='/yolo/masks',
                         help='YOLO mask label image topic')
     parser.add_argument('--dets',  default='/yolo/tracked_detections_2d',

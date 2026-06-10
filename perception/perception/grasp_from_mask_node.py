@@ -80,6 +80,10 @@ class GraspFromMaskNode(Node):
         self.declare_parameter("cache_size",   10)
         self.declare_parameter("min_points",   300)
         self.declare_parameter("debug_cloud",  True)
+        # Continuously republish the last masked cloud so it stays visible in
+        # RViz between requests (the cloud is otherwise one-shot per request).
+        self.declare_parameter("debug_cloud_continuous", True)
+        self.declare_parameter("debug_cloud_rate_hz",    5.0)
         self.declare_parameter("use_mask",     True)
         self.declare_parameter("outlier_removal",      True)
         self.declare_parameter("outlier_nb_neighbors", 20)
@@ -91,7 +95,17 @@ class GraspFromMaskNode(Node):
             "/zed_head/zed_node/depth/depth_registered")
         self.declare_parameter("info_topic",
             "/zed_head/zed_node/depth/camera_info")
-        self.declare_parameter("planning_frame", "base_footprint")
+        # Point-cloud source: use ZED's organized cloud instead of unprojecting
+        # the depth image (uses ZED's own intrinsics/rectification, no fx/fy).
+        self.declare_parameter("use_cloud",   True)
+        self.declare_parameter("cloud_topic",
+            "/zed_head/zed_node/point_cloud/cloud_registered")
+        # ZED cloud is in the body frame (X-fwd); poses are emitted in this
+        # optical frame after the body→optical axis swap GraspNet expects.
+        self.declare_parameter("cloud_optical_frame",
+            "zed_head_left_camera_frame_optical")
+        self.declare_parameter("planning_frame",  "base_footprint")
+        self.declare_parameter("approach_dist_m", 0.10)
 
         p = self.get_parameter
         self.checkpoint_path = os.path.expanduser(p("checkpoint_path").value)
@@ -101,6 +115,8 @@ class GraspFromMaskNode(Node):
         self.cache_size   = p("cache_size").value
         self.min_points   = p("min_points").value
         self.debug_cloud  = p("debug_cloud").value
+        self.debug_cloud_continuous = p("debug_cloud_continuous").value
+        self.debug_cloud_rate_hz    = p("debug_cloud_rate_hz").value
         self.use_mask     = p("use_mask").value
         self.outlier_removal      = p("outlier_removal").value
         self.outlier_nb_neighbors = p("outlier_nb_neighbors").value
@@ -110,6 +126,9 @@ class GraspFromMaskNode(Node):
         self.cluster_min_samples = p("cluster_min_samples").value
         self.depth_topic  = p("depth_topic").value
         self.info_topic   = p("info_topic").value
+        self.use_cloud           = p("use_cloud").value
+        self.cloud_topic         = p("cloud_topic").value
+        self.cloud_optical_frame = p("cloud_optical_frame").value
         # planning_frame is read dynamically each call — changeable via ros2 param set
 
         # ── State ────────────────────────────────────────────────────
@@ -117,12 +136,19 @@ class GraspFromMaskNode(Node):
         self._state_lock = threading.Lock()
         self.net: Optional[GraspNet] = None
 
-        # ── Depth cache ──────────────────────────────────────────────
+        # ── Depth / cloud cache ──────────────────────────────────────
         self._depth_cache = deque(maxlen=self.cache_size)
         self._depth_lock  = threading.Lock()
+        self._cloud_cache = deque(maxlen=self.cache_size)
+        self._cloud_lock  = threading.Lock()
+
+        # Last masked debug cloud, republished continuously for RViz.
+        self._last_dbg_cloud = None
+        self._last_dbg_lock  = threading.Lock()
 
         # ── Camera intrinsics ────────────────────────────────────────
         self._fx = self._fy = self._cx = self._cy = None
+        self._img_w = self._img_h = None   # full image dims (bbox coord space)
         self._info_lock = threading.Lock()
         self._depth_frame_id = "zed_left_camera_frame_optical"
 
@@ -160,8 +186,12 @@ class GraspFromMaskNode(Node):
         # ── Subscriptions ─────────────────────────────────────────────
         self.create_subscription(
             CameraInfo, self.info_topic, self._info_cb, qos_be)
-        self.create_subscription(
-            Image, self.depth_topic, self._depth_cb, qos_be)
+        if self.use_cloud:
+            self.create_subscription(
+                PointCloud2, self.cloud_topic, self._cloud_cb, qos_be)
+        else:
+            self.create_subscription(
+                Image, self.depth_topic, self._depth_cb, qos_be)
 
         # ── Services ──────────────────────────────────────────────────
         self.create_service(
@@ -177,9 +207,14 @@ class GraspFromMaskNode(Node):
         self.dbg_marker_pub = self.create_publisher(
             MarkerArray, "/grasp/debug/grasp_markers", 10)
 
+        # Continuous republish timer (keeps the last masked cloud alive in RViz).
+        if self.debug_cloud and self.debug_cloud_continuous:
+            period = 1.0 / max(self.debug_cloud_rate_hz, 0.1)
+            self.create_timer(period, self._republish_dbg_cloud)
+
         self.get_logger().info(
             f"GraspFromMask ready\n"
-            f"  depth : {self.depth_topic}\n"
+            f"  source: {'cloud ' + self.cloud_topic if self.use_cloud else 'depth ' + self.depth_topic}\n"
             f"  info  : {self.info_topic}\n"
             f"  /grasp/from_mask  — request a grasp\n"
             f"  /grasp/standby    — true=load GPU, false=unload\n"
@@ -389,6 +424,8 @@ class GraspFromMaskNode(Node):
             self._fy = msg.k[4]
             self._cx = msg.k[2]
             self._cy = msg.k[5]
+            self._img_w = msg.width
+            self._img_h = msg.height
             self._depth_frame_id = msg.header.frame_id
         self.get_logger().info(
             f"Camera info: fx={self._fx:.1f} fy={self._fy:.1f} "
@@ -399,13 +436,67 @@ class GraspFromMaskNode(Node):
         with self._depth_lock:
             self._depth_cache.append(msg)
 
+    def _cloud_cb(self, msg: PointCloud2) -> None:
+        with self._cloud_lock:
+            self._cloud_cache.append(msg)
+
+    def _republish_dbg_cloud(self) -> None:
+        """Re-emit the last masked cloud with a fresh stamp so it stays
+        visible in RViz between requests."""
+        with self._last_dbg_lock:
+            msg = self._last_dbg_cloud
+        if msg is None:
+            return
+        msg.header.stamp = self.get_clock().now().to_msg()
+        self.dbg_cloud_pub.publish(msg)
+
+    def _extract_from_cloud(
+        self,
+        cloud_msg: PointCloud2,
+        mask: np.ndarray,
+    ) -> np.ndarray:
+        """Pull masked XYZ from ZED's organized cloud (body frame) and convert
+        to the optical convention (X-right, Y-down, Z-fwd) GraspNet expects."""
+        H, W = cloud_msg.height, cloud_msg.width
+        buf = np.frombuffer(cloud_msg.data, dtype=np.uint8).reshape(
+            H, W, cloud_msg.point_step)
+        # x,y,z are the first three float32 fields (offsets 0,4,8).
+        xyz = buf[:, :, 0:12].copy().view(np.float32).reshape(H, W, 3)
+
+        m = mask
+        if m.shape != (H, W):
+            m = cv2.resize(
+                m.astype(np.uint8), (W, H),
+                interpolation=cv2.INTER_NEAREST,
+            ).astype(bool)
+
+        pts = xyz[m]
+        valid = np.isfinite(pts).all(axis=1)
+        pts = pts[valid]
+        if len(pts) == 0:
+            return np.empty((0, 3), dtype=np.float32)
+
+        # Range gate on forward axis (body X) to match the depth path.
+        fwd = pts[:, 0]
+        pts = pts[(fwd > 0.1) & (fwd < 3.0)]
+        if len(pts) == 0:
+            return np.empty((0, 3), dtype=np.float32)
+
+        # body (X-fwd, Y-left, Z-up) → optical (X-right, Y-down, Z-fwd)
+        opt = np.stack([-pts[:, 1], -pts[:, 2], pts[:, 0]], axis=1)
+        return opt.astype(np.float32)
+
     # ── Service: status ──────────────────────────────────────────────
 
     def _handle_status(self, _req, resp) -> Trigger.Response:
         with self._state_lock:
             state = self._state
-        with self._depth_lock:
-            n_frames = len(self._depth_cache)
+        if self.use_cloud:
+            with self._cloud_lock:
+                n_frames = len(self._cloud_cache)
+        else:
+            with self._depth_lock:
+                n_frames = len(self._depth_cache)
         with self._info_lock:
             has_info = self._fx is not None
         resp.success = True
@@ -546,7 +637,8 @@ class GraspFromMaskNode(Node):
         with self._info_lock:
             has_info = self._fx is not None
 
-        if not has_info:
+        # Cloud path carries its own geometry — only the depth path needs info.
+        if not self.use_cloud and not has_info:
             response.success = False
             response.message = (
                 f"Camera info not received yet — is ZED running? "
@@ -554,20 +646,41 @@ class GraspFromMaskNode(Node):
             )
             return response
 
-        with self._depth_lock:
-            cached = list(self._depth_cache)
+        if self.use_cloud:
+            with self._cloud_lock:
+                cached = list(self._cloud_cache)
+            src_topic = self.cloud_topic
+        else:
+            with self._depth_lock:
+                cached = list(self._depth_cache)
+            src_topic = self.depth_topic
 
         if len(cached) == 0:
             response.success = False
             response.message = (
-                f"No depth frames cached — is ZED running? "
-                f"({self.depth_topic})"
+                f"No frames cached — is ZED running? ({src_topic})"
             )
             return response
 
         # ── Build region mask (mask or bbox) ─────────────────────
-        depth_ref = cached[-1]
-        H, W = depth_ref.height, depth_ref.width
+        # The region mask is built in the IMAGE coordinate space (where mask
+        # and bbox pixels live), then _extract_from_cloud / _unproject resize
+        # it down to the cloud / depth resolution. Using the cache frame's dims
+        # here would be wrong for the cloud (256×448 ≠ 1920×1080 bbox space).
+        if request.mask.data:
+            H, W = request.mask.height, request.mask.width
+        elif not self.use_cloud:
+            depth_ref = cached[-1]
+            H, W = depth_ref.height, depth_ref.width
+        else:
+            with self._info_lock:
+                H, W = self._img_h, self._img_w
+            if H is None:
+                response.success = False
+                response.message = (
+                    "No image dimensions yet (camera_info) — needed for "
+                    "bbox mode with the cloud source")
+                return response
 
         if self.use_mask and request.mask.data:
             if request.mask.encoding != "16UC1":
@@ -614,8 +727,11 @@ class GraspFromMaskNode(Node):
             frames = cached[-n_frames:]
             all_pts = []
 
-            for depth_msg in frames:
-                p = self._unproject(depth_msg, object_mask)
+            for frame_msg in frames:
+                if self.use_cloud:
+                    p = self._extract_from_cloud(frame_msg, object_mask)
+                else:
+                    p = self._unproject(frame_msg, object_mask)
                 if len(p) > 0:
                     all_pts.append(p)
 
@@ -673,14 +789,22 @@ class GraspFromMaskNode(Node):
         pts = pts[idx]
         response.points_fed = len(pts)
 
+        # Optical-convention frame for the extracted points: the cloud's own
+        # header frame is the body frame, so override it when using the cloud.
+        last = cached[-1]
+        if self.use_cloud:
+            pts_frame_id = self.cloud_optical_frame
+        else:
+            pts_frame_id = last.header.frame_id or self._depth_frame_id
+
         # ── Publish debug cloud ───────────────────────────────────
         if self.debug_cloud:
-            last = cached[-1]
-            self.dbg_cloud_pub.publish(
-                self._make_pc2(pts,
-                               frame_id=last.header.frame_id or self._depth_frame_id,
-                               stamp=last.header.stamp)
-            )
+            dbg_msg = self._make_pc2(pts,
+                                     frame_id=pts_frame_id,
+                                     stamp=last.header.stamp)
+            self.dbg_cloud_pub.publish(dbg_msg)
+            with self._last_dbg_lock:
+                self._last_dbg_cloud = dbg_msg
 
         # ── GraspNet inference ────────────────────────────────────
         cloud_t = torch.from_numpy(pts).unsqueeze(0).cuda()
@@ -715,8 +839,7 @@ class GraspFromMaskNode(Node):
         response.grasps_returned = len(gg)
 
         # ── Build pose response ───────────────────────────────────
-        last = cached[-1]
-        frame_id = last.header.frame_id or self._depth_frame_id
+        frame_id = pts_frame_id
         stamp    = last.header.stamp
         response.poses.header.frame_id = frame_id
         response.poses.header.stamp    = stamp
@@ -741,15 +864,18 @@ class GraspFromMaskNode(Node):
         # ── Transform poses to planning frame ────────────────────────
         planning_frame = self.get_parameter("planning_frame").value
         response.planning_frame = planning_frame
-        response.poses_base.header.frame_id = planning_frame
-        response.poses_base.header.stamp    = stamp
+        response.poses_base.header.frame_id          = planning_frame
+        response.poses_base.header.stamp             = stamp
+        response.approach_poses_base.header.frame_id = planning_frame
+        response.approach_poses_base.header.stamp    = stamp
 
         # EE alignment: after transforming into the planning frame, rotate
         # −90° about Y in that (base_footprint) world frame so the gripper
         # approach points along the arm EE's local Z. Pre-multiply = world frame.
         ee_pitch = R.from_euler("y", -90.0, degrees=True)
         # Z compensation: shift grasp along base_footprint +Z (calibration).
-        z_offset_m = 0.025
+        z_offset_m   = 0.025
+        approach_dist = self.get_parameter("approach_dist_m").value
 
         def _do_tf(tf_stamp):
             tf = self._tf_buffer.lookup_transform(
@@ -781,12 +907,14 @@ class GraspFromMaskNode(Node):
             response.object_bbox_pose.orientation.w = 1.0
 
             response.poses_base.poses.clear()
+            response.approach_poses_base.poses.clear()
             response.height_below_grasp.clear()
             response.height_above_grasp.clear()
 
             for pose in response.poses.poses:
                 # Jazzy: do_transform_pose takes a bare Pose and returns a Pose.
                 p = tf2_geometry_msgs.do_transform_pose(pose, tf)
+                # Pre-multiply (world/base_footprint frame) +90° pitch about Y.
                 q_in = R.from_quat([p.orientation.x, p.orientation.y,
                                     p.orientation.z, p.orientation.w])
                 p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = (
@@ -795,6 +923,18 @@ class GraspFromMaskNode(Node):
                 response.poses_base.poses.append(p)
                 response.height_below_grasp.append(float(p.position.z - z_min))
                 response.height_above_grasp.append(float(z_max - p.position.z))
+
+                # Approach pose: same orientation, backed out along approach axis.
+                # Col-0 of the rotation matrix is the approach direction.
+                rot = R.from_quat([p.orientation.x, p.orientation.y,
+                                   p.orientation.z, p.orientation.w]).as_matrix()
+                approach_axis = rot[:, 0]
+                ap = Pose()
+                ap.position.x    = p.position.x - float(approach_axis[0]) * approach_dist
+                ap.position.y    = p.position.y - float(approach_axis[1]) * approach_dist
+                ap.position.z    = p.position.z - float(approach_axis[2]) * approach_dist
+                ap.orientation   = p.orientation
+                response.approach_poses_base.poses.append(ap)
 
         try:
             _do_tf(stamp)
@@ -873,6 +1013,26 @@ class GraspFromMaskNode(Node):
                 _pt(trans),   _pt(approach_tip),   # approach direction
             ]
             ma.markers.append(m)
+
+        # ── AABB marker (planning frame) ──────────────────────────
+        if response.object_size.x > 0:
+            bbox_m = Marker()
+            bbox_m.header.frame_id = planning_frame
+            bbox_m.header.stamp    = stamp
+            bbox_m.ns              = "object_bbox"
+            bbox_m.id              = 0
+            bbox_m.type            = Marker.CUBE
+            bbox_m.action          = Marker.ADD
+            bbox_m.lifetime        = lt
+            bbox_m.pose            = response.object_bbox_pose
+            bbox_m.scale.x         = float(response.object_size.x)
+            bbox_m.scale.y         = float(response.object_size.y)
+            bbox_m.scale.z         = float(response.object_size.z)
+            bbox_m.color.r         = 0.0
+            bbox_m.color.g         = 0.8
+            bbox_m.color.b         = 1.0
+            bbox_m.color.a         = 0.25   # semi-transparent
+            ma.markers.append(bbox_m)
 
         self.dbg_marker_pub.publish(ma)
 
