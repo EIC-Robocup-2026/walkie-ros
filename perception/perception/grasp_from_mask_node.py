@@ -78,7 +78,7 @@ class GraspFromMaskNode(Node):
         self.declare_parameter("num_view",     300)
         self.declare_parameter("voxel_size_m", 0.005)
         self.declare_parameter("cache_size",   10)
-        self.declare_parameter("min_points",   300)
+        self.declare_parameter("min_points",   200)
         self.declare_parameter("debug_cloud",  True)
         # Continuously republish the last masked cloud so it stays visible in
         # RViz between requests (the cloud is otherwise one-shot per request).
@@ -91,13 +91,30 @@ class GraspFromMaskNode(Node):
         self.declare_parameter("cluster_filter",       True)
         self.declare_parameter("cluster_eps",          0.02)
         self.declare_parameter("cluster_min_samples",  10)
+        # Depth-path edge / flying-pixel filter — reproduces the neighbour-
+        # disagreement rejection ZED already applies to its point cloud, so the
+        # depth path can keep the full-resolution mask without the silhouette
+        # "skin" of edge points. Only used when use_cloud=false.
+        self.declare_parameter("depth_edge_filter",    True)
+        self.declare_parameter("depth_edge_tol_m",     0.03)
+        self.declare_parameter("depth_edge_radius",    1)
+        self.declare_parameter("depth_edge_min_ratio", 0.6)
+        # Shrink the region mask by N pixels (at image resolution) before
+        # extraction. Optional — for loose masks only; off by default since the
+        # cloud-validity gate is the right tool for ZED edge bleed. 0 = disabled.
+        self.declare_parameter("mask_erosion_px",      0)
+        # Depth path only: reject depth pixels that have NO point in the ZED
+        # cloud (the cloud already drops ZED's low-confidence edge pixels, the
+        # raw depth image keeps them). Removes exactly the points absent from
+        # the cloud topic. Subscribes to the cloud even in depth mode.
+        self.declare_parameter("gate_by_cloud",        True)
         self.declare_parameter("depth_topic",
             "/zed_head/zed_node/depth/depth_registered")
         self.declare_parameter("info_topic",
             "/zed_head/zed_node/depth/camera_info")
         # Point-cloud source: use ZED's organized cloud instead of unprojecting
         # the depth image (uses ZED's own intrinsics/rectification, no fx/fy).
-        self.declare_parameter("use_cloud",   True)
+        self.declare_parameter("use_cloud",   False)
         self.declare_parameter("cloud_topic",
             "/zed_head/zed_node/point_cloud/cloud_registered")
         # ZED cloud is in the body frame (X-fwd); poses are emitted in this
@@ -124,6 +141,12 @@ class GraspFromMaskNode(Node):
         self.cluster_filter      = p("cluster_filter").value
         self.cluster_eps         = p("cluster_eps").value
         self.cluster_min_samples = p("cluster_min_samples").value
+        self.depth_edge_filter    = p("depth_edge_filter").value
+        self.depth_edge_tol_m     = p("depth_edge_tol_m").value
+        self.depth_edge_radius    = p("depth_edge_radius").value
+        self.depth_edge_min_ratio = p("depth_edge_min_ratio").value
+        self.mask_erosion_px      = p("mask_erosion_px").value
+        self.gate_by_cloud        = p("gate_by_cloud").value
         self.depth_topic  = p("depth_topic").value
         self.info_topic   = p("info_topic").value
         self.use_cloud           = p("use_cloud").value
@@ -192,6 +215,11 @@ class GraspFromMaskNode(Node):
         else:
             self.create_subscription(
                 Image, self.depth_topic, self._depth_cb, qos_be)
+            # Depth mode still subscribes to the cloud when gating, so we can
+            # drop depth pixels the cloud doesn't have.
+            if self.gate_by_cloud:
+                self.create_subscription(
+                    PointCloud2, self.cloud_topic, self._cloud_cb, qos_be)
 
         # ── Services ──────────────────────────────────────────────────
         self.create_service(
@@ -374,10 +402,55 @@ class GraspFromMaskNode(Node):
           max(0, cx - hw):min(W, cx + hw)] = True
         return m
 
+    def _edge_agreement(self, depth: np.ndarray, valid: np.ndarray) -> np.ndarray:
+        """Neighbour-disagreement / flying-pixel filter.
+
+        Keeps a valid pixel only if its depth agrees (within tol) with at least
+        a minimum fraction of its valid neighbours. This drops the thin skin of
+        stereo flying pixels along depth discontinuities — the same artefact
+        ZED's point cloud already rejects but the raw depth image keeps.
+        """
+        r   = max(1, int(self.depth_edge_radius))
+        tol = float(self.depth_edge_tol_m)
+        # Sentinel for invalid pixels so they never count as "agreeing".
+        d = np.where(valid, depth, -1000.0).astype(np.float32)
+
+        agree = np.zeros(depth.shape, dtype=np.int16)
+        n_neighbors = 0
+        for dy in range(-r, r + 1):
+            for dx in range(-r, r + 1):
+                if dx == 0 and dy == 0:
+                    continue
+                n_neighbors += 1
+                sd = np.roll(np.roll(d, dy, axis=0), dx, axis=1)
+                sv = np.roll(np.roll(valid, dy, axis=0), dx, axis=1)
+                agree += (sv & (np.abs(sd - d) < tol)).astype(np.int16)
+
+        min_agree = int(np.ceil(n_neighbors * self.depth_edge_min_ratio))
+        return valid & (agree >= min_agree)
+
+    def _cloud_validity(self, cloud_msg: PointCloud2,
+                        h_out: int, w_out: int) -> np.ndarray:
+        """Boolean (h_out, w_out) mask of pixels where the ZED cloud has a
+        finite point, upsampled from the (lower-res) organized cloud. Used to
+        drop depth pixels the cloud rejected as low-confidence/edge."""
+        H, W = cloud_msg.height, cloud_msg.width
+        buf = np.frombuffer(cloud_msg.data, dtype=np.uint8).reshape(
+            H, W, cloud_msg.point_step)
+        xyz = buf[:, :, 0:12].copy().view(np.float32).reshape(H, W, 3)
+        valid = np.isfinite(xyz).all(axis=2)
+        if (H, W) != (h_out, w_out):
+            valid = cv2.resize(
+                valid.astype(np.uint8), (w_out, h_out),
+                interpolation=cv2.INTER_NEAREST,
+            ).astype(bool)
+        return valid
+
     def _unproject(
         self,
         depth_msg: Image,
         mask: np.ndarray,
+        cloud_valid: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         """Unproject masked depth pixels to XYZ using pinhole model."""
         if depth_msg.encoding == "16UC1":
@@ -397,12 +470,20 @@ class GraspFromMaskNode(Node):
                 interpolation=cv2.INTER_NEAREST,
             ).astype(bool)
 
-        vs, us = np.where(m)
-        z = depth[vs, us]
-        valid = np.isfinite(z) & (z > 0.1) & (z < 3.0)
-        us = us[valid].astype(np.float32)
-        vs = vs[valid].astype(np.float32)
-        z  = z[valid]
+        # Global validity (finite + range gate) over the whole frame, so the
+        # edge filter can inspect each pixel's neighbourhood before masking.
+        valid2d = np.isfinite(depth) & (depth > 0.1) & (depth < 3.0)
+        if self.depth_edge_filter:
+            valid2d = self._edge_agreement(depth, valid2d)
+        # Drop depth pixels the ZED cloud doesn't have (its confidence/edge filter).
+        if cloud_valid is not None:
+            valid2d &= cloud_valid
+
+        sel = m & valid2d
+        vs, us = np.where(sel)
+        z  = depth[vs, us]
+        us = us.astype(np.float32)
+        vs = vs.astype(np.float32)
 
         if len(z) == 0:
             return np.empty((0, 3), dtype=np.float32)
@@ -723,6 +804,41 @@ class GraspFromMaskNode(Node):
                 f"pixels={object_mask.sum()}"
             )
 
+        # ── Erode the region to drop the silhouette boundary band ──
+        # Edge flying pixels and loose-mask background bleed concentrate in the
+        # rim just inside the mask edge; eroding removes it. Skipped if it would
+        # leave the object too small.
+        if self.mask_erosion_px > 0 and object_mask.sum() > 0:
+            k = 2 * int(self.mask_erosion_px) + 1
+            eroded = cv2.erode(
+                object_mask.astype(np.uint8),
+                np.ones((k, k), np.uint8), iterations=1).astype(bool)
+            if eroded.sum() >= 10:
+                self.get_logger().info(
+                    f"mask erosion: {int(object_mask.sum())} → "
+                    f"{int(eroded.sum())} px (−{self.mask_erosion_px}px rim)")
+                object_mask = eroded
+            else:
+                self.get_logger().warn(
+                    f"mask erosion would leave {int(eroded.sum())} px — "
+                    f"skipping (object too small)")
+
+        # ── Cloud-validity gate (depth path) ──────────────────────
+        # Build a validity mask from the latest ZED cloud so the depth path can
+        # drop pixels the cloud rejected (its confidence/edge filter). This is
+        # exactly the set of points present in the depth image but not the cloud.
+        cloud_valid = None
+        if (not self.use_cloud) and self.gate_by_cloud:
+            with self._cloud_lock:
+                cl = self._cloud_cache[-1] if self._cloud_cache else None
+            if cl is not None:
+                ref = cached[-1]
+                cloud_valid = self._cloud_validity(cl, ref.height, ref.width)
+            else:
+                self.get_logger().warn(
+                    "gate_by_cloud on but no cloud received yet — skipping cloud gate "
+                    f"({self.cloud_topic})")
+
         # ── Adaptive frame accumulation ───────────────────────────
         if request.num_frames == 0:
             frames_to_try = sorted(set([1, 3, min(5, len(cached))]))
@@ -740,7 +856,7 @@ class GraspFromMaskNode(Node):
                 if self.use_cloud:
                     p = self._extract_from_cloud(frame_msg, object_mask)
                 else:
-                    p = self._unproject(frame_msg, object_mask)
+                    p = self._unproject(frame_msg, object_mask, cloud_valid)
                 if len(p) > 0:
                     all_pts.append(p)
 

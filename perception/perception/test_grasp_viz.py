@@ -68,19 +68,58 @@ except ImportError:
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+def _edge_agreement(depth: np.ndarray, valid: np.ndarray, tol_m: float = 0.03,
+                    radius: int = 1, min_ratio: float = 0.6) -> np.ndarray:
+    """Neighbour-disagreement / flying-pixel filter (mirrors the node)."""
+    r = max(1, int(radius))
+    d = np.where(valid, depth, -1000.0).astype(np.float32)
+    agree = np.zeros(depth.shape, dtype=np.int16)
+    n = 0
+    for dy in range(-r, r + 1):
+        for dx in range(-r, r + 1):
+            if dx == 0 and dy == 0:
+                continue
+            n += 1
+            sd = np.roll(np.roll(d, dy, axis=0), dx, axis=1)
+            sv = np.roll(np.roll(valid, dy, axis=0), dx, axis=1)
+            agree += (sv & (np.abs(sd - d) < tol_m)).astype(np.int16)
+    return valid & (agree >= int(np.ceil(n * min_ratio)))
+
+
+def _cloud_validity(cloud_msg, h_out: int, w_out: int) -> np.ndarray:
+    """Boolean (h_out, w_out) mask of pixels where the ZED cloud has a finite
+    point, upsampled from the organized cloud (mirrors the node)."""
+    H, W = cloud_msg.height, cloud_msg.width
+    buf = np.frombuffer(cloud_msg.data, dtype=np.uint8).reshape(
+        H, W, cloud_msg.point_step)
+    xyz = buf[:, :, 0:12].copy().view(np.float32).reshape(H, W, 3)
+    valid = np.isfinite(xyz).all(axis=2)
+    if (H, W) != (h_out, w_out):
+        valid = cv2.resize(valid.astype(np.uint8), (w_out, h_out),
+                           interpolation=cv2.INTER_NEAREST).astype(bool)
+    return valid
+
+
 def _depth_to_xyz(depth: np.ndarray, mask: np.ndarray,
                   fx: float, fy: float, cx: float, cy: float,
-                  z_min: float = 0.1, z_max: float = 3.0) -> np.ndarray:
+                  z_min: float = 0.1, z_max: float = 3.0,
+                  edge_filter: bool = True,
+                  cloud_valid: np.ndarray = None) -> np.ndarray:
     """Pinhole unproject. Returns (N,3) float32 in camera frame."""
     if mask.shape != depth.shape:
         mask = cv2.resize(mask.astype(np.uint8), (depth.shape[1], depth.shape[0]),
                           interpolation=cv2.INTER_NEAREST).astype(bool)
-    vs, us = np.where(mask)
+    valid = np.isfinite(depth) & (depth > z_min) & (depth < z_max)
+    if edge_filter:
+        valid = _edge_agreement(depth, valid)
+    if cloud_valid is not None:
+        valid &= cloud_valid
+    sel = mask & valid
+    vs, us = np.where(sel)
     z = depth[vs, us]
-    valid = np.isfinite(z) & (z > z_min) & (z < z_max)
-    us, vs, z = us[valid].astype(np.float32), vs[valid].astype(np.float32), z[valid]
     if len(z) == 0:
         return np.empty((0, 3), dtype=np.float32)
+    us, vs = us.astype(np.float32), vs.astype(np.float32)
     x = (us - cx) * z / fx
     y = (vs - cy) * z / fy
     return np.stack([x, y, z], axis=1).astype(np.float32)
@@ -223,10 +262,11 @@ class GraspVizNode(Node):
         qos = QoSProfile(reliability=be, history=kl, depth=5)
 
         self.create_subscription(CameraInfo, args.info,  self._info_cb,  10)
-        if self._use_cloud:
-            self.create_subscription(
-                PointCloud2, args.cloud_topic, self._cloud_cb, qos)
-        else:
+        # Always subscribe to the cloud: cloud mode uses it as the source, depth
+        # mode uses it to gate out pixels the cloud doesn't have.
+        self.create_subscription(
+            PointCloud2, args.cloud_topic, self._cloud_cb, qos)
+        if not self._use_cloud:
             self.create_subscription(Image, args.depth, self._depth_cb, qos)
         self.create_subscription(Image,      args.masks, self._mask_cb,  qos)
         self.create_subscription(Detection2DArray, args.dets, self._det_cb, qos)
@@ -488,7 +528,18 @@ class GraspVizNode(Node):
                     depth_msg.height, depth_msg.width)
             with self._info_lock:
                 fx, fy, cx, cy = self._fx, self._fy, self._cx, self._cy
-            pts_raw = _depth_to_xyz(depth, mask, fx, fy, cx, cy)
+            # Gate against the cloud's validity — drop pixels the cloud lacks.
+            cloud_valid = None
+            if not args.no_cloud_gate:
+                with self._cloud_lock:
+                    cmsg = self._cloud_msg
+                if cmsg is not None:
+                    cloud_valid = _cloud_validity(cmsg, depth.shape[0], depth.shape[1])
+                else:
+                    print('  (no cloud yet — skipping cloud-validity gate)')
+            pts_raw = _depth_to_xyz(depth, mask, fx, fy, cx, cy,
+                                    edge_filter=not args.no_edge_filter,
+                                    cloud_valid=cloud_valid)
         # Same cleanup the node applies before GraspNet (outlier + DBSCAN),
         # so the viewer cloud + AABB match what the grasps were computed on.
         pts = _filter_cloud(pts_raw)
@@ -541,6 +592,12 @@ def main():
     parser.add_argument('--use-depth', action='store_true',
                         help='Build the viewer cloud by unprojecting depth '
                              'instead of using the ZED cloud (default: cloud)')
+    parser.add_argument('--no-edge-filter', action='store_true',
+                        help='Disable the depth-path flying-pixel filter '
+                             '(only relevant with --use-depth)')
+    parser.add_argument('--no-cloud-gate', action='store_true',
+                        help='Disable gating depth pixels against the cloud '
+                             "validity (keeps points the cloud doesn't have)")
     parser.add_argument('--masks', default='/yolo/masks',
                         help='YOLO mask label image topic')
     parser.add_argument('--dets',  default='/yolo/tracked_detections_2d',

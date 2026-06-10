@@ -503,6 +503,12 @@ Notes:
 | `cluster_filter` | `true` | DBSCAN dominant-cluster filter (removes background noise) |
 | `cluster_eps` | `0.02` | DBSCAN neighbourhood radius (metres) |
 | `cluster_min_samples` | `10` | DBSCAN minimum points per cluster |
+| `gate_by_cloud` | `true` | **Depth path only** — drop depth pixels that have no point in the ZED cloud (removes exactly the low-confidence/edge points the cloud already rejected but the raw depth image keeps). Subscribes to the cloud even in depth mode |
+| `depth_edge_filter` | `true` | **Depth path only** — reject residual sub-cloud-cell flying pixels at depth edges (neighbour-disagreement) |
+| `depth_edge_tol_m` | `0.03` | Max depth difference (m) for a neighbour to count as agreeing |
+| `depth_edge_radius` | `1` | Neighbourhood radius in pixels (1 = 3×3 window) |
+| `depth_edge_min_ratio` | `0.6` | Min fraction of neighbours that must agree to keep a pixel |
+| `mask_erosion_px` | `0` | Optional: shrink the region mask by N px before extraction (for loose masks). `0` = off |
 
 `planning_frame` is read on every service call, so it can be changed without restarting the node:
 
