@@ -242,6 +242,64 @@
         <joint name="openarm_right_joint7" value="0"/>
     </group_state>
 
+    <group_state name="hands_up" group="both_arms_lift">
+        <joint name="lift_joint" value="0.7435"/> <!-- Adjust this lift height as needed -->
+        <joint name="openarm_left_joint1" value="0"/>
+        <joint name="openarm_left_joint2" value="0"/>
+        <joint name="openarm_left_joint3" value="0"/>
+        <joint name="openarm_left_joint4" value="2"/>
+        <joint name="openarm_left_joint5" value="0"/>
+        <joint name="openarm_left_joint6" value="0"/>
+        <joint name="openarm_left_joint7" value="0"/>
+        <joint name="openarm_right_joint1" value="0"/>
+        <joint name="openarm_right_joint2" value="0"/>
+        <joint name="openarm_right_joint3" value="0"/>
+        <joint name="openarm_right_joint4" value="2"/>
+        <joint name="openarm_right_joint5" value="0"/>
+        <joint name="openarm_right_joint6" value="0"/>
+        <joint name="openarm_right_joint7" value="0"/>
+    </group_state>
+
+    <group_state name="standby" group="left_arm_lift">
+        <joint name="lift_joint" value="0.7435"/>
+        <joint name="openarm_left_joint1" value="0.6458"/>
+        <joint name="openarm_left_joint2" value="0"/>
+        <joint name="openarm_left_joint3" value="0"/>
+        <joint name="openarm_left_joint4" value="2.0769"/>
+        <joint name="openarm_left_joint5" value="0"/>
+        <joint name="openarm_left_joint6" value="0"/>
+        <joint name="openarm_left_joint7" value="-1.5708"/>
+    </group_state>
+
+    <group_state name="standby" group="right_arm_lift">
+        <joint name="lift_joint" value="0.7435"/>
+        <joint name="openarm_right_joint1" value="-0.6458"/>
+        <joint name="openarm_right_joint2" value="0"/>
+        <joint name="openarm_right_joint3" value="0"/>
+        <joint name="openarm_right_joint4" value="2.0769"/>
+        <joint name="openarm_right_joint5" value="0"/>
+        <joint name="openarm_right_joint6" value="0"/>
+        <joint name="openarm_right_joint7" value="1.5708"/>
+    </group_state>
+
+    <group_state name="standby" group="both_arms_lift">
+        <joint name="lift_joint" value="0.7435"/>
+        <joint name="openarm_left_joint1" value="0.6458"/>
+        <joint name="openarm_left_joint2" value="0"/>
+        <joint name="openarm_left_joint3" value="0"/>
+        <joint name="openarm_left_joint4" value="2.0769"/>
+        <joint name="openarm_left_joint5" value="0"/>
+        <joint name="openarm_left_joint6" value="0"/>
+        <joint name="openarm_left_joint7" value="-1.5708"/>
+        <joint name="openarm_right_joint1" value="-0.6458"/>
+        <joint name="openarm_right_joint2" value="0"/>
+        <joint name="openarm_right_joint3" value="0"/>
+        <joint name="openarm_right_joint4" value="2.0769"/>
+        <joint name="openarm_right_joint5" value="0"/>
+        <joint name="openarm_right_joint6" value="0"/>
+        <joint name="openarm_right_joint7" value="1.5708"/>
+    </group_state>
+
     <group_state name="closed" group="left_gripper">
         <joint name="openarm_left_finger_joint1" value="0"/>
     </group_state>

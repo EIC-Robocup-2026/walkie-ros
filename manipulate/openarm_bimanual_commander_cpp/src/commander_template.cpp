@@ -1141,19 +1141,32 @@ public:
             goal_handle->abort(result); return;
         }
 
-        RCLCPP_INFO(node_->get_logger(), "Executing GoToHome for %s", goal->group_name.c_str());
+        const std::string pose_name =
+            goal->pose_name.empty() ? "home" : goal->pose_name;
+
+        RCLCPP_INFO(node_->get_logger(), "Executing GoToHome (%s) for %s",
+                    pose_name.c_str(), goal->group_name.c_str());
 
         group->setStartStateToCurrentState();
         group->setPoseReferenceFrame("base_footprint");
         group->setGoalTolerance(0.01);
 
-        // Use the SRDF "home" state rather than a fabricated all-zeros target.
-        // For lift-inclusive groups "home" sets lift_joint = 0.7435 (the homed
-        // top of travel); forcing it to 0.0 lands the lift on its lower joint
-        // limit with the arm folded against the body, which OMPL cannot sample
-        // as a valid goal ("Insufficient states in sampleable goal region").
-        // both_arms has no "home" state defined, so fall back to all-zeros there.
-        if (!group->setNamedTarget("home")) {
+        // Use the SRDF named state rather than a fabricated all-zeros target.
+        // For lift-inclusive groups the states keep lift_joint = 0.7435 (the
+        // homed top of travel); forcing it to 0.0 lands the lift on its lower
+        // joint limit with the arm folded against the body, which OMPL cannot
+        // sample as a valid goal ("Insufficient states in sampleable goal
+        // region"). The all-zeros fallback applies only to the default "home"
+        // request; an explicitly requested state that is missing from the SRDF
+        // aborts instead of silently moving somewhere else.
+        if (!group->setNamedTarget(pose_name)) {
+            if (!goal->pose_name.empty()) {
+                RCLCPP_ERROR(node_->get_logger(),
+                             "Unknown SRDF state '%s' for group %s",
+                             pose_name.c_str(), goal->group_name.c_str());
+                result->success = false;
+                goal_handle->abort(result); return;
+            }
             std::vector<double> home_joints(group->getVariableCount(), 0.0);
             group->setJointValueTarget(home_joints);
         }
@@ -1176,8 +1189,8 @@ public:
                 goal_handle->abort(result);
             }
         } else {
-            RCLCPP_ERROR(node_->get_logger(), "Failed to plan path to Home for %s",
-                         goal->group_name.c_str());
+            RCLCPP_ERROR(node_->get_logger(), "Failed to plan path to '%s' for %s",
+                         pose_name.c_str(), goal->group_name.c_str());
             result->success = false;
             goal_handle->abort(result);
         }
