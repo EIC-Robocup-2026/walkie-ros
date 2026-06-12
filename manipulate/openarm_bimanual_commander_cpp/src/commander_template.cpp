@@ -1141,21 +1141,37 @@ public:
             goal_handle->abort(result); return;
         }
 
-        RCLCPP_INFO(node_->get_logger(), "Executing GoToHome for %s", goal->group_name.c_str());
+        // Empty pose_name keeps the historical behaviour (go home).
+        const std::string pose_name = goal->pose_name.empty() ? "home" : goal->pose_name;
+
+        RCLCPP_INFO(node_->get_logger(), "Executing GoToHome (pose='%s') for %s",
+                    pose_name.c_str(), goal->group_name.c_str());
 
         group->setStartStateToCurrentState();
         group->setPoseReferenceFrame("base_footprint");
         group->setGoalTolerance(0.01);
 
-        // Use the SRDF "home" state rather than a fabricated all-zeros target.
-        // For lift-inclusive groups "home" sets lift_joint = 0.7435 (the homed
-        // top of travel); forcing it to 0.0 lands the lift on its lower joint
-        // limit with the arm folded against the body, which OMPL cannot sample
-        // as a valid goal ("Insufficient states in sampleable goal region").
-        // both_arms has no "home" state defined, so fall back to all-zeros there.
-        if (!group->setNamedTarget("home")) {
-            std::vector<double> home_joints(group->getVariableCount(), 0.0);
-            group->setJointValueTarget(home_joints);
+        // Drive to the SRDF named state (home/standby/hands_up/...).
+        if (!group->setNamedTarget(pose_name)) {
+            // "home" gets an all-zeros fallback rather than a fabricated target.
+            // For lift-inclusive groups "home" sets lift_joint = 0.7435 (the
+            // homed top of travel); forcing it to 0.0 lands the lift on its
+            // lower joint limit with the arm folded against the body, which OMPL
+            // cannot sample as a valid goal ("Insufficient states in sampleable
+            // goal region"). both_arms has no "home" state defined, so fall back
+            // to all-zeros there. Any *other* named state that isn't defined for
+            // this group is a hard error — there is no sensible fallback.
+            if (pose_name == "home") {
+                std::vector<double> home_joints(group->getVariableCount(), 0.0);
+                group->setJointValueTarget(home_joints);
+            } else {
+                RCLCPP_ERROR(node_->get_logger(),
+                             "Named state '%s' is not defined for group '%s'",
+                             pose_name.c_str(), goal->group_name.c_str());
+                result->success = false;
+                goal_handle->abort(result);
+                return;
+            }
         }
 
         MoveGroupInterface::Plan plan;

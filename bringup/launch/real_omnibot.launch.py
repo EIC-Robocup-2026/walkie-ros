@@ -378,6 +378,34 @@ def generate_launch_description():
         ],
     )
 
+    # Self-filter the RealSense D415 cloud using the robot's URDF collision
+    # geometry. Same as the ZED filter: NO static crop box -- only the robot's
+    # own body (base + arms) is removed. depth/color/points is XYZRGB, so
+    # lidar_sensor_type=1.
+    realsense_self_filter_config = os.path.join(
+        get_package_share_directory(package_name),
+        "config",
+        "camera",
+        "d415_bottom_self_filter.yaml",
+    )
+    realsense_self_filter = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("robot_self_filter"),
+                "launch",
+                "self_filter.launch.py",
+            )
+        ),
+        launch_arguments={
+            "robot_description": robot_description_content,
+            "filter_config": realsense_self_filter_config,
+            "in_pointcloud_topic": "/camera/camera/depth/color/points",
+            "out_pointcloud_topic": "/camera/camera/depth/color/points/filtered",
+            "lidar_sensor_type": "1",
+            "use_sim_time": use_sim_time,
+        }.items(),
+    )
+
     # ZED Camera Launch
     zed_camera_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -530,6 +558,7 @@ def generate_launch_description():
     # ld.add_action(unitree_pointcloud_filter)
     ld.add_action(unitree_self_filter)
     # ld.add_action(realsense_camera_node)
+    # ld.add_action(realsense_self_filter)
     ld.add_action(zed_camera_launch)
     ld.add_action(zed_self_filter)
     ld.add_action(rosbridge_launch)
