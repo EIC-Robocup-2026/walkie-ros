@@ -7,7 +7,7 @@ float32 score_threshold
 int32 max_grasps
 ---
 # RESPONSE
-geometry_msgs/PoseArray poses                  # in camera frame
+# Grasp pose(s) in the planning frame: position + orientation (grasp angle).
 geometry_msgs/PoseArray poses_base            # grasp poses in planning frame
 geometry_msgs/PoseArray approach_poses_base   # pre-grasp approach poses (backed out along approach axis)
 string planning_frame                         # frame used for poses_base / approach_poses_base
@@ -15,13 +15,7 @@ float32[] scores
 float32[] widths
 bool success
 string message
-float32 inference_ms
-float32 total_ms
-int32 points_extracted
-int32 points_fed
-int32 grasps_raw
-int32 grasps_returned
-int32 frames_used
+# Timing/point counts are logged to the node terminal, not returned here.
 
 # Object bounding box in planning frame — use to build a MoveIt CollisionObject
 geometry_msgs/Vector3 object_size       # AABB dimensions (x, y, z) in metres

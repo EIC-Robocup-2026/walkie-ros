@@ -16,7 +16,6 @@ find_package(diagnostic_msgs REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
-find_package(tf2_sensor_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 ament_package_xml()
@@ -26,15 +25,11 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GetObPose.srv"
   "srv/GetObjectCloud.srv"
   "srv/GraspFromMask.srv"
+  "srv/PCAHeuristicGrasp.srv"
   DEPENDENCIES geometry_msgs vision_msgs sensor_msgs
 )
 
 # ── C++ nodes ─────────────────────────────────────────────────────────────────
-add_executable(cloud_to_map src/cloud_to_map_node.cpp)
-ament_target_dependencies(cloud_to_map
-  rclcpp sensor_msgs tf2_ros tf2_sensor_msgs)
-install(TARGETS cloud_to_map DESTINATION lib/${PROJECT_NAME})
-
 add_executable(ob_pose_service_cpp src/ob_pose_service.cpp)
 ament_target_dependencies(ob_pose_service_cpp
   rclcpp
@@ -62,8 +57,14 @@ install(PROGRAMS perception/obb_3d.py
 install(PROGRAMS perception/grasp_from_mask_node.py
   RENAME grasp_from_mask DESTINATION lib/${PROJECT_NAME})
 
+install(PROGRAMS perception/grasp_pca_node.py
+  RENAME grasp_pca DESTINATION lib/${PROJECT_NAME})
+
 install(PROGRAMS perception/test_grasp_viz.py
   RENAME test_grasp_viz DESTINATION lib/${PROJECT_NAME})
+
+install(PROGRAMS perception/test_grasp_compare.py
+  RENAME test_grasp_compare DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY srv
   DESTINATION share/${PROJECT_NAME})

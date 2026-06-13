@@ -407,12 +407,7 @@ class GraspVizNode(Node):
             return
 
         print(f'\n{resp.message}')
-        print(f'  inference {resp.inference_ms:.0f} ms  '
-              f'total {resp.total_ms:.0f} ms')
-        print(f'  pts extracted={resp.points_extracted}  '
-              f'fed={resp.points_fed}  '
-              f'frames={resp.frames_used}')
-        print(f'  raw grasps={resp.grasps_raw}  returned={resp.grasps_returned}')
+        # Timing / point counts now live in the node terminal log, not the srv.
         from scipy.spatial.transform import Rotation as R
 
         def _print_poses(poses, scores, widths, frame_id,
@@ -437,54 +432,19 @@ class GraspVizNode(Node):
                       f'{rpy[0]:>7.4f} {rpy[1]:>7.4f} {rpy[2]:>7.4f}'
                       + height_str)
 
-        cam_frame = resp.poses.header.frame_id
-        stamp     = resp.poses.header.stamp
+        # Grasp poses come straight from the service in the planning frame
+        # (position + EE-aligned orientation). The service no longer returns
+        # camera-frame poses, and it already applies the TF + EE alignment.
+        planning_frame = resp.planning_frame or self._args.planning_frame
 
-        print(f'\n── Camera frame poses ({cam_frame}) ──────────────────────')
-        _print_poses(resp.poses.poses, resp.scores, resp.widths, cam_frame)
-
-        # ── Try transforming to planning frame ───────────────────────────────
-        planning_frame = self._args.planning_frame
-
-        # EE alignment: −90° about Y in the planning (base_footprint) world
-        # frame so the gripper approach points along the arm EE's local Z.
-        ee_pitch = R.from_euler('y', -90, degrees=True)
-        # Z compensation: shift grasp along base_footprint +Z (calibration).
-        z_offset_m = 0.025
-
-        def _lookup_and_transform(tf_stamp):
-            tf = self._tf_buffer.lookup_transform(
-                planning_frame, cam_frame, tf_stamp,
-                timeout=rclpy.duration.Duration(seconds=1.0))
-            poses_out = []
-            for pose in resp.poses.poses:
-                # Jazzy: do_transform_pose takes a bare Pose and returns a Pose.
-                p = tf2_geometry_msgs.do_transform_pose(pose, tf)
-                # Pre-multiply (world/base_footprint frame) +90° pitch about Y.
-                q_in = R.from_quat([p.orientation.x, p.orientation.y,
-                                    p.orientation.z, p.orientation.w])
-                p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = (
-                    float(v) for v in (ee_pitch * q_in).as_quat())
-                p.position.z += z_offset_m
-                poses_out.append(p)
-            return poses_out
-
-        base_poses = None
-        try:
-            base_poses = _lookup_and_transform(stamp)
+        if resp.poses_base.poses:
             print(f'\n── Grasp poses ({planning_frame}) ───────────────────────────')
-            _print_poses(base_poses, resp.scores, resp.widths, planning_frame,
+            _print_poses(resp.poses_base.poses, resp.scores, resp.widths,
+                         planning_frame,
                          resp.height_below_grasp, resp.height_above_grasp)
-        except Exception as e:
-            print(f'\n── TF at stamp failed ({e}), retrying with latest transform…')
-            try:
-                base_poses = _lookup_and_transform(rclpy.time.Time())
-                print(f'\n── Grasp poses ({planning_frame}, latest TF) ────────────')
-                _print_poses(base_poses, resp.scores, resp.widths, planning_frame,
-                             resp.height_below_grasp, resp.height_above_grasp)
-            except Exception as e2:
-                print(f'\n── Planning frame ({planning_frame}): transform unavailable ({e2})')
-                print(f'   Check: ros2 run tf2_ros tf2_echo {planning_frame} {cam_frame}')
+        else:
+            print(f'\n── Grasp poses ({planning_frame}): empty — the service '
+                  f'could not resolve TF {planning_frame} ← camera at request time')
 
         # Approach poses come directly from the service response.
         if resp.approach_poses_base.poses:
@@ -543,14 +503,15 @@ class GraspVizNode(Node):
         # Same cleanup the node applies before GraspNet (outlier + DBSCAN),
         # so the viewer cloud + AABB match what the grasps were computed on.
         pts = _filter_cloud(pts_raw)
-        print(f'\nVisualising {len(pts)} points '
-              f'(raw {len(pts_raw)}) + {len(resp.scores)} grippers …')
+        print(f'\nVisualising {len(pts)} points (raw {len(pts_raw)}) …')
+        print('  (gripper geometry: the service no longer returns camera-frame\n'
+              '   poses — view the gripper markers in RViz on '
+              '/grasp/debug/grasp_markers)')
 
         pcd   = _xyz_to_pcd(pts)
         frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
 
-        # AABB in camera frame — computed from the local point cloud so it
-        # aligns with the grippers (which are also in camera frame).
+        # AABB in camera frame — computed from the local point cloud.
         geoms = [pcd, frame]
         if len(pts) > 0:
             aabb = o3d.geometry.AxisAlignedBoundingBox.create_from_points(
@@ -558,12 +519,9 @@ class GraspVizNode(Node):
             aabb.color = (1.0, 0.5, 0.0)   # orange wireframe
             geoms.append(aabb)
 
-        gg = _rebuild_grasp_group(resp.poses, resp.scores, resp.widths)
-        grippers = gg.to_open3d_geometry_list()
-
         o3d.visualization.draw_geometries(
-            geoms + grippers,
-            window_name=f'GraspNet — {target_str}',
+            geoms,
+            window_name=f'GraspNet cloud — {target_str}',
             width=1280, height=720,
         )
 

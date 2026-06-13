@@ -150,7 +150,7 @@ def main():
         sys.exit(1)
 
     print(f"[OK] {result.message}")
-    print(f"  grasps returned : {result.grasps_returned}")
+    print(f"  grasps returned : {len(result.poses_base.poses)}")
     print(f"  planning_frame  : {result.planning_frame}")
     for i, (pose, score, width) in enumerate(
         zip(result.poses_base.poses, result.scores, result.widths)

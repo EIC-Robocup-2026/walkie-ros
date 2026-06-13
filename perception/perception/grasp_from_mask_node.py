@@ -44,7 +44,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy
 import tf2_ros
 import tf2_geometry_msgs  # noqa: F401 — registers PoseStamped transform support
 
-from geometry_msgs.msg import Point, Pose
+from geometry_msgs.msg import Point, Pose, PoseArray
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2, PointField
 from std_srvs.srv import SetBool, Trigger
 from visualization_msgs.msg import Marker, MarkerArray
@@ -75,8 +75,6 @@ class GraspFromMaskNode(Node):
     # Depth range gate applied to extracted points (forward axis), metres.
     RANGE_MIN_M = 0.1
     RANGE_MAX_M = 3.0
-    # Z compensation: shift grasp along base_footprint +Z (calibration).
-    Z_OFFSET_M = 0.025
     # Gripper marker geometry.
     MARKER_PALM_DEPTH_M   = 0.02  # palm sits 2 cm back from grasp centre
     MARKER_APPROACH_LEN_M = 0.06
@@ -854,11 +852,10 @@ class GraspFromMaskNode(Node):
 
         pts, actual_frames = self._accumulate_points(
             request, cached, object_mask, cloud_valid)
-        response.points_extracted = len(pts)
-        response.frames_used      = actual_frames
+        points_extracted = len(pts)
 
         pts = self._sample_points(pts)
-        response.points_fed = len(pts)
+        points_fed = len(pts)
 
         # Optical-convention frame for the extracted points: the cloud's own
         # header frame is the body frame, so override it when using the cloud.
@@ -871,35 +868,36 @@ class GraspFromMaskNode(Node):
 
         self._publish_debug_cloud(pts, frame_id, stamp)
 
-        raw_grasps, response.inference_ms = self._run_graspnet(pts)
-        response.grasps_raw = len(raw_grasps)
+        raw_grasps, inference_ms = self._run_graspnet(pts)
+        grasps_raw = len(raw_grasps)
 
         gg = self._select_grasps(raw_grasps, request)
         if len(gg) == 0:
             raise PipelineAbort(
                 f"No grasps above threshold {request.score_threshold} "
-                f"(raw: {response.grasps_raw})"
+                f"(raw: {grasps_raw})"
             )
-        response.grasps_returned = len(gg)
 
-        self._fill_camera_poses(gg, response, frame_id, stamp)
+        # Camera-frame poses are intermediate only (kept local, not returned);
+        # downstream consumers use poses_base in the planning frame.
+        cam_poses = self._build_camera_poses(gg, response, frame_id, stamp)
         planning_frame = self._transform_to_planning_frame(
-            response, pts, frame_id, stamp)
+            response, cam_poses, pts, frame_id, stamp)
         self._publish_grasp_markers(gg, frame_id, stamp, response, planning_frame)
 
-        response.total_ms = (time.perf_counter() - t_start) * 1e3
+        total_ms = (time.perf_counter() - t_start) * 1e3
         response.success  = True
         response.message  = (
-            f"OK | "
-            f"{response.grasps_returned} grasps | "
-            f"{response.points_extracted} pts extracted | "
-            f"{actual_frames} frame(s) | "
-            f"infer {response.inference_ms:.0f} ms | "
-            f"total {response.total_ms:.0f} ms | "
-            f"top score {gg.scores[0]:.3f} | "
+            f"OK | {len(gg)} grasps | top score {gg.scores[0]:.3f} | "
             f"top width {gg.widths[0]*100:.1f} cm"
         )
-        self.get_logger().info(response.message)
+        # Timing / point counts are logged here rather than returned in the srv.
+        self.get_logger().info(
+            f"{response.message} | {points_extracted} pts extracted | "
+            f"{points_fed} fed | {actual_frames} frame(s) | "
+            f"raw grasps {grasps_raw} | infer {inference_ms:.0f} ms | "
+            f"total {total_ms:.0f} ms"
+        )
         return response
 
     def _snapshot_frames(self) -> list:
@@ -1021,13 +1019,15 @@ class GraspFromMaskNode(Node):
         n = request.max_grasps if request.max_grasps > 0 else min(len(gg), 20)
         return gg[:n]
 
-    def _fill_camera_poses(
+    def _build_camera_poses(
         self, gg: GraspGroup, response: GraspFromMask.Response,
         frame_id: str, stamp,
-    ) -> None:
-        """Fill poses/scores/widths in the camera optical frame."""
-        response.poses.header.frame_id = frame_id
-        response.poses.header.stamp    = stamp
+    ) -> PoseArray:
+        """Build camera-frame grasp poses (returned locally, not in the srv)
+        and fill scores/widths on the response."""
+        cam_poses = PoseArray()
+        cam_poses.header.frame_id = frame_id
+        cam_poses.header.stamp    = stamp
 
         for i in range(len(gg)):
             quat = R.from_matrix(gg.rotation_matrices[i]).as_quat()
@@ -1041,13 +1041,14 @@ class GraspFromMaskNode(Node):
             pose.orientation.y = float(quat[1])
             pose.orientation.z = float(quat[2])
             pose.orientation.w = float(quat[3])
-            response.poses.poses.append(pose)
+            cam_poses.poses.append(pose)
             response.scores.append(float(gg.scores[i]))
             response.widths.append(float(gg.widths[i]))
+        return cam_poses
 
     def _transform_to_planning_frame(
-        self, response: GraspFromMask.Response, pts: np.ndarray,
-        frame_id: str, stamp,
+        self, response: GraspFromMask.Response, cam_poses: PoseArray,
+        pts: np.ndarray, frame_id: str, stamp,
     ) -> str:
         """Transform grasp poses + object bbox into the planning frame.
 
@@ -1062,7 +1063,7 @@ class GraspFromMaskNode(Node):
         response.approach_poses_base.header.stamp    = stamp
 
         try:
-            self._apply_planning_tf(response, pts, frame_id, planning_frame, stamp)
+            self._apply_planning_tf(response, cam_poses, pts, frame_id, planning_frame, stamp)
             self.get_logger().info(
                 f"Transformed {len(response.poses_base.poses)} poses → {planning_frame}")
         except Exception as e:
@@ -1070,7 +1071,7 @@ class GraspFromMaskNode(Node):
                 f"TF at stamp failed ({e}), retrying with latest transform…")
             try:
                 self._apply_planning_tf(
-                    response, pts, frame_id, planning_frame, rclpy.time.Time())
+                    response, cam_poses, pts, frame_id, planning_frame, rclpy.time.Time())
                 self.get_logger().info(
                     f"Transformed {len(response.poses_base.poses)} poses → "
                     f"{planning_frame} (latest TF)")
@@ -1081,8 +1082,8 @@ class GraspFromMaskNode(Node):
         return planning_frame
 
     def _apply_planning_tf(
-        self, response: GraspFromMask.Response, pts: np.ndarray,
-        frame_id: str, planning_frame: str, tf_stamp,
+        self, response: GraspFromMask.Response, cam_poses: PoseArray,
+        pts: np.ndarray, frame_id: str, planning_frame: str, tf_stamp,
     ) -> None:
         tf = self._tf_buffer.lookup_transform(
             planning_frame, frame_id, tf_stamp,
@@ -1123,14 +1124,13 @@ class GraspFromMaskNode(Node):
         ee_pitch = R.from_euler("y", -90.0, degrees=True)
         approach_dist = self.get_parameter("approach_dist_m").value
 
-        for pose in response.poses.poses:
+        for pose in cam_poses.poses:
             # Jazzy: do_transform_pose takes a bare Pose and returns a Pose.
             p = tf2_geometry_msgs.do_transform_pose(pose, tf)
             q_in = R.from_quat([p.orientation.x, p.orientation.y,
                                 p.orientation.z, p.orientation.w])
             p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = (
                 float(v) for v in (ee_pitch * q_in).as_quat())
-            p.position.z += self.Z_OFFSET_M
             response.poses_base.poses.append(p)
             response.height_below_grasp.append(float(p.position.z - z_min))
             response.height_above_grasp.append(float(z_max - p.position.z))
