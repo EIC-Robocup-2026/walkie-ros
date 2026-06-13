@@ -220,89 +220,88 @@ Visualization Manager:
       Show Names: false
       Tree:
         map:
-          {}
-        odom:
-          base_footprint:
-            base_link:
-              back_lidar_link:
-                back_lidar_link_calibrated:
+          odom:
+            base_footprint:
+              base_link:
+                back_lidar_link:
+                  back_lidar_link_calibrated:
+                    {}
+                bl_wheel_link:
                   {}
-              bl_wheel_link:
-                {}
-              bottom_bottom_screw_frame:
-                bottom_link:
-                  bottom_depth_frame:
-                    bottom_color_frame:
-                      bottom_color_optical_frame:
-                        {}
-                    bottom_depth_optical_frame:
-                      {}
-                    bottom_left_ir_frame:
-                      bottom_left_ir_optical_frame:
-                        {}
-                    bottom_right_ir_frame:
-                      bottom_right_ir_optical_frame:
-                        {}
-              br_wheel_link:
-                {}
-              fl_wheel_link:
-                {}
-              fr_wheel_link:
-                {}
-              front_lidar_link:
-                front_lidar_link_calibrated:
-                  {}
-              lift_link:
-                head_servo_link:
-                  zed_head_camera_link:
-                    zed_head_camera_center:
-                      zed_head_left_camera_frame:
-                        zed_head_left_camera_frame_optical:
+                bottom_bottom_screw_frame:
+                  bottom_link:
+                    bottom_depth_frame:
+                      bottom_color_frame:
+                        bottom_color_optical_frame:
                           {}
-                      zed_head_right_camera_frame:
-                        zed_head_right_camera_frame_optical:
+                      bottom_depth_optical_frame:
+                        {}
+                      bottom_left_ir_frame:
+                        bottom_left_ir_optical_frame:
                           {}
-                openarm_left_link0:
-                  openarm_left_link1:
-                    openarm_left_link2:
-                      openarm_left_link3:
-                        openarm_left_link4:
-                          openarm_left_link5:
-                            openarm_left_link6:
-                              openarm_left_link7:
-                                openarm_left_hand:
-                                  openarm_left_hand_tcp:
-                                    {}
-                                  openarm_left_left_finger:
-                                    {}
-                                  openarm_left_right_finger:
-                                    {}
-                                  openarm_left_wristcam_bracket:
-                                    {}
-                openarm_right_link0:
-                  openarm_right_link1:
-                    openarm_right_link2:
-                      openarm_right_link3:
-                        openarm_right_link4:
-                          openarm_right_link5:
-                            openarm_right_link6:
-                              openarm_right_link7:
-                                openarm_right_hand:
-                                  openarm_right_hand_tcp:
-                                    {}
-                                  openarm_right_left_finger:
-                                    {}
-                                  openarm_right_right_finger:
-                                    {}
-                                  openarm_right_wristcam_bracket:
-                                    {}
-              merged_lidar_link:
-                {}
-              top_imu_link:
-                {}
-              unitree4d_l2_imu_initial:
-                unitree4d_l2_imu:
+                      bottom_right_ir_frame:
+                        bottom_right_ir_optical_frame:
+                          {}
+                br_wheel_link:
                   {}
+                fl_wheel_link:
+                  {}
+                fr_wheel_link:
+                  {}
+                front_lidar_link:
+                  front_lidar_link_calibrated:
+                    {}
+                lift_link:
+                  head_servo_link:
+                    zed_head_camera_link:
+                      zed_head_camera_center:
+                        zed_head_left_camera_frame:
+                          zed_head_left_camera_frame_optical:
+                            {}
+                        zed_head_right_camera_frame:
+                          zed_head_right_camera_frame_optical:
+                            {}
+                  openarm_left_link0:
+                    openarm_left_link1:
+                      openarm_left_link2:
+                        openarm_left_link3:
+                          openarm_left_link4:
+                            openarm_left_link5:
+                              openarm_left_link6:
+                                openarm_left_link7:
+                                  openarm_left_hand:
+                                    openarm_left_hand_tcp:
+                                      {}
+                                    openarm_left_left_finger:
+                                      {}
+                                    openarm_left_right_finger:
+                                      {}
+                                    openarm_left_wristcam_bracket:
+                                      {}
+                  openarm_right_link0:
+                    openarm_right_link1:
+                      openarm_right_link2:
+                        openarm_right_link3:
+                          openarm_right_link4:
+                            openarm_right_link5:
+                              openarm_right_link6:
+                                openarm_right_link7:
+                                  openarm_right_hand:
+                                    openarm_right_hand_tcp:
+                                      {}
+                                    openarm_right_left_finger:
+                                      {}
+                                    openarm_right_right_finger:
+                                      {}
+                                    openarm_right_wristcam_bracket:
+                                      {}
+                merged_lidar_link:
+                  {}
+                top_imu_link:
+                  {}
+                unitree4d_l2_imu_initial:
+                  unitree4d_l2_imu:
+                    {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -361,9 +360,9 @@ Visualization Manager:
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
-      Max Intensity: 148
+      Max Intensity: 109
       Min Color: 0; 0; 0
-      Min Intensity: 25
+      Min Intensity: 37
       Name: LaserScan
       Position Transformer: XYZ
       Selectable: true
@@ -602,6 +601,38 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
+    - Alpha: 1
+      Axes Length: 1
+      Axes Radius: 0.10000000149011612
+      Class: rviz_default_plugins/Pose
+      Color: 255; 25; 0
+      Enabled: true
+      Head Length: 0.30000001192092896
+      Head Radius: 0.10000000149011612
+      Name: Pose
+      Shaft Length: 1
+      Shaft Radius: 0.05000000074505806
+      Shape: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /nav_commander/approach_pose
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /nav_commander/debug_markers
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -648,25 +679,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 5.145632743835449
+      Distance: 11.069192886352539
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 2.9053125381469727
-        Y: -0.7851424217224121
-        Z: 2.693044424057007
+        X: 3.356851577758789
+        Y: -2.1785125732421875
+        Z: 2.1144611835479736
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.7297961711883545
+      Pitch: 0.699796199798584
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 2.880399227142334
+      Yaw: 6.050405025482178
     Saved: ~
 Window Geometry:
   Displays:

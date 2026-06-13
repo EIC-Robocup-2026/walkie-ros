@@ -1,0 +1,50 @@
+session_name: walkie
+start_directory: ~/robocup2026/walkie-ws
+windows:
+  # Window 1: 4-col x 2-row grid (matches session 0, not tmux's default 3x3 "tiled").
+  # Commands are TYPED but not run (enter: false) — each pane waits for your Enter.
+  # The layout string is row-major: pane 1..4 = top row, pane 5..8 = bottom row.
+  - window_name: ros-ws
+    start_directory: ~/robocup2026/walkie-ws
+    layout: "0494,184x44,0,0[184x22,0,0{46x22,0,0,0,45x22,47,0,1,45x22,93,0,2,45x22,139,0,3},184x21,0,23{46x21,0,23,4,45x21,47,23,5,45x21,93,23,6,45x21,139,23,7}]"
+    panes:
+      # --- top row ---
+      - shell_command:
+          - cmd: ros2 run rmw_zenoh_cpp rmw_zenohd
+            enter: false
+      - shell_command:
+          - cmd: ros2 launch robot_bringup lift_homing.launch.py
+            enter: false
+      - shell_command:
+          - cmd: ros2 launch robot_bringup real_omnibot.launch.py
+            enter: false
+      - shell_command:
+          - cmd: ros2 launch robot_navigation localization_Nav2_real.launch.py
+            enter: false
+      # --- bottom row ---
+      - shell_command:
+          - cmd: ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=real_robot
+            enter: false
+      - shell_command:
+          - cmd: ros2 launch openarm_bimanual_commander_cpp commander.launch.py
+            enter: false
+      - shell_command:
+          - cmd: ros2 launch joy_interface joy_control_smooth.launch.py
+            enter: false
+      - null  # idle bash
+
+  # Window 2: editor. Left pane idle; right pane runs `lazygit`.
+  - window_name: editor
+    layout: even-horizontal
+    start_directory: ~/robocup2026/walkie-ws/src/walkie-ros
+    panes:
+      - null  # left: idle bash
+      - shell_command:
+          - cmd: lazygit
+            enter: true
+
+  # Window 3: claude (actually launches, like session 0).
+  - window_name: claude
+    start_directory: ~/robocup2026/walkie-ws/src/walkie-ros
+    panes:
+      - claude
