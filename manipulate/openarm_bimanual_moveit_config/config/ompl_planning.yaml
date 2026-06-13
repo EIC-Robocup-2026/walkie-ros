@@ -33,42 +33,50 @@ response_adapters:
 # Per-group dense collision checking along planned segments.
 #
 # `planner_configs` lists which planners are selectable for each group. The
-# referenced names (RRT, RRTstar) come from the
+# referenced names (RRTConnect, RRT, RRTstar) come from the
 # default planner_configs auto-merged from ompl_defaults.yaml. The first entry
-# is used as the default when no planner_id is requested.
+# is used as the default when no planner_id is requested. RRTConnect is the
+# default here (fast bidirectional search, early-exits on first feasible path);
+# the commander's planner_id param also defaults to RRTConnect and can switch live.
 left_arm:
-  longest_valid_segment_fraction: 0.02
-  default_planner_config: RRT
+  longest_valid_segment_fraction: 0.01
+  default_planner_config: RRTConnect
   planner_configs:
+    - RRTConnect
     - RRT
     - RRTstar
 right_arm:
-  longest_valid_segment_fraction: 0.02
-  default_planner_config: RRT
+  longest_valid_segment_fraction: 0.01
+  default_planner_config: RRTConnect
   planner_configs:
+    - RRTConnect
     - RRT
     - RRTstar
 both_arms:
-  longest_valid_segment_fraction: 0.02
-  default_planner_config: RRT
+  longest_valid_segment_fraction: 0.01
+  default_planner_config: RRTConnect
   planner_configs:
+    - RRTConnect
     - RRT
     - RRTstar
 left_arm_lift:
-  longest_valid_segment_fraction: 0.02
-  default_planner_config: RRT
+  longest_valid_segment_fraction: 0.01
+  default_planner_config: RRTConnect
   planner_configs:
+    - RRTConnect
     - RRT
     - RRTstar
 right_arm_lift:
-  longest_valid_segment_fraction: 0.02
-  default_planner_config: RRT
+  longest_valid_segment_fraction: 0.01
+  default_planner_config: RRTConnect
   planner_configs:
+    - RRTConnect
     - RRT
     - RRTstar
 both_arms_lift:
-  longest_valid_segment_fraction: 0.02
-  default_planner_config: RRT
+  longest_valid_segment_fraction: 0.01
+  default_planner_config: RRTConnect
   planner_configs:
+    - RRTConnect
     - RRT
     - RRTstar

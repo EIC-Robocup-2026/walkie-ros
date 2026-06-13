@@ -25,6 +25,7 @@
 #include <moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>
 #include <moveit/robot_state/robot_state.hpp>
 #include <moveit_msgs/msg/attached_collision_object.hpp>
+#include <moveit_msgs/msg/allowed_collision_entry.hpp>
 #include <moveit_msgs/msg/collision_object.hpp>
 #include <moveit_msgs/msg/planning_scene.hpp>
 #include <moveit_msgs/msg/planning_scene_components.hpp>
@@ -32,8 +33,14 @@
 #include <moveit_msgs/srv/get_planning_scene.hpp>
 #include <moveit_msgs/srv/apply_planning_scene.hpp>
 #include <shape_msgs/msg/solid_primitive.hpp>
+#include <cmath>
+#include <sensor_msgs/msg/joint_state.hpp>
+#include <std_srvs/srv/trigger.hpp>
 #include <thread>
+#include <mutex>
+#include <cstdint>
 #include <map>
+#include <set>
 #include <vector>
 #include <algorithm>
 
@@ -97,14 +104,35 @@ public:
         both_arms_lift_->setMaxVelocityScalingFactor(1.0);
         both_arms_lift_->setMaxAccelerationScalingFactor(1.0);
 
-        left_arm_->setPlanningTime(1.0);
-        right_arm_->setPlanningTime(1.0);
+        // OMPL planner selection. The arm groups list RRTConnect/RRT/RRTstar in
+        // ompl_planning.yaml. RRTConnect (the default here) early-exits as soon
+        // as it finds a path, so it plans fast. RRTstar is asymptotically optimal
+        // (shorter, smoother paths) but never early-exits — it burns the FULL
+        // planning-time budget every call, so it needs a larger arm_planning_time
+        // to converge. Both are ROS params so you can switch/retune live.
+        std::string planner_id = node_->declare_parameter<std::string>("planner_id", "RRTConnect");
+        double arm_planning_time = node_->declare_parameter<double>("arm_planning_time", 5.0);
+
+        // Grippers keep the default planner (RRTstar isn't configured for the
+        // gripper groups) and the short 1 s budget.
+        for (auto &grp : {left_arm_, right_arm_, left_arm_lift_, right_arm_lift_,
+                          both_arms_, both_arms_lift_})
+        {
+            grp->setPlannerId(planner_id);
+        }
+
+        left_arm_->setPlanningTime(arm_planning_time);
+        right_arm_->setPlanningTime(arm_planning_time);
         left_gripper_->setPlanningTime(1.0);
         right_gripper_->setPlanningTime(1.0);
-        left_arm_lift_->setPlanningTime(1.0);
-        right_arm_lift_->setPlanningTime(1.0);
-        both_arms_->setPlanningTime(1.0);
-        both_arms_lift_->setPlanningTime(1.0);
+        left_arm_lift_->setPlanningTime(arm_planning_time);
+        right_arm_lift_->setPlanningTime(arm_planning_time);
+        both_arms_->setPlanningTime(arm_planning_time);
+        both_arms_lift_->setPlanningTime(arm_planning_time);
+
+        RCLCPP_INFO(node_->get_logger(),
+                    "Arm groups using planner '%s' with %.1f s planning time",
+                    planner_id.c_str(), arm_planning_time);
 
         left_arm_->setNumPlanningAttempts(10000);
         right_arm_->setNumPlanningAttempts(10000);
@@ -135,6 +163,17 @@ public:
             node_, "/left_gripper_controller/gripper_cmd");
         right_gripper_client_ = rclcpp_action::create_client<GripperCommand>(
             node_, "/right_gripper_controller/gripper_cmd");
+
+        // Cache the finger positions straight from /joint_states. This is the
+        // ramp start used by controlGripper(); reading it here (instead of
+        // MoveGroupInterface::getCurrentState) is always-fresh, thread-safe, and
+        // — crucially — reliable, so an open/close always ramps from the real
+        // position instead of occasionally falling back to a seed that triggers
+        // the full-speed direct path. SensorDataQoS (best-effort) is compatible
+        // with both reliable and best-effort joint_states publishers.
+        joint_states_sub_ = node_->create_subscription<sensor_msgs::msg::JointState>(
+            "joint_states", rclcpp::SensorDataQoS(),
+            std::bind(&Commander::jointStatesCb, this, _1), sub_opt);
 
         // 4. Action Servers
         go_to_pose_server_ = rclcpp_action::create_server<GoToPose>(
@@ -203,6 +242,15 @@ public:
         apply_planning_scene_client_ = node_->create_client<moveit_msgs::srv::ApplyPlanningScene>(
             "/apply_planning_scene", rclcpp::ServicesQoS(), callback_group_);
 
+        // ClearCollisionObjects: detach anything held by the grippers and remove
+        // every world collision object from the planning scene. Trigger service
+        // (no request fields); returns success + a count message.
+        clear_collision_objects_service_ = node_->create_service<std_srvs::srv::Trigger>(
+            "clear_collision_objects",
+            std::bind(&Commander::handle_clear_collision_objects, this, _1, _2),
+            rclcpp::ServicesQoS(),
+            callback_group_);
+
         // 5. Grasp attach/detach
         // When the gripper closes past grasp_close_threshold we attach a box to
         // the hand (touch_links = the fingers) so MoveIt: (a) ignores ONLY
@@ -212,15 +260,34 @@ public:
         // All knobs are ROS params so they can be tuned without recompiling.
         grasp_attach_enable_   = node_->declare_parameter<bool>("grasp_attach_enable", true);
         grasp_close_threshold_ = node_->declare_parameter<double>("grasp_close_threshold", 0.03);
+
+        // Grasp-success detection: after a close, the settled finger gap tells us
+        // whether something is held. Empty close -> gap ~ 0 (fingers meet); a held
+        // object stalls the fingers apart at its width; open -> gap ~ max. So an
+        // object is "grasped" iff the settled gap lands in [min, max]. Read live;
+        // CALIBRATE on the robot: close on nothing (record gap), close on the
+        // bottle (record gap), set the band to bracket the bottle above empty.
+        node_->declare_parameter<bool>("grasp_detect_enable", true);
+        node_->declare_parameter<double>("grasp_detect_min", 0.005);   // m, above empty-closed
+        node_->declare_parameter<double>("grasp_detect_max", 0.044);   // m, below fully-open (~0.044)
+        // Tells the commander what an open/close MEANS for the planning-scene box.
+        // Read fresh on every gripper command, so you can flip it live with
+        // `ros2 param set <commander_node> grasp_scene_action place` right before
+        // sending an open. Values:
+        //   grasp - attach the box (picking up)
+        //   place - detach + remove after the next motion (placing/releasing)
+        //   none  - leave the scene untouched (just open/close, nothing held)
+        // Default "none": the scene is only touched when you explicitly ask.
+        node_->declare_parameter<std::string>("grasp_scene_action", "none");
         // Oversized box: covers the gripper's full aperture (~0.088 m) plus an
         // object body extending ~0.22 m past the fingertips, so it reliably
         // encloses (and octomap-masks) any object we grasp regardless of shape.
         // The trade-off is that it also masks the octomap in this region — keep
         // it just large enough for the biggest object you pick. Tune live.
         grasp_object_size_     = node_->declare_parameter<std::vector<double>>(
-            "grasp_object_size", {0.10, 0.10, 0.16});      // box dims (m) in hand frame
+            "grasp_object_size", {0.09, 0.05, 0.16});      // box dims (m) in hand frame
         grasp_object_offset_   = node_->declare_parameter<std::vector<double>>(
-            "grasp_object_offset", {0.04, 0.0, 0.05});      // box centre (m) in hand frame
+            "grasp_object_offset", {0.0, 0.0, 0.065});      // box centre (m) in hand frame
         // Box orientation (roll,pitch,yaw in rad) in the hand frame. The box's
         // long axis is its local z; with identity it points along the gripper's
         // approach/drop direction (hand z). A 90° pitch swings that long axis
@@ -228,6 +295,26 @@ public:
         // bottle held in a side grasp) instead of along the approach. Tune live.
         grasp_object_rpy_      = node_->declare_parameter<std::vector<double>>(
             "grasp_object_rpy", {0.0, 1.5708, 0.0});       // box orient (rad) in hand frame
+
+        // Object scene height, split about the grasp centre, measured ALONG the
+        // box's long axis (its local z — after grasp_object_rpy this runs along
+        // the grasped object body). These let you size the attached object by how
+        // far it sticks out past the gripper centre instead of via the symmetric
+        // grasp_object_size_[2]: total long-axis length = above + below, and the
+        // box is shifted so the grasp centre sits `below` from the bottom face and
+        // `above` from the top. Feed perception's height_above_grasp /
+        // height_below_grasp straight in. Both 0 (default) = keep the old
+        // grasp_object_size_/offset behaviour. Tunable live.
+        grasp_object_height_above_ = node_->declare_parameter<double>(
+            "grasp_object_height_above", 0.0);   // m, grasp centre → object top
+        grasp_object_height_below_ = node_->declare_parameter<double>(
+            "grasp_object_height_below", 0.0);   // m, grasp centre → object bottom
+
+        // Extra clearance added on EACH side of the box ONLY while it is ATTACHED
+        // to the gripper. So the carried box = real object + 2*margin per axis
+        // (bigger, for clearance while moving), and on release it is deflated by
+        // the same amount back to the real grasp size left in the world. 0 = off.
+        node_->declare_parameter<double>("attach_object_margin", 0.02);   // m per side
 
         // 4b. Finger collision padding.
         // The table is only sensed as octomap voxels, and planned paths can graze
@@ -237,11 +324,74 @@ public:
         // Applied to move_group's scene as a PlanningScene diff (link_padding),
         // so it affects all server-side planning. Tunable live via params.
         finger_padding_enable_ = node_->declare_parameter<bool>("finger_padding_enable", true);
-        finger_padding_        = node_->declare_parameter<double>("finger_padding", 0.02);  // m
+        finger_padding_        = node_->declare_parameter<double>("finger_padding", 0.01);  // m
         finger_pad_links_      = node_->declare_parameter<std::vector<std::string>>(
             "finger_pad_links",
             {"openarm_left_left_finger",  "openarm_left_right_finger",
              "openarm_right_left_finger", "openarm_right_right_finger"});
+
+        // 4c. Explicit table collision box (B). The table can't be trusted to the
+        // octomap during a grasp (occluded + masked by the attached box), so add
+        // it as an explicit CollisionObject the gripper/object plan around. The
+        // box spans the floor (frame z=0) up to table_pose z (the live height).
+        // Disabled by default — configure for your table:
+        //   ros2 param set /bimanual_commander table_enable true
+        //   ros2 param set /bimanual_commander table_pose "[0.6, 0.0, 0.75, 0.0]"
+        node_->declare_parameter<bool>("table_enable", false);
+        node_->declare_parameter<std::string>("table_frame", "base_footprint");
+        node_->declare_parameter<std::vector<double>>("table_pose", {0.65, 0.0, 0.75, 0.0});  // x,y,top_z,yaw
+        node_->declare_parameter<std::vector<double>>("table_size", {0.60, 1.20});            // footprint x,y
+
+        // (A) Allow ONLY the gripper links vs the octomap, so grasping inside
+        // sensed voxels no longer fails to plan — WITHOUT blinding the fingers to
+        // explicit collision objects (table/shelf) and other links, which the
+        // blanket ToggleGripperCollision does. Toggle live around a grasp:
+        //   ros2 param set /bimanual_commander allow_gripper_vs_octomap true
+        node_->declare_parameter<bool>("allow_gripper_vs_octomap", false);
+
+        // --- Make planner_id / arm_planning_time retune LIVE ---
+        // gripper_speed and grasp_scene_action are re-read per command, but
+        // planner_id / arm_planning_time persist on each MoveGroupInterface, so
+        // instead we re-apply them to the arm groups whenever they change via
+        // `ros2 param set <commander_node> planner_id RRTstar` (or
+        // arm_planning_time). The next plan uses the new value, no restart.
+        param_cb_handle_ = node_->add_on_set_parameters_callback(
+            [this](const std::vector<rclcpp::Parameter> & params)
+                -> rcl_interfaces::msg::SetParametersResult
+            {
+                rcl_interfaces::msg::SetParametersResult result;
+                result.successful = true;
+                bool finger_changed = false;
+                bool table_changed = false;
+                bool octomap_changed = false;
+                for (const auto & p : params) {
+                    if (p.get_name() == "planner_id") {
+                        for (auto & grp : {left_arm_, right_arm_, left_arm_lift_,
+                                           right_arm_lift_, both_arms_, both_arms_lift_})
+                            grp->setPlannerId(p.as_string());
+                        RCLCPP_INFO(node_->get_logger(),
+                                    "planner_id -> '%s' (live)", p.as_string().c_str());
+                    } else if (p.get_name() == "arm_planning_time") {
+                        for (auto & grp : {left_arm_, right_arm_, left_arm_lift_,
+                                           right_arm_lift_, both_arms_, both_arms_lift_})
+                            grp->setPlanningTime(p.as_double());
+                        RCLCPP_INFO(node_->get_logger(),
+                                    "arm_planning_time -> %.2f s (live)", p.as_double());
+                    } else if (p.get_name().rfind("finger_pad", 0) == 0) {
+                        finger_changed = true;   // finger_padding / _enable / _links
+                    } else if (p.get_name() == "allow_gripper_vs_octomap") {
+                        octomap_changed = true;
+                    } else if (p.get_name().rfind("table_", 0) == 0) {
+                        table_changed = true;
+                    }
+                }
+                // Re-apply off this (pre-commit) callback thread, so the blocking
+                // planning-scene service calls run after the new values commit.
+                if (finger_changed)  scheduleFingerPaddingReapply();
+                if (table_changed)   scheduleTableReapply();
+                if (octomap_changed) scheduleGripperOctomapAllowance();
+                return result;
+            });
 
         planning_scene_ = std::make_shared<PlanningSceneInterface>();
 
@@ -258,6 +408,16 @@ public:
                 },
                 callback_group_);
         }
+
+        // Defer the table write (needs move_group up); reads table_enable live so
+        // it's a clean no-op when disabled.
+        table_timer_ = node_->create_wall_timer(
+            std::chrono::seconds(3),
+            [this]() {
+                table_timer_->cancel();
+                buildAndApplyTable();
+            },
+            callback_group_);
 
         RCLCPP_INFO(node_->get_logger(), "Bimanual Commander Node Initialized");
     }
@@ -295,6 +455,10 @@ public:
         std::vector<std::string> touch_links;
         if (!gripperAttachInfo(gripper_group, hand_link, touch_links, object_id)) return;
 
+        // Re-grasping the same id cancels any pending world-removal from a prior
+        // release, so flushPendingGraspRemovals() can't delete what we just attached.
+        pending_grasp_removal_.erase(object_id);
+
         moveit_msgs::msg::AttachedCollisionObject aco;
         aco.link_name           = hand_link;
         aco.touch_links         = touch_links;
@@ -302,31 +466,72 @@ public:
         aco.object.header.frame_id = hand_link;
         aco.object.operation    = moveit_msgs::msg::CollisionObject::ADD;
 
+        // Read the geometry params fresh on every attach so `ros2 param set`
+        // takes effect live without restarting (the constructor values are only
+        // the defaults). Matches how planning_frame is handled.
+        const auto size   = node_->get_parameter("grasp_object_size").as_double_array();
+        const auto offset = node_->get_parameter("grasp_object_offset").as_double_array();
+        const auto rpy    = node_->get_parameter("grasp_object_rpy").as_double_array();
+        const double above = node_->get_parameter("grasp_object_height_above").as_double();
+        const double below = node_->get_parameter("grasp_object_height_below").as_double();
+
         shape_msgs::msg::SolidPrimitive box;
         box.type       = shape_msgs::msg::SolidPrimitive::BOX;
-        box.dimensions = {grasp_object_size_[0], grasp_object_size_[1], grasp_object_size_[2]};
+        box.dimensions = {size[0], size[1], size[2]};
+
+        tf2::Quaternion q;
+        q.setRPY(rpy[0], rpy[1], rpy[2]);
 
         geometry_msgs::msg::Pose pose;
-        pose.position.x    = grasp_object_offset_[0];
-        pose.position.y    = grasp_object_offset_[1];
-        pose.position.z    = grasp_object_offset_[2];
-        tf2::Quaternion q;
-        q.setRPY(grasp_object_rpy_[0], grasp_object_rpy_[1], grasp_object_rpy_[2]);
-        pose.orientation = tf2::toMsg(q);
+        pose.position.x    = offset[0];
+        pose.position.y    = offset[1];
+        pose.position.z    = offset[2];
+        pose.orientation   = tf2::toMsg(q);
+
+        // If the above/below heights are set, they define the long-axis (local z)
+        // extent instead of size[2]: length = above + below, with grasp_object_offset_
+        // as the grasp centre. The object extends `above` toward the local +z face
+        // and `below` toward the local -z face; the box centre is the midpoint, so
+        // it shifts (above - below)/2 along the box's local +z (which q maps into
+        // the hand frame), starting from the offset anchor.
+        if (above + below > 0.0) {
+            box.dimensions[2] = above + below;
+            const double shift = (above - below) / 2.0;
+            tf2::Vector3 local_z = tf2::quatRotate(q, tf2::Vector3(0.0, 0.0, 1.0));
+            pose.position.x += shift * local_z.x();
+            pose.position.y += shift * local_z.y();
+            pose.position.z += shift * local_z.z();
+        }
+
+        // Inflate the ATTACHED box by attach_object_margin on each side (centre
+        // unchanged). The released world copy is deflated back to this real size
+        // in detachGraspObject, so the carried box is bigger than the placed one.
+        const double attach_margin = node_->get_parameter("attach_object_margin").as_double();
+        if (attach_margin > 0.0) {
+            box.dimensions[0] += 2.0 * attach_margin;
+            box.dimensions[1] += 2.0 * attach_margin;
+            box.dimensions[2] += 2.0 * attach_margin;
+        }
 
         aco.object.primitives.push_back(box);
         aco.object.primitive_poses.push_back(pose);
 
         if (planning_scene_->applyAttachedCollisionObject(aco)) {
-            RCLCPP_INFO(node_->get_logger(), "Attached '%s' to %s",
-                        object_id.c_str(), hand_link.c_str());
+            RCLCPP_INFO(node_->get_logger(),
+                        "Attached '%s' to %s  dims=[%.3f %.3f %.3f] above=%.3f below=%.3f",
+                        object_id.c_str(), hand_link.c_str(),
+                        box.dimensions[0], box.dimensions[1], box.dimensions[2],
+                        above, below);
         } else {
             RCLCPP_WARN(node_->get_logger(), "Failed to attach '%s' (is move_group up?)",
                         object_id.c_str());
         }
     }
 
-    // Detach the grasped object from the gripper and remove it from the scene.
+    // Release/open: DETACH the box from the gripper but leave it standing in the
+    // world. It keeps masking the (still physically present) object's octomap
+    // voxels until the arm actually moves away. The world copy is deleted later,
+    // at the start of the next arm motion -- see flushPendingGraspRemovals().
     void detachGraspObject(const std::string & gripper_group)
     {
         std::string hand_link, object_id;
@@ -341,9 +546,100 @@ public:
         aco.link_name        = hand_link;
         aco.object.id        = object_id;
         aco.object.operation = moveit_msgs::msg::CollisionObject::REMOVE;
-        planning_scene_->applyAttachedCollisionObject(aco);   // detach back to world
-        planning_scene_->removeCollisionObjects({object_id}); // then delete from world
-        RCLCPP_INFO(node_->get_logger(), "Detached and removed '%s'", object_id.c_str());
+        planning_scene_->applyAttachedCollisionObject(aco);   // detach -> stays in world
+
+        // The carried box was inflated by attach_object_margin; shrink the world
+        // copy back by the same amount so the PLACED object is the real grasp
+        // size, smaller than what we carried.
+        deflateReleasedObject(object_id);
+
+        pending_grasp_removal_.insert(object_id);             // delete after next motion succeeds
+        RCLCPP_INFO(node_->get_logger(),
+                    "Detached '%s' (removes from world after next motion succeeds)", object_id.c_str());
+    }
+
+    // Shrink the just-released world object's box by 2*attach_object_margin per
+    // axis, undoing the attach-time inflation so the placed object is the real
+    // grasp size. No-op if margin is 0 or the object isn't a single box.
+    // getObjects/applyCollisionObjects are synchronous services; safe here
+    // (MultiThreadedExecutor + reentrant group).
+    void deflateReleasedObject(const std::string & object_id)
+    {
+        const double margin = node_->get_parameter("attach_object_margin").as_double();
+        if (margin <= 0.0) return;
+        auto objs = planning_scene_->getObjects({object_id});
+        auto it = objs.find(object_id);
+        if (it == objs.end() || it->second.primitives.empty() ||
+            it->second.primitives[0].dimensions.size() < 3)
+            return;
+        moveit_msgs::msg::CollisionObject co = it->second;
+        auto & d = co.primitives[0].dimensions;
+        co.operation = moveit_msgs::msg::CollisionObject::ADD;   // replace geometry in place
+        d[0] = std::max(0.001, d[0] - 2.0 * margin);
+        d[1] = std::max(0.001, d[1] - 2.0 * margin);
+        d[2] = std::max(0.001, d[2] - 2.0 * margin);
+        planning_scene_->applyCollisionObjects({co});
+        RCLCPP_INFO(node_->get_logger(),
+            "Released '%s' deflated to real size [%.3f %.3f %.3f]",
+            object_id.c_str(), d[0], d[1], d[2]);
+    }
+
+    // Delete any released grasp boxes (detached but still in the world) from the
+    // scene. Called only AFTER an arm motion EXECUTES SUCCESSFULLY, so the box
+    // stays present through planning and execution -- the arm plans/moves around
+    // the just-released object -- and is cleared only once the arm has safely
+    // moved away. applyPlanningScene is synchronous (service).
+    void flushPendingGraspRemovals()
+    {
+        if (pending_grasp_removal_.empty()) return;
+
+        moveit_msgs::msg::PlanningScene ps;
+        ps.is_diff = true;
+        for (const auto & id : pending_grasp_removal_) {
+            moveit_msgs::msg::CollisionObject co;
+            co.id        = id;
+            co.operation = moveit_msgs::msg::CollisionObject::REMOVE;
+            ps.world.collision_objects.push_back(co);
+            RCLCPP_INFO(node_->get_logger(), "Removed '%s' from world before motion", id.c_str());
+        }
+        planning_scene_->applyPlanningScene(ps);
+        pending_grasp_removal_.clear();
+    }
+
+    // ========== ClearCollisionObjects Service ==========
+    // Detach anything attached to a gripper, then remove every world collision
+    // object from the planning scene. Leaves the octomap and robot state alone.
+    void handle_clear_collision_objects(
+        const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+        std::shared_ptr<std_srvs::srv::Trigger::Response> response)
+    {
+        (void)request;
+
+        // 1. Detach every attached object so it becomes a world object (then it
+        //    gets removed in step 2). Covers grasp boxes and anything else held.
+        auto attached = planning_scene_->getAttachedObjects();
+        for (const auto & kv : attached) {
+            moveit_msgs::msg::AttachedCollisionObject aco;
+            aco.link_name        = kv.second.link_name;
+            aco.object.id        = kv.first;
+            aco.object.operation = moveit_msgs::msg::CollisionObject::REMOVE;
+            planning_scene_->applyAttachedCollisionObject(aco);
+        }
+
+        // 2. Remove all world collision objects.
+        auto names = planning_scene_->getKnownObjectNames();
+        if (!names.empty()) {
+            planning_scene_->removeCollisionObjects(names);
+        }
+
+        // 3. Nothing left to flush.
+        pending_grasp_removal_.clear();
+
+        response->success = true;
+        response->message = "Cleared " + std::to_string(names.size()) +
+                            " world object(s), detached " +
+                            std::to_string(attached.size()) + " attached";
+        RCLCPP_INFO(node_->get_logger(), "%s", response->message.c_str());
     }
 
     // ========== ToggleGripperCollision Service ==========
@@ -440,12 +736,18 @@ public:
             return;
         }
 
+        // Read fresh so `ros2 param set finger_padding/_enable/_links` takes effect
+        // live. Disabled -> push padding 0.0 to clear any previously-applied margin.
+        const bool enable = node_->get_parameter("finger_padding_enable").as_bool();
+        const double pad  = enable ? node_->get_parameter("finger_padding").as_double() : 0.0;
+        const auto links  = node_->get_parameter("finger_pad_links").as_string_array();
+
         auto req = std::make_shared<moveit_msgs::srv::ApplyPlanningScene::Request>();
         req->scene.is_diff = true;
-        for (const auto & link : finger_pad_links_) {
+        for (const auto & link : links) {
             moveit_msgs::msg::LinkPadding lp;
             lp.link_name = link;
-            lp.padding   = finger_padding_;
+            lp.padding   = pad;
             req->scene.link_padding.push_back(lp);
         }
 
@@ -456,8 +758,170 @@ public:
             return;
         }
         RCLCPP_INFO(node_->get_logger(),
-            "Applied %.3f m collision padding to %zu finger links",
-            finger_padding_, finger_pad_links_.size());
+            "Applied %.3f m collision padding to %zu finger links%s",
+            pad, links.size(), enable ? "" : " (DISABLED -> cleared)");
+    }
+
+    // Debounced live re-apply for the finger_padding* params: one-shot timer so
+    // the blocking applyFingerPadding() runs off the parameter-set callback
+    // thread, after the new values commit.
+    void scheduleFingerPaddingReapply()
+    {
+        finger_apply_timer_ = node_->create_wall_timer(
+            std::chrono::milliseconds(200),
+            [this]() {
+                finger_apply_timer_->cancel();
+                applyFingerPadding();
+            },
+            callback_group_);
+    }
+
+    // ========== (B) Explicit table collision box ==========
+    // (Re)build the table from the table_* params as an explicit CollisionObject.
+    // The box spans the floor (frame z=0) up to the table top (table_pose z), so
+    // changing that one value retunes the height. Read fresh; serves startup +
+    // live changes; removes a stale table when disabled.
+    void buildAndApplyTable()
+    {
+        const bool enable       = node_->get_parameter("table_enable").as_bool();
+        const std::string frame = node_->get_parameter("table_frame").as_string();
+        const auto pose = node_->get_parameter("table_pose").as_double_array();  // x,y,top_z,yaw
+        const auto size = node_->get_parameter("table_size").as_double_array();  // footprint x,y
+
+        std::vector<moveit_msgs::msg::CollisionObject> ops;
+        bool added = false;
+        if (enable) {
+            if (pose.size() != 4 || size.size() != 2) {
+                RCLCPP_WARN(node_->get_logger(),
+                    "table_enable=true but table_pose needs 4 [x,y,top_z,yaw] and "
+                    "table_size needs 2 [x,y]; skipping table");
+            } else if (pose[2] <= 0.0) {
+                RCLCPP_WARN(node_->get_logger(),
+                    "table top height (table_pose z=%.3f) must be > 0; skipping table", pose[2]);
+            } else {
+                const double top = pose[2], yaw = pose[3];
+                moveit_msgs::msg::CollisionObject obj;
+                obj.id              = "table";
+                obj.header.frame_id = frame;
+                obj.operation       = moveit_msgs::msg::CollisionObject::ADD;
+                shape_msgs::msg::SolidPrimitive box;
+                box.type       = shape_msgs::msg::SolidPrimitive::BOX;
+                box.dimensions = {size[0], size[1], top};   // full box, floor -> top
+                geometry_msgs::msg::Pose p;
+                p.position.x    = pose[0];
+                p.position.y    = pose[1];
+                p.position.z    = top * 0.5;
+                p.orientation.z = std::sin(yaw * 0.5);
+                p.orientation.w = std::cos(yaw * 0.5);
+                obj.primitives.push_back(box);
+                obj.primitive_poses.push_back(p);
+                ops.push_back(obj);
+                added = true;
+            }
+        }
+        if (!added && table_added_) {
+            moveit_msgs::msg::CollisionObject rm;
+            rm.id = "table";
+            rm.operation = moveit_msgs::msg::CollisionObject::REMOVE;
+            ops.push_back(rm);
+        }
+        if (ops.empty()) return;
+        planning_scene_->applyCollisionObjects(ops);
+        table_added_ = added;
+        RCLCPP_INFO(node_->get_logger(), "Table collision box %s (frame=%s)",
+                    added ? "applied" : "cleared", frame.c_str());
+    }
+
+    void scheduleTableReapply()
+    {
+        table_apply_timer_ = node_->create_wall_timer(
+            std::chrono::milliseconds(200),
+            [this]() {
+                table_apply_timer_->cancel();
+                buildAndApplyTable();
+            },
+            callback_group_);
+    }
+
+    // ========== ACM helpers ==========
+    // Ensure `n` is a row/col in the ACM entry matrix; return its index. New names
+    // append all-false entries (collision checked by default).
+    size_t acmEnsureName(moveit_msgs::msg::AllowedCollisionMatrix & acm,
+                         const std::string & n)
+    {
+        auto it = std::find(acm.entry_names.begin(), acm.entry_names.end(), n);
+        if (it != acm.entry_names.end())
+            return static_cast<size_t>(std::distance(acm.entry_names.begin(), it));
+        acm.entry_names.push_back(n);
+        for (auto & row : acm.entry_values)
+            row.enabled.push_back(false);
+        moveit_msgs::msg::AllowedCollisionEntry row;
+        row.enabled.assign(acm.entry_names.size(), false);
+        acm.entry_values.push_back(row);
+        return acm.entry_names.size() - 1;
+    }
+
+    void setAcmPair(moveit_msgs::msg::AllowedCollisionMatrix & acm,
+                    const std::string & a, const std::string & b, bool allowed)
+    {
+        const size_t ia = acmEnsureName(acm, a);
+        const size_t ib = acmEnsureName(acm, b);
+        acm.entry_values[ia].enabled[ib] = allowed;
+        acm.entry_values[ib].enabled[ia] = allowed;
+    }
+
+    // ========== (A) Allow gripper links vs the octomap only ==========
+    // Sets the ACM pairs (each gripper link, "<octomap>") = allow_gripper_vs_octomap.
+    // Lets grasping inside sensed voxels plan, WITHOUT the fingers ignoring
+    // explicit collision objects/other links (unlike the blanket gripper disable).
+    void applyGripperOctomapAllowance()
+    {
+        const bool allow = node_->get_parameter("allow_gripper_vs_octomap").as_bool();
+        if (!get_planning_scene_client_->service_is_ready() ||
+            !apply_planning_scene_client_->service_is_ready()) {
+            RCLCPP_WARN(node_->get_logger(),
+                "planning scene services not ready; gripper<->octomap allowance NOT applied");
+            return;
+        }
+        auto get_req = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
+        get_req->components.components =
+            moveit_msgs::msg::PlanningSceneComponents::ALLOWED_COLLISION_MATRIX;
+        auto fut = get_planning_scene_client_->async_send_request(get_req);
+        if (fut.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+            RCLCPP_WARN(node_->get_logger(), "timed out reading ACM for gripper<->octomap allowance");
+            return;
+        }
+        auto acm = fut.get()->scene.allowed_collision_matrix;
+        for (const auto & grp : {std::string("left_gripper"), std::string("right_gripper")}) {
+            std::string hand, obj;
+            std::vector<std::string> links;
+            if (!gripperAttachInfo(grp, hand, links, obj)) continue;
+            for (const auto & link : links)
+                setAcmPair(acm, link, "<octomap>", allow);
+        }
+        auto apply_req = std::make_shared<moveit_msgs::srv::ApplyPlanningScene::Request>();
+        apply_req->scene.is_diff = true;
+        apply_req->scene.allowed_collision_matrix = acm;
+        auto af = apply_planning_scene_client_->async_send_request(apply_req);
+        if (af.wait_for(std::chrono::seconds(5)) != std::future_status::ready ||
+            !af.get()->success) {
+            RCLCPP_WARN(node_->get_logger(), "failed to apply gripper<->octomap allowance");
+            return;
+        }
+        RCLCPP_INFO(node_->get_logger(), "Gripper <-> octomap collision %s",
+            allow ? "ALLOWED (fingers ignore octomap, still avoid explicit objects)"
+                  : "ENFORCED");
+    }
+
+    void scheduleGripperOctomapAllowance()
+    {
+        octomap_acm_timer_ = node_->create_wall_timer(
+            std::chrono::milliseconds(200),
+            [this]() {
+                octomap_acm_timer_->cancel();
+                applyGripperOctomapAllowance();
+            },
+            callback_group_);
     }
 
     // --- Helper: group selection ---
@@ -537,9 +1001,16 @@ public:
     // controller's result and return whether it SUCCEEDED. Without it, return
     // true as soon as the goal is accepted — used for the intermediate steps
     // of the software ramp, which are paced by sleeps rather than results.
+    // accepted (out, optional): set true once the controller ACCEPTS the goal,
+    // independent of the eventual result. A grasp-close legitimately ends
+    // STALLED/ABORTED (the finger jams on the object before the setpoint), so
+    // callers track the commanded position by acceptance, not by SUCCEEDED.
     bool sendGripperGoal(rclcpp_action::Client<GripperCommand>::SharedPtr client,
-                         double position, double max_effort, bool wait_result)
+                         double position, double max_effort, bool wait_result,
+                         bool * accepted = nullptr)
     {
+        if (accepted) *accepted = false;
+
         GripperCommand::Goal goal;
         goal.command.position   = position;
         goal.command.max_effort = max_effort;
@@ -556,6 +1027,7 @@ public:
             RCLCPP_ERROR(node_->get_logger(), "Gripper goal rejected");
             return false;
         }
+        if (accepted) *accepted = true;
         if (!wait_result) return true;
 
         auto result_future = client->async_get_result(goal_handle);
@@ -566,8 +1038,58 @@ public:
         return false;
     }
 
-    bool controlGripper(const std::string & group_name, double position)
+    // Fire-and-forget setpoint for the INTERMEDIATE steps of the ramp. Unlike
+    // sendGripperGoal(), this does NOT block on the goal-acceptance handshake —
+    // that round-trip (variable, and worse over zenoh) would be paid on top of
+    // the 20 ms tick, so the setpoint would advance in irregular bursts and the
+    // finger would judder/run at an inconsistent speed. Each goal still preempts
+    // the previous one in GripperActionController; we only care that the latest
+    // setpoint is the live command. The loop paces itself with a steady_clock
+    // deadline, so dropping the handshake is what makes the ramp truly 50 Hz.
+    void sendGripperSetpoint(rclcpp_action::Client<GripperCommand>::SharedPtr client,
+                             double position, double max_effort)
     {
+        GripperCommand::Goal goal;
+        goal.command.position   = position;
+        goal.command.max_effort = max_effort;
+        client->async_send_goal(goal);   // fire and forget; do not wait for accept
+    }
+
+    // Cache each finger's position from /joint_states. Keyed by gripper group so
+    // currentGripperPos() is a cheap, thread-safe, always-fresh lookup.
+    void jointStatesCb(const sensor_msgs::msg::JointState::SharedPtr msg)
+    {
+        std::lock_guard<std::mutex> lk(finger_pos_mtx_);
+        const size_t n = std::min(msg->name.size(), msg->position.size());
+        for (size_t i = 0; i < n; ++i) {
+            if (msg->name[i] == "openarm_left_finger_joint1")
+                finger_pos_["left_gripper"] = msg->position[i];
+            else if (msg->name[i] == "openarm_right_finger_joint1")
+                finger_pos_["right_gripper"] = msg->position[i];
+        }
+    }
+
+    // The gripper's actual current finger position (metres), cached from
+    // /joint_states. The finger (openarm_*_finger_joint1) is prismatic in
+    // [0, 0.044] m and GripperActionController commands it directly, so this is
+    // the SAME scale as the GripperCommand goal — the correct ramp start.
+    // Returns false only if no joint_states have arrived yet.
+    bool currentGripperPos(const std::string & group_name, double & pos)
+    {
+        std::lock_guard<std::mutex> lk(finger_pos_mtx_);
+        auto it = finger_pos_.find(group_name);
+        if (it == finger_pos_.end()) return false;
+        pos = it->second;
+        return true;
+    }
+
+    // superseded (out, optional): set true when this call bails because a newer
+    // gripper command for the same group arrived. Lets the caller skip the
+    // grasp-scene update for a stale/spammed command.
+    bool controlGripper(const std::string & group_name, double position,
+                        bool * superseded = nullptr)
+    {
+        if (superseded) *superseded = false;
         auto client = getGripperClient(group_name);
         if (!client) {
             RCLCPP_ERROR(node_->get_logger(), "Unknown gripper group: %s", group_name.c_str());
@@ -582,45 +1104,151 @@ public:
 
         constexpr double MAX_EFFORT = 50.0;
 
+        // Read gripper_speed FRESH from the parameter on every command (like the
+        // grasp_* params) so `ros2 param set <node> gripper_speed <v>` — or the
+        // SDK/web param control — takes effect live. The gripper_speed_ member is
+        // only the constructor default; using it directly would ignore runtime
+        // changes (the param has no on-set callback to refresh the member).
+        const double gripper_speed = node_->get_parameter("gripper_speed").as_double();
+
         // GripperActionController commands position with no speed control, so
         // we cap the gripper velocity here by ramping the setpoint at
-        // gripper_speed_ (command-position units per second, a ROS param).
+        // gripper_speed (command-position units per second, a ROS param).
         // We ramp in command space from the last commanded position so units
         // always match — the joint_states reading uses a different scale than
         // the GripperCommand goal, so it cannot be used as the ramp start.
-        auto it = last_gripper_cmd_.find(group_name);
-        const bool have_start = (it != last_gripper_cmd_.end());
-        const double start = have_start ? it->second : position;
+        //
+        // A NEW gripper command can arrive mid-ramp (each goal runs in its own
+        // detached thread and the server accepts goals concurrently). To stop
+        // two ramps from interleaving setpoints on the same client — which yanks
+        // the finger between the two targets and makes it judder — every ramp
+        // claims a generation token under gripper_mtx_. A ramp aborts the instant
+        // a newer one supersedes it, and the last commanded position is updated
+        // on EVERY tick so the superseding ramp starts from where the finger
+        // actually is and continues smoothly instead of jumping.
+        uint64_t my_gen;
+        bool have_start;
+        double start;
+        {
+            std::lock_guard<std::mutex> lk(gripper_mtx_);
+            my_gen = ++gripper_gen_[group_name];
+            auto it = last_gripper_cmd_.find(group_name);
+            have_start = (it != last_gripper_cmd_.end());
+            start = have_start ? it->second : position;
+        }
+
+        // Serialize the actual gripper operation. Each ControlGripper goal runs
+        // in its own detached thread, so spamming open/close would otherwise run
+        // many controlGripper() bodies at once — and currentGripperPos() below
+        // calls MoveGroupInterface::getCurrentState(), which is NOT thread-safe.
+        // Concurrent access crashes the node. Holding this lock for the whole
+        // operation guarantees one ramp at a time; a spammed command that has
+        // already been superseded by a newer one (higher generation) grabs the
+        // lock, sees it's stale, and returns immediately instead of doing work.
+        std::lock_guard<std::mutex> op_lk(gripper_op_mtx_);
+        if (gripperSuperseded(group_name, my_gen)) {
+            if (superseded) *superseded = true;
+            return false;   // a newer command arrived while we waited for the lock
+        }
+
+        // Prefer the ACTUAL current finger position as the ramp start. This is
+        // what makes the FIRST command after launch ramp instead of jumping:
+        // the seeded last_gripper_cmd_ is only a guess, and when the first
+        // target happens to equal that guess (e.g. first close to 0.0 with the
+        // 0.0 seed) the start==position shortcut below skips the ramp entirely.
+        // Reading the real position also makes a command after a grasp stall
+        // ramp from where the finger actually jammed. Guard with a sanity range
+        // so hardware that (unexpectedly) reports a different scale falls back
+        // to the tracked/seeded command rather than starting from a bad value.
+        constexpr double GRIPPER_MIN_POS = 0.0;
+        constexpr double GRIPPER_MAX_POS = 0.044;   // finger_joint1 upper limit
+        constexpr double GRIPPER_POS_MARGIN = 0.01;
+        double actual;
+        if (currentGripperPos(group_name, actual) &&
+            actual >= GRIPPER_MIN_POS - GRIPPER_POS_MARGIN &&
+            actual <= GRIPPER_MAX_POS + GRIPPER_POS_MARGIN) {
+            start = actual;
+            have_start = true;
+        }
 
         RCLCPP_INFO(node_->get_logger(),
                     "Setting %s to %.3f (from %.3f @ %.2f units/s)",
-                    group_name.c_str(), position, start, gripper_speed_);
+                    group_name.c_str(), position, start, gripper_speed);
 
         bool ok;
-        if (!have_start || gripper_speed_ <= 0.0 || start == position) {
+        bool accepted = false;   // did the controller accept the final goal?
+        if (!have_start || gripper_speed <= 0.0 || start == position) {
             // First command for this gripper (no known start) or ramp disabled:
             // command directly. Subsequent calls ramp from here.
-            ok = sendGripperGoal(client, position, MAX_EFFORT, true);
+            ok = sendGripperGoal(client, position, MAX_EFFORT, true, &accepted);
         } else {
-            const double period_s = 0.02;                 // 50 Hz ramp
-            const double step = gripper_speed_ * period_s; // units per tick
+            const auto period = std::chrono::milliseconds(20);   // 50 Hz ramp
+            const double period_s = 0.02;
+            const double step = gripper_speed * period_s; // units per tick
             const double dist = std::abs(position - start);
             const int steps = std::max(1, static_cast<int>(std::ceil(dist / step)));
 
+            // Pace against an ABSOLUTE deadline rather than sleep_for: send
+            // latency then can't accumulate, so the ramp keeps a true 50 Hz and
+            // the open/close speed is the configured gripper_speed_ regardless of
+            // direction or transport jitter.
+            auto next = std::chrono::steady_clock::now();
             ok = true;
             for (int i = 1; i <= steps && ok; ++i) {
+                if (gripperSuperseded(group_name, my_gen)) {
+                    if (superseded) *superseded = true;
+                    return false;   // a newer command owns the gripper now
+                }
                 const double frac = static_cast<double>(i) / steps;
                 const double cmd = start + (position - start) * frac;
-                const bool last = (i == steps);
-                ok = sendGripperGoal(client, cmd, MAX_EFFORT, last);
-                if (!last) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                if (i == steps) {
+                    // Final setpoint: block for the controller result so the
+                    // action reports real success/failure (stall on grasp, etc.).
+                    ok = sendGripperGoal(client, cmd, MAX_EFFORT, true, &accepted);
+                } else {
+                    sendGripperSetpoint(client, cmd, MAX_EFFORT);
+                    if (!noteGripperCmd(group_name, my_gen, cmd)) {
+                        if (superseded) *superseded = true;
+                        return false;   // superseded mid-ramp
+                    }
+                    next += period;
+                    std::this_thread::sleep_until(next);
                 }
             }
         }
 
-        if (ok) last_gripper_cmd_[group_name] = position;
+        // Record the commanded setpoint as long as the controller ACCEPTED it
+        // AND we are still the latest command, even if the result was
+        // STALLED/ABORTED (expected when the finger jams on a grasped object).
+        // Gating this on `ok` (== SUCCEEDED) left last_gripper_cmd_ stale after
+        // every grasp-close, so the next open saw start==position and jumped
+        // open instantly; the generation guard keeps an interrupted ramp from
+        // clobbering the value the superseding command is now tracking.
+        {
+            std::lock_guard<std::mutex> lk(gripper_mtx_);
+            if (accepted && gripper_gen_[group_name] == my_gen)
+                last_gripper_cmd_[group_name] = position;
+        }
         return ok;
+    }
+
+    // True if a newer controlGripper() call for this group has claimed the
+    // generation token, meaning the caller's ramp has been superseded.
+    bool gripperSuperseded(const std::string & group_name, uint64_t gen)
+    {
+        std::lock_guard<std::mutex> lk(gripper_mtx_);
+        return gripper_gen_[group_name] != gen;
+    }
+
+    // Record an intermediate ramp setpoint as the last commanded position, but
+    // only while this ramp is still the latest. Returns false (telling the ramp
+    // to abort) once superseded.
+    bool noteGripperCmd(const std::string & group_name, uint64_t gen, double cmd)
+    {
+        std::lock_guard<std::mutex> lk(gripper_mtx_);
+        if (gripper_gen_[group_name] != gen) return false;
+        last_gripper_cmd_[group_name] = cmd;
+        return true;
     }
 
     // ========== GetJointStates Service ==========
@@ -785,6 +1413,7 @@ public:
         if (plan_success) {
             auto err = group->execute(plan);
             if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+                flushPendingGraspRemovals();   // motion succeeded -> delete released grasp box(es)
                 result->success = true; result->status = "Success";
                 goal_handle->succeed(result);
             } else {
@@ -927,6 +1556,7 @@ public:
         }
 
         if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+            flushPendingGraspRemovals();   // motion succeeded -> delete released grasp box(es)
             result->success = true; result->status = "Success";
             goal_handle->succeed(result);
         } else {
@@ -1029,6 +1659,7 @@ public:
         if (plan_success) {
             auto err = group->execute(plan);
             if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+                flushPendingGraspRemovals();   // motion succeeded -> delete released grasp box(es)
                 result->success = true; result->status = "Success";
                 goal_handle->succeed(result);
             } else {
@@ -1071,24 +1702,64 @@ public:
         auto result = std::make_shared<ControlGripper::Result>();
         const auto goal = goal_handle->get_goal();
 
-        bool success = controlGripper(goal->group_name, goal->position);
+        bool superseded = false;
+        bool success = controlGripper(goal->group_name, goal->position, &superseded);
 
         if (goal_handle->is_canceling()) {
             result->success = false; result->status = "Canceled";
             goal_handle->canceled(result); return;
         }
 
-        // Closing past the threshold = grasp -> attach object so only the
-        // fingers may touch it (octomap-masked too). Opening = release -> detach.
-        // Driven by the COMMANDED position (intent), NOT by `success`: grasping
-        // a real object makes the gripper stall before reaching the closed
-        // setpoint, so the controller often reports ABORTED/STALLED instead of
-        // SUCCEEDED. Gating on success would then skip the attach exactly when
-        // an object is held (and skip the detach on a flaky open). We still
+        // Update the planning-scene grasp box according to the grasp_scene_action
+        // param, read fresh here so `ros2 param set ... grasp_scene_action place`
+        // takes effect on the very next command. This is what lets an "open" mean
+        // either "place the held object" (detach + remove after the next motion)
+        // or "just open, nothing held" (leave the scene alone). You set the
+        // intent explicitly before the command — there is no position-based auto.
+        //
+        // Driven by intent (the param), NOT by `success`: grasping a real object
+        // makes the gripper stall before reaching the closed setpoint, so the
+        // controller often reports ABORTED/STALLED instead of SUCCEEDED. We still
         // report success/failure in the action result below.
-        if (grasp_attach_enable_) {
-            if (goal->position <= grasp_close_threshold_) attachGraspObject(goal->group_name);
-            else                                          detachGraspObject(goal->group_name);
+        // Skip the scene update for a superseded (spammed) command: it didn't
+        // actually move the gripper, and letting many stale threads hit
+        // PlanningSceneInterface concurrently is unsafe. Only the command that
+        // ran updates the scene.
+        if (grasp_attach_enable_ && !superseded) {
+            std::string action = node_->get_parameter("grasp_scene_action").as_string();
+            if      (action == "grasp") attachGraspObject(goal->group_name);
+            else if (action == "place") detachGraspObject(goal->group_name);
+            else if (action == "none")  { /* leave the planning scene untouched */ }
+            else {
+                RCLCPP_WARN(node_->get_logger(),
+                            "Unknown grasp_scene_action '%s' (use grasp|place|none); "
+                            "leaving scene untouched", action.c_str());
+            }
+        }
+
+        // Grasp-success detection: read the settled finger gap and decide whether
+        // an object is held. An object is grasped iff the gap lands in the detect
+        // band (clearly above empty-closed, clearly below fully-open). Reported in
+        // the result regardless of the controller's SUCCEEDED/STALLED code (a real
+        // grasp usually stalls before the closed setpoint, so `success` is often
+        // false even when the bottle IS held — `grasped` is the answer to ask).
+        //
+        // ONLY on a CLOSE/grasp command (goal->position <= grasp_close_threshold_).
+        // Opening the gripper is never a grasp, so we leave grasped=false there
+        // rather than reporting a meaningless (and possibly false) hold verdict.
+        if (!superseded && node_->get_parameter("grasp_detect_enable").as_bool()
+            && goal->position <= grasp_close_threshold_) {
+            double gap = 0.0;
+            if (currentGripperPos(goal->group_name, gap)) {
+                const double lo = node_->get_parameter("grasp_detect_min").as_double();
+                const double hi = node_->get_parameter("grasp_detect_max").as_double();
+                result->gripper_gap = gap;
+                result->grasped     = (gap >= lo && gap <= hi);
+                RCLCPP_INFO(node_->get_logger(),
+                    "Grasp detect [%s]: gap=%.4f band=[%.4f,%.4f] -> %s",
+                    goal->group_name.c_str(), gap, lo, hi,
+                    result->grasped ? "HELD" : "empty");
+            }
         }
 
         if (success) {
@@ -1182,6 +1853,7 @@ public:
         if (plan_success) {
             auto err = group->execute(plan);
             if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+                flushPendingGraspRemovals();   // motion succeeded -> delete released grasp box(es)
                 result->success = true;
                 goal_handle->succeed(result);
             } else {
@@ -1266,6 +1938,7 @@ public:
         if (plan_success) {
             auto err = group->execute(plan);
             if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+                flushPendingGraspRemovals();   // motion succeeded -> delete released grasp box(es)
                 result->success = true; result->status = "Success";
                 goal_handle->succeed(result);
                 RCLCPP_INFO(node_->get_logger(), "SetJointPosition succeeded for %s",
@@ -1285,6 +1958,8 @@ public:
 private:
     std::shared_ptr<rclcpp::Node> node_;
     rclcpp::CallbackGroup::SharedPtr callback_group_;
+    // Keeps the live-retune callback for planner_id / arm_planning_time alive.
+    rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_cb_handle_;
 
     std::shared_ptr<MoveGroupInterface> left_arm_;
     std::shared_ptr<MoveGroupInterface> right_arm_;
@@ -1312,6 +1987,8 @@ private:
 
     // Runtime toggle of gripper-link collision checking via the ACM.
     rclcpp::Service<ToggleGripperCollision>::SharedPtr toggle_gripper_collision_service_;
+    // Detach + remove all collision objects from the planning scene.
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr clear_collision_objects_service_;
     rclcpp::Client<moveit_msgs::srv::GetPlanningScene>::SharedPtr get_planning_scene_client_;
     rclcpp::Client<moveit_msgs::srv::ApplyPlanningScene>::SharedPtr apply_planning_scene_client_;
 
@@ -1321,6 +1998,26 @@ private:
     double gripper_speed_;
     std::map<std::string, double> last_gripper_cmd_;
 
+    // Serializes gripper command state and provides preemption: each
+    // controlGripper() call bumps gripper_gen_[group]; an older ramp aborts once
+    // it sees a newer generation, so concurrent commands on the same gripper
+    // can't interleave setpoints (which would make the finger judder).
+    std::mutex gripper_mtx_;
+    std::map<std::string, uint64_t> gripper_gen_;
+
+    // Held for the whole duration of a single controlGripper() call so gripper
+    // operations never run concurrently (e.g. concurrent action-client sends or
+    // grasp-scene updates). Superseded/spammed commands take it, see they're
+    // stale via gripper_gen_, and return without doing work.
+    std::mutex gripper_op_mtx_;
+
+    // Finger positions cached from /joint_states (gripper group -> metres), the
+    // ramp start used by controlGripper(). Replaces MoveGroupInterface state
+    // reads: always fresh and reliable, so open/close always ramps.
+    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_states_sub_;
+    std::mutex finger_pos_mtx_;
+    std::map<std::string, double> finger_pos_;
+
     // Grasp attach/detach: when the gripper closes past grasp_close_threshold_
     // a box (grasp_object_size_/offset_) is attached to the hand so only the
     // fingers may touch it and it is masked from the octomap. Opening detaches.
@@ -1329,7 +2026,14 @@ private:
     std::vector<double> grasp_object_size_;
     std::vector<double> grasp_object_offset_;
     std::vector<double> grasp_object_rpy_;
+    double grasp_object_height_above_;   // m from grasp centre to object top
+    double grasp_object_height_below_;   // m from grasp centre to object bottom
     std::shared_ptr<PlanningSceneInterface> planning_scene_;
+
+    // Grasp boxes that were detached on gripper-open but are still standing in
+    // the world. flushPendingGraspRemovals() deletes them at the start of the
+    // next arm motion (before planning); attachGraspObject() un-queues on re-grasp.
+    std::set<std::string> pending_grasp_removal_;
 
     // Finger collision padding: inflate the finger links' collision geometry by
     // finger_padding_ (m) so planning keeps clearance from the (octomap-sensed)
@@ -1338,6 +2042,11 @@ private:
     double finger_padding_;
     std::vector<std::string> finger_pad_links_;
     rclcpp::TimerBase::SharedPtr padding_timer_;
+    rclcpp::TimerBase::SharedPtr finger_apply_timer_;   // live finger_padding re-apply
+    rclcpp::TimerBase::SharedPtr table_timer_;          // (B) deferred table startup apply
+    rclcpp::TimerBase::SharedPtr table_apply_timer_;    // (B) live table re-apply
+    bool table_added_ = false;
+    rclcpp::TimerBase::SharedPtr octomap_acm_timer_;    // (A) live gripper<->octomap allowance
 };
 
 int main(int argc, char ** argv)

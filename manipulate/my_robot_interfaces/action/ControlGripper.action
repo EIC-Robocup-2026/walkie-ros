@@ -3,5 +3,7 @@ float64 position    # Changed from 'bool open' to 'float64 position'
 ---
 bool success
 string status
+bool grasped         # true iff an object is held after the command (settled gap in the detect band)
+float64 gripper_gap  # settled finger gap, GripperCommand scale (m)
 ---
 # Feedbacks
