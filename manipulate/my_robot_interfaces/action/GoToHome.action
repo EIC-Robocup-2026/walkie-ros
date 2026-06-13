@@ -1,5 +1,5 @@
 string group_name
-string pose_name   # SRDF named state, e.g. "home", "standby", "hands_up". Empty = "home".
+string pose_name  # SRDF named state, e.g. "home", "standby", "hands_up". Empty = "home".
 ---
 bool success
 ---
