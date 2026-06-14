@@ -343,9 +343,13 @@ hardware_interface::return_type OpenArm_v10HW::read(
       double motor_pos = gripper_motors[0].get_position();
       pos_states_[ARM_DOF] = motor_radians_to_joint(motor_pos);
 
-      // Unimplemented: Velocity and torque mapping
-      vel_states_[ARM_DOF] = 0;  // gripper_motors[0].get_velocity();
-      tau_states_[ARM_DOF] = 0;  // gripper_motors[0].get_torque();
+      // Velocity uses the same linear scale as position (the position map is a
+      // pure scale through the origin, so its derivative is identical).
+      vel_states_[ARM_DOF] =
+          motor_radians_to_joint(gripper_motors[0].get_velocity());
+      // Effort is the raw motor-frame torque (N*m at the motor), not scaled to
+      // the linear joint.
+      tau_states_[ARM_DOF] = gripper_motors[0].get_torque();
     }
   }
 
