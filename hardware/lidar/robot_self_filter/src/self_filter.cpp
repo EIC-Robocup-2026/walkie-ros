@@ -128,11 +128,11 @@ namespace robot_self_filter
   private:
     void cloudCallback(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &cloud)
     {
-      RCLCPP_INFO(this->get_logger(), "Received cloud message with timestamp %.6f",
-                  rclcpp::Time(cloud->header.stamp).seconds());
+      RCLCPP_DEBUG(this->get_logger(), "Received cloud message with timestamp %.6f",
+                   rclcpp::Time(cloud->header.stamp).seconds());
 
-      RCLCPP_INFO(this->get_logger(), "Point cloud size: width = %d, height = %d, total points = %d",
-                  cloud->width, cloud->height, cloud->width * cloud->height);
+      RCLCPP_DEBUG(this->get_logger(), "Point cloud size: width = %d, height = %d, total points = %d",
+                   cloud->width, cloud->height, cloud->width * cloud->height);
 
       sensor_msgs::msg::PointCloud2 out2;
       int input_size = 0;
@@ -152,12 +152,48 @@ namespace robot_self_filter
         publishShapesFromMask(mask, cloud->header.frame_id);
         break;
       }
+      case SensorType::XYZRGBSensor:
+      {
+        auto sf_xyzrgb = std::dynamic_pointer_cast<filters::SelfFilter<pcl::PointXYZRGB>>(self_filter_);
+        if (!sf_xyzrgb)
+          return;
+        auto mask = sf_xyzrgb->getSelfMaskPtr();
+        publishShapesFromMask(mask, cloud->header.frame_id);
+        break;
+      }
       case SensorType::OusterSensor:
       {
         auto sf_ouster = std::dynamic_pointer_cast<filters::SelfFilter<PointOuster>>(self_filter_);
         if (!sf_ouster)
           return;
         auto mask = sf_ouster->getSelfMaskPtr();
+        publishShapesFromMask(mask, cloud->header.frame_id);
+        break;
+      }
+      case SensorType::HesaiSensor:
+      {
+        auto sf_hesai = std::dynamic_pointer_cast<filters::SelfFilter<PointHesai>>(self_filter_);
+        if (!sf_hesai)
+          return;
+        auto mask = sf_hesai->getSelfMaskPtr();
+        publishShapesFromMask(mask, cloud->header.frame_id);
+        break;
+      }
+      case SensorType::RobosenseSensor:
+      {
+        auto sf_robosense = std::dynamic_pointer_cast<filters::SelfFilter<PointRobosense>>(self_filter_);
+        if (!sf_robosense)
+          return;
+        auto mask = sf_robosense->getSelfMaskPtr();
+        publishShapesFromMask(mask, cloud->header.frame_id);
+        break;
+      }
+      case SensorType::PandarSensor:
+      {
+        auto sf_pandar = std::dynamic_pointer_cast<filters::SelfFilter<PointPandar>>(self_filter_);
+        if (!sf_pandar)
+          return;
+        auto mask = sf_pandar->getSelfMaskPtr();
         publishShapesFromMask(mask, cloud->header.frame_id);
         break;
       }
@@ -285,7 +321,7 @@ namespace robot_self_filter
       }
 
       marker_pub_->publish(marker_array);
-      RCLCPP_INFO(this->get_logger(), "Published %zu collision shapes", marker_array.markers.size());
+      RCLCPP_DEBUG(this->get_logger(), "Published %zu collision shapes", marker_array.markers.size());
     }
 
     std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
