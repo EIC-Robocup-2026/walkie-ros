@@ -21,8 +21,8 @@ using std::placeholders::_2;
 class ObPoseServiceCpp : public rclcpp::Node {
 public:
     ObPoseServiceCpp() : Node("ob_pose_service_cpp"), fx_(0.0), fy_(0.0), cx_(0.0), cy_(0.0) {
-        this->declare_parameter("depth_topic", "/zed_head/zed_node/depth/depth_registered");
-        this->declare_parameter("info_topic", "/zed_head/zed_node/depth/camera_info");
+        this->declare_parameter("depth_topic", "/zed/zed_node/depth/depth_registered");
+        this->declare_parameter("info_topic", "/zed/zed_node/depth/camera_info");
         this->declare_parameter("target_frame", "map");
         this->declare_parameter("search_radius", 3);
 
