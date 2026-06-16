@@ -43,12 +43,9 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 
 import tf2_ros
-import tf2_geometry_msgs  # noqa: F401 — registers PoseStamped transform support
 
-from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
-from vision_msgs.msg import Detection2DArray, BoundingBox2D
-from vision_msgs.msg import Pose2D, Point2D
+from vision_msgs.msg import Detection2DArray
 
 try:
     import open3d as o3d
@@ -461,7 +458,7 @@ class GraspVizNode(Node):
                   f'(x × y × z)')
             print(f'  centre : ({c.x:.3f}, {c.y:.3f}, {c.z:.3f}) m')
             if resp.height_below_grasp:
-                print(f'\n── Grasp height decomposition (top grasp) ───────────────────')
+                print('\n── Grasp height decomposition (top grasp) ───────────────────')
                 print(f'  below gripper : {resp.height_below_grasp[0]*100:6.1f} cm  '
                       f'← object bottom to grasp point')
                 print(f'  above gripper : {resp.height_above_grasp[0]*100:6.1f} cm  '
