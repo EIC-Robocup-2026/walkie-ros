@@ -1,0 +1,3 @@
+# Local venv used only to run gen_xrdf_spheres.py (trimesh/scipy).
+.spherefit_venv/
+__pycache__/

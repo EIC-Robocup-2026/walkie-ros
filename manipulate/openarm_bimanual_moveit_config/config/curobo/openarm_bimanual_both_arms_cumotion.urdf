@@ -1,0 +1,1567 @@
+<robot name="walkie_bot">
+  
+  
+  
+  <material name="black">
+    <color rgba="0.0 0.0 0.0 1.0" />
+  </material>
+  <material name="dark">
+    <color rgba="0.3 0.3 0.3 1.0" />
+  </material>
+  <material name="light_black">
+    <color rgba="0.4 0.4 0.4 1.0" />
+  </material>
+  <material name="blue">
+    <color rgba="0.0 0.0 0.8 1.0" />
+  </material>
+  <material name="green">
+    <color rgba="0.0 0.8 0.0 1.0" />
+  </material>
+  <material name="grey">
+    <color rgba="0.5 0.5 0.5 1.0" />
+  </material>
+  <material name="orange">
+    <color rgba="1.0 0.4235 0.0392 1.0" />
+  </material>
+  <material name="brown">
+    <color rgba="0.8706 0.8118 0.7647 1.0" />
+  </material>
+  <material name="red">
+    <color rgba="0.8 0.0 0.0 1.0" />
+  </material>
+  <material name="white">
+    <color rgba="0.8 0.8 0.8 1.0" />
+  </material>
+  
+  
+  
+  
+  <link name="base_footprint" />
+  <joint name="base_link_joint" type="fixed">
+    <origin rpy="0 0 1.5707963267948966" xyz="0 0 0.0312" />
+    <parent link="base_footprint" />
+    <child link="base_link" />
+  </joint>
+  <link name="base_link">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/walkie/base_link.stl" />
+      </geometry>
+      <material name="grey" />
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0.165" />
+      <geometry>
+        <cylinder length="0.33" radius="0.275" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0.07 0.845" />
+      <geometry>
+        <box size="0.196 0.18 1.04" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0.07 0.845" />
+      <geometry>
+        <box size="0.46 0.07 1.04" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <mass value="20.2" />
+      <inertia ixx="0.00818773333333333" ixy="0.0" ixz="0.0" iyy="0.00818773333333333" iyz="0.0" izz="0.01616" />
+    </inertial>
+  </link>
+  <gazebo reference="base_link">
+    <selfCollide>false</selfCollide>
+    <mu1 value="0.05" />
+    <mu2 value="0.05" />
+  </gazebo>
+  <joint name="lift_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.000000 0.070000 1.098500" />
+    <parent link="base_link" />
+    <child link="lift_link" />
+    </joint>
+  <link name="lift_link">
+    <visual name="lift">
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/walkie/Lift.stl" />
+      </geometry>
+      <material name="grey" />
+    </visual>
+    
+    <collision name="top_bar">
+      <origin rpy="0 0 0" xyz="0 0 0.109" />
+      <geometry>
+        <box size="0.346 0.174 0.132" />
+      </geometry>
+    </collision>
+    
+    <collision name="stem">
+      <origin rpy="0 0 0" xyz="0 -0.172 0.109" />
+      <geometry>
+        <box size="0.190 0.190 0.132" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="bl_wheel_joint" type="fixed">
+    <origin rpy="0 0 -0.7853981633974483" xyz="0.130943 0.130943 0.05" />
+    <parent link="base_link" />
+    <child link="bl_wheel_link" />
+    </joint>
+  <link name="bl_wheel_link">
+    <visual>
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/walkie/omni_wheel_optimize.dae" scale="1 1 1" />
+      </geometry>
+    </visual>
+    <inertial>
+      <origin rpy="1.570796327 0 0" xyz="0 0 0" />
+      <mass value="0.05" />
+      <inertia ixx="8.072916666666665e-05" ixy="0.0" ixz="0.0" iyy="8.072916666666665e-05" iyz="0.0" izz="0.000140625" />
+    </inertial>
+    <collision>
+      <origin rpy="1.570796327 0 0" xyz="0 0 0" />
+      <geometry>
+        <cylinder length="0.05" radius="0.075" />
+      </geometry>
+    </collision>
+  </link>
+  <gazebo reference="bl_wheel_link">
+    <selfCollide>false</selfCollide>
+    <mu1>1.0</mu1>
+    <mu2>0.001</mu2>
+    <fdir1>1 0 0</fdir1>
+  </gazebo>
+  <joint name="br_wheel_joint" type="fixed">
+    <origin rpy="0 0 0.7853981633974483" xyz="-0.130943 0.130943 0.05" />
+    <parent link="base_link" />
+    <child link="br_wheel_link" />
+    </joint>
+  <link name="br_wheel_link">
+    <visual>
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/walkie/omni_wheel_optimize.dae" scale="1 1 1" />
+      </geometry>
+    </visual>
+    <inertial>
+      <origin rpy="1.570796327 0 0" xyz="0 0 0" />
+      <mass value="0.05" />
+      <inertia ixx="8.072916666666665e-05" ixy="0.0" ixz="0.0" iyy="8.072916666666665e-05" iyz="0.0" izz="0.000140625" />
+    </inertial>
+    <collision>
+      <origin rpy="1.570796327 0 0" xyz="0 0 0" />
+      <geometry>
+        <cylinder length="0.05" radius="0.075" />
+      </geometry>
+    </collision>
+  </link>
+  <gazebo reference="br_wheel_link">
+    <selfCollide>false</selfCollide>
+    <mu1>1.0</mu1>
+    <mu2>0.001</mu2>
+    <fdir1>1 0 0</fdir1>
+  </gazebo>
+  <joint name="fr_wheel_joint" type="fixed">
+    <origin rpy="0 0 2.356194490192345" xyz="-0.130943 -0.130943 0.05" />
+    <parent link="base_link" />
+    <child link="fr_wheel_link" />
+    </joint>
+  <link name="fr_wheel_link">
+    <visual>
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/walkie/omni_wheel_optimize.dae" scale="1 1 1" />
+      </geometry>
+    </visual>
+    <inertial>
+      <origin rpy="1.570796327 0 0" xyz="0 0 0" />
+      <mass value="0.05" />
+      <inertia ixx="8.072916666666665e-05" ixy="0.0" ixz="0.0" iyy="8.072916666666665e-05" iyz="0.0" izz="0.000140625" />
+    </inertial>
+    <collision>
+      <origin rpy="1.570796327 0 0" xyz="0 0 0" />
+      <geometry>
+        <cylinder length="0.05" radius="0.075" />
+      </geometry>
+    </collision>
+  </link>
+  <gazebo reference="fr_wheel_link">
+    <selfCollide>false</selfCollide>
+    <mu1>1.0</mu1>
+    <mu2>0.001</mu2>
+    <fdir1>1 0 0</fdir1>
+  </gazebo>
+  <joint name="fl_wheel_joint" type="fixed">
+    <origin rpy="0 0 3.9269908169872414" xyz="0.130943 -0.130943 0.05" />
+    <parent link="base_link" />
+    <child link="fl_wheel_link" />
+    </joint>
+  <link name="fl_wheel_link">
+    <visual>
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/walkie/omni_wheel_optimize.dae" scale="1 1 1" />
+      </geometry>
+    </visual>
+    <inertial>
+      <origin rpy="1.570796327 0 0" xyz="0 0 0" />
+      <mass value="0.05" />
+      <inertia ixx="8.072916666666665e-05" ixy="0.0" ixz="0.0" iyy="8.072916666666665e-05" iyz="0.0" izz="0.000140625" />
+    </inertial>
+    <collision>
+      <origin rpy="1.570796327 0 0" xyz="0 0 0" />
+      <geometry>
+        <cylinder length="0.05" radius="0.075" />
+      </geometry>
+    </collision>
+  </link>
+  <gazebo reference="fl_wheel_link">
+    <selfCollide>false</selfCollide>
+    <mu1>1.0</mu1>
+    <mu2>0.001</mu2>
+    <fdir1>1 0 0</fdir1>
+  </gazebo>
+  <joint name="front_lidar_joint" type="fixed">
+    <origin rpy="0 0 -1.5707963" xyz="0 -0.235 0.28232" />
+    <parent link="base_link" />
+    <child link="front_lidar_link" />
+  </joint>
+  <link name="front_lidar_link">
+    </link>
+  <joint name="back_lidar_joint" type="fixed">
+    <origin rpy="0 0 1.5707963" xyz="0 0.235 0.28232" />
+    <parent link="base_link" />
+    <child link="back_lidar_link" />
+  </joint>
+  <link name="back_lidar_link">
+    </link>
+  <gazebo reference="front_lidar_link">
+    <sensor name="front_lidar" type="gpu_lidar">
+      <visualize>false</visualize>
+      <pose>0 0 0 0 0 0</pose>
+      <update_rate>40</update_rate>
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1.000000</resolution>
+            <min_angle>-2.09333333</min_angle>
+            <max_angle>2.09333333</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.18</min>
+          <max>10</max>
+          <resolution>0.015000</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </lidar>
+      <topic>front_lidar</topic>
+      <gz_frame_id>front_lidar_link</gz_frame_id>
+    </sensor>
+  </gazebo>
+  <gazebo reference="back_lidar_link">
+    <sensor name="back_lidar" type="gpu_lidar">
+      <visualize>false</visualize>
+      <pose>0 0 0 0 0 0</pose>
+      <update_rate>40</update_rate>
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1.000000</resolution>
+            <min_angle>-2.09333333</min_angle>
+            <max_angle>2.09333333</max_angle>
+          </horizontal>
+        </scan>
+        <range>
+          <min>0.18</min>
+          <max>10</max>
+          <resolution>0.015000</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </lidar>
+      <topic>back_lidar</topic>
+      <gz_frame_id>back_lidar_link</gz_frame_id>
+    </sensor>
+  </gazebo>
+  <link name="merged_lidar_link" />
+  <joint name="merged_lidar_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="merged_lidar_link" />
+    <origin rpy="0 0 0" xyz="0 0 0.28232" />
+  </joint>
+  
+  <link name="unitree4d_l2_imu_initial" />
+  <joint name="unitree4d_l2_imu_initial_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="unitree4d_l2_imu_initial" />
+    <origin rpy="3.36159 -0.445 1.09" xyz="0 0.05196152 1.676" />
+  </joint>
+  <link name="unitree4d_l2_imu" />
+  <joint name="unitree4d_l2_imu_joint" type="fixed">
+    <parent link="unitree4d_l2_imu_initial" />
+    <child link="unitree4d_l2_imu" />
+    <origin rpy="0 0 0" xyz="-0.007698 -0.014655 0.00667" />
+  </joint>
+  <material name="aluminum">
+    <color rgba="0.5 0.5 0.5 1" />
+  </material>
+  
+  <joint name="bottom_joint" type="fixed">
+    <origin rpy="0 -0.436332313 -1.5707963267948966" xyz="0 -0.26275 0.17747" />
+    <parent link="base_link" />
+    <child link="bottom_bottom_screw_frame" />
+  </joint>
+  <link name="bottom_bottom_screw_frame" />
+  <joint name="bottom_link_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.02 0.0115" />
+    <parent link="bottom_bottom_screw_frame" />
+    <child link="bottom_link" />
+  </joint>
+  <link name="bottom_link">
+    <visual>
+      <origin rpy="1.5707963267948966 0 1.5707963267948966" xyz="0.00987 -0.02 0" />
+      <geometry>
+        
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/urdf/walkie/depth_camera/d415/visual/d415.stl" />
+      </geometry>
+      <material name="aluminum" />
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 -0.02 0" />
+      <geometry>
+        <box size="0.02005 0.099 0.023" />
+      </geometry>
+    </collision>
+    <inertial>
+      
+      <mass value="0.564" />
+      <origin xyz="0 0 0" />
+      <inertia ixx="0.003881243" ixy="0.0" ixz="0.0" iyy="0.000498940" iyz="0.0" izz="0.003879257" />
+    </inertial>
+  </link>
+  
+  <joint name="bottom_depth_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0 0" />
+    <parent link="bottom_link" />
+    <child link="bottom_depth_frame" />
+  </joint>
+  <link name="bottom_depth_frame" />
+  <joint name="bottom_depth_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0" />
+    <parent link="bottom_depth_frame" />
+    <child link="bottom_depth_optical_frame" />
+  </joint>
+  <link name="bottom_depth_optical_frame" />
+  
+  <joint name="bottom_left_ir_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.0 0" />
+    <parent link="bottom_depth_frame" />
+    <child link="bottom_left_ir_frame" />
+  </joint>
+  <link name="bottom_left_ir_frame" />
+  <joint name="bottom_left_ir_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0" />
+    <parent link="bottom_left_ir_frame" />
+    <child link="bottom_left_ir_optical_frame" />
+  </joint>
+  <link name="bottom_left_ir_optical_frame" />
+  
+  <joint name="bottom_right_ir_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 -0.055 0" />
+    <parent link="bottom_depth_frame" />
+    <child link="bottom_right_ir_frame" />
+  </joint>
+  <link name="bottom_right_ir_frame" />
+  <joint name="bottom_right_ir_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0" />
+    <parent link="bottom_right_ir_frame" />
+    <child link="bottom_right_ir_optical_frame" />
+  </joint>
+  <link name="bottom_right_ir_optical_frame" />
+  
+  <joint name="bottom_color_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 0.015 0" />
+    <parent link="bottom_depth_frame" />
+    <child link="bottom_color_frame" />
+  </joint>
+  <link name="bottom_color_frame" />
+  <joint name="bottom_color_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0 -1.5707963267948966" xyz="0 0 0" />
+    <parent link="bottom_color_frame" />
+    <child link="bottom_color_optical_frame" />
+  </joint>
+  <link name="bottom_color_optical_frame" />
+  <gazebo reference="bottom_link">
+    <sensor name="bottom_rgb_sensor" type="camera">
+      <pose frame="bottom_color_optical_frame">0 0 0 0 0 0</pose>
+      <camera name="bottom_color">
+        <horizontal_fov>1.211258501</horizontal_fov>
+        
+        <aspect_ratio>1.777777778</aspect_ratio>
+        
+        <image>
+          <width>1920</width>
+          <height>1080</height>
+          <format>RGB_INT8</format>
+        </image>
+        <clip>
+          <near>0.1</near>
+          <far>100</far>
+        </clip>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.007</stddev>
+        </noise>
+      </camera>
+      <always_on>1</always_on>
+      <update_rate>2</update_rate>
+      <visualize>1</visualize>
+      <gz_frame_id>bottom_color_optical_frame</gz_frame_id>
+    </sensor>
+    <sensor name="bottom_depth_sensor" type="depth">
+      <pose frame="bottom_depth_optical_frame">0 -0.03 0.004 0 0 0</pose>
+      <camera name="bottom">
+        <camera_info_topic>bottom_depth/camera_info</camera_info_topic>
+        
+        <horizontal_fov>1.211258501</horizontal_fov>
+        
+        <aspect_ratio>1.777777778</aspect_ratio>
+        <image>
+          <width>1280</width>
+          <height>720</height>
+        </image>
+        <clip>
+          <near>0.1</near>
+          <far>8</far>
+        </clip>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.010</stddev>
+        </noise>
+      </camera>
+      <always_on>1</always_on>
+      <update_rate>2</update_rate>
+      <visualize>true</visualize>
+      <topic>bottom_depth/image</topic>
+      <gz_frame_id>bottom_depth_frame</gz_frame_id>
+    </sensor>
+  </gazebo>
+  
+    // 
+  
+  <joint name="head_servo_joint" type="fixed">
+    <parent link="lift_link" />
+    <child link="head_servo_link" />
+    <origin rpy="0.0698132 0 0" xyz="-0.03403 -0.2650 0.20075" />
+    </joint>
+  <link name="head_servo_link">
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/walkie/HeadCameraMount.stl" />
+      </geometry>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/walkie/HeadCameraMount.stl" />
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.2" />
+      <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4" />
+    </inertial>
+  </link>
+  
+  <link name="zed_head_camera_link" />
+  
+  <link name="zed_head_camera_center">
+    <visual>
+      <origin rpy="0 0 0" xyz="-0.01 0 0.0" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/walkie/depth_camera/zed/zed2i.stl" />
+      </geometry>
+      <material name="zed_mat">
+        <color rgba="0.25 0.25 0.25 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0" xyz="-0.01 0 0.0" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/walkie/depth_camera/zed/zed2i.stl" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="zed_head_camera_center_joint" type="fixed">
+    <parent link="zed_head_camera_link" />
+    <child link="zed_head_camera_center" />
+    <origin rpy="0 0.0 0" xyz="0 0 0.015" />
+  </joint>
+  
+  <link name="zed_head_left_camera_frame">
+  </link>
+  <joint name="zed_head_left_camera_joint" type="fixed">
+    <parent link="zed_head_camera_center" />
+    <child link="zed_head_left_camera_frame" />
+    <origin rpy="0 0 0" xyz="-0.01 0.06 0" />
+  </joint>
+  <link name="zed_head_left_camera_frame_optical" />
+  <joint name="zed_head_left_camera_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0.0 -1.5707963267948966" xyz="0 0 0" />
+    <parent link="zed_head_left_camera_frame" />
+    <child link="zed_head_left_camera_frame_optical" />
+  </joint>
+  
+  <link name="zed_head_right_camera_frame">
+  </link>
+  <joint name="zed_head_right_camera_joint" type="fixed">
+    <parent link="zed_head_camera_center" />
+    <child link="zed_head_right_camera_frame" />
+    <origin rpy="0 0 0" xyz="-0.01 -0.06 0" />
+  </joint>
+  <link name="zed_head_right_camera_frame_optical" />
+  <joint name="zed_head_right_camera_optical_joint" type="fixed">
+    <origin rpy="-1.5707963267948966 0.0 -1.5707963267948966" xyz="0 0 0" />
+    <parent link="zed_head_right_camera_frame" />
+    <child link="zed_head_right_camera_frame_optical" />
+  </joint>
+  
+  <gazebo reference="zed_head_camera_link">
+    
+    <sensor name="head_left_rgb_sensor" type="camera">
+      <pose relative_to="zed_head_left_camera_frame_optical">0 0 0 1.570796326794897 -1.570796326794897 0</pose>
+      <camera name="head_left">
+        <horizontal_fov>1.9199</horizontal_fov>
+        
+        <image>
+          <width>1920</width>
+          <height>1080</height>
+          <format>RGB_INT8</format>
+        </image>
+      </camera>
+      <always_on>1</always_on>
+      <update_rate>30</update_rate>
+      <visualize>true</visualize>
+      <topic>head/rgb/image</topic>
+      <gz_frame_id>zed_head_left_camera_frame</gz_frame_id>
+    </sensor>
+    
+    <sensor name="head_rgbd_sensor" type="rgbd_camera">
+      <pose relative_to="zed_head_left_camera_frame_optical">0 0 0 1.570796326794897 -1.570796326794897 0</pose>
+      <camera name="head_camera">
+        <horizontal_fov>1.9199</horizontal_fov>
+        <image>
+          <width>640</width>
+          <height>360</height>
+          <format>RGB_INT8</format>
+        </image>
+        <clip>
+          <near>0.3</near>
+          <far>20</far>
+        </clip>
+        <depth_camera>
+          <clip>
+            <near>0.3</near>
+            <far>20</far>
+          </clip>
+        </depth_camera>
+      </camera>
+      <always_on>1</always_on>
+      <update_rate>30</update_rate>
+      <visualize>true</visualize>
+      <topic>head/rgbd</topic>
+      <gz_frame_id>zed_head_left_camera_frame</gz_frame_id>
+    </sensor>
+  </gazebo>
+  <joint name="zed_head_joint" type="fixed">
+    <parent link="head_servo_link" />
+    <child link="zed_head_camera_link" />
+    <origin rpy="0 0 -1.5708" xyz="0.034 -0.088 0.005" />
+  </joint>
+  <joint name="top_imu_joint" type="fixed">
+    <origin xyz="0 0 0.17" />
+    <parent link="base_link" />
+    <child link="top_imu_link" />
+  </joint>
+  <link name="top_imu_link">
+    </link>
+  <gazebo reference="top_imu_link">
+    <sensor name="imu_sensor" type="imu">
+      <always_on>1</always_on>
+      <update_rate>50</update_rate>
+      <visualize>true</visualize>
+      <topic>imu</topic>
+    </sensor>
+  </gazebo>
+  <ros2_control name="MockSystem" type="system">
+    <hardware>
+      <plugin>mock_components/GenericSystem</plugin>
+    </hardware>
+    <joint name="fl_wheel_joint">
+      <command_interface name="velocity">
+        <param name="min">-3.14</param>
+        <param name="max">3.14</param>
+      </command_interface>
+      <command_interface name="position" />
+      <command_interface name="effort" />
+      <state_interface name="velocity" />
+      <state_interface name="position" />
+    </joint>
+    <joint name="fr_wheel_joint">
+      <command_interface name="velocity">
+        <param name="min">-3.14</param>
+        <param name="max">3.14</param>
+      </command_interface>
+      <command_interface name="position" />
+      <command_interface name="effort" />
+      <state_interface name="velocity" />
+      <state_interface name="position" />
+    </joint>
+    <joint name="br_wheel_joint">
+      <command_interface name="velocity">
+        <param name="min">-3.14</param>
+        <param name="max">3.14</param>
+      </command_interface>
+      <command_interface name="position" />
+      <command_interface name="effort" />
+      <state_interface name="velocity" />
+      <state_interface name="position" />
+    </joint>
+    <joint name="bl_wheel_joint">
+      <command_interface name="velocity">
+        <param name="min">-3.14</param>
+        <param name="max">3.14</param>
+      </command_interface>
+      <command_interface name="position" />
+      <command_interface name="effort" />
+      <state_interface name="velocity" />
+      <state_interface name="position" />
+    </joint>
+    <joint name="head_servo_joint">
+      <command_interface name="position">
+        <param name="min">-1.54</param>
+        <param name="max">1.54</param>
+      </command_interface>
+      <state_interface name="position" />
+    </joint>
+    <joint name="lift_joint">
+      <command_interface name="position">
+        <param name="min">0.000</param>
+        <param name="max">0.7435</param>
+      </command_interface>
+      <state_interface name="position">
+        <param name="initial_value">0.7435</param>
+      </state_interface>
+      <state_interface name="velocity">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="openarm_left_joint1">
+      <command_interface name="position" />
+      <command_interface name="velocity" />
+      <command_interface name="effort" />
+      <state_interface name="position">
+        <param name="initial_value">0.2618</param>
+      </state_interface>
+      <state_interface name="velocity">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="effort">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="openarm_left_joint2">
+      <command_interface name="position" />
+      <command_interface name="velocity" />
+      <command_interface name="effort" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="effort">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="openarm_left_joint3">
+      <command_interface name="position" />
+      <command_interface name="velocity" />
+      <command_interface name="effort" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="effort">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="openarm_left_joint4">
+      <command_interface name="position" />
+      <command_interface name="velocity" />
+      <command_interface name="effort" />
+      <state_interface name="position">
+        <param name="initial_value">0.2618</param>
+      </state_interface>
+      <state_interface name="velocity">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="effort">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="openarm_left_joint5">
+      <command_interface name="position" />
+      <command_interface name="velocity" />
+      <command_interface name="effort" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="effort">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="openarm_left_joint6">
+      <command_interface name="position" />
+      <command_interface name="velocity" />
+      <command_interface name="effort" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="effort">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="openarm_left_joint7">
+      <command_interface name="position" />
+      <command_interface name="velocity" />
+      <command_interface name="effort" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="effort">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="openarm_right_joint1">
+      <command_interface name="position" />
+      <command_interface name="velocity" />
+      <command_interface name="effort" />
+      <state_interface name="position">
+        <param name="initial_value">-0.2618</param>
+      </state_interface>
+      <state_interface name="velocity">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="effort">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="openarm_right_joint2">
+      <command_interface name="position" />
+      <command_interface name="velocity" />
+      <command_interface name="effort" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="effort">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="openarm_right_joint3">
+      <command_interface name="position" />
+      <command_interface name="velocity" />
+      <command_interface name="effort" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="effort">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="openarm_right_joint4">
+      <command_interface name="position" />
+      <command_interface name="velocity" />
+      <command_interface name="effort" />
+      <state_interface name="position">
+        <param name="initial_value">0.2618</param>
+      </state_interface>
+      <state_interface name="velocity">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="effort">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="openarm_right_joint5">
+      <command_interface name="position" />
+      <command_interface name="velocity" />
+      <command_interface name="effort" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="effort">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="openarm_right_joint6">
+      <command_interface name="position" />
+      <command_interface name="velocity" />
+      <command_interface name="effort" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="effort">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="openarm_right_joint7">
+      <command_interface name="position" />
+      <command_interface name="velocity" />
+      <command_interface name="effort" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="effort">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="openarm_left_finger_joint1">
+      <command_interface name="position" />
+      <command_interface name="velocity" />
+      <command_interface name="effort" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="effort">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+    <joint name="openarm_right_finger_joint1">
+      <command_interface name="position" />
+      <command_interface name="velocity" />
+      <command_interface name="effort" />
+      <state_interface name="position">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="velocity">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+      <state_interface name="effort">
+        <param name="initial_value">0.0</param>
+      </state_interface>
+    </joint>
+  </ros2_control>
+  
+  
+  <joint name="openarm_left_lift_link_joint" type="fixed">
+    <parent link="lift_link" />
+    <child link="openarm_left_link0" />
+    <origin rpy="-1.5708 0 -1.5708" xyz="0.03 -0.230 0.1085" />
+  </joint>
+  <link name="openarm_left_link0">
+    <visual name="openarm_left_link0_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/link0.dae" scale="0.001 -0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_left_link0_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/collision/link0_symp.stl" scale="0.001 -0.001 0.001" />
+        
+      </geometry>
+    </collision>
+    `
+      
+    <inertial>
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0009483362816297526 -0.0001580207020448382 0.03076860287587199" />
+      <mass value="1.1432284943239561" />
+      <inertia ixx="0.001128" ixy="-4e-06" ixz="-3.3e-05" iyy="0.000962" iyz="-7e-06" izz="0.00147" />
+    </inertial>
+  </link>
+  <link name="openarm_left_link1">
+    <visual name="openarm_left_link1_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0 0.0 -0.0625" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/link1.dae" scale="0.001 -0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_left_link1_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0 0.0 -0.0625" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/collision/link1_symp.stl" scale="0.001 -0.001 0.001" />
+        
+      </geometry>
+    </collision>
+    `
+      
+    <inertial>
+      <origin rpy="0.0 0.0 0.0" xyz="0.0011467657911800769 -3.319987657026362e-05 0.05395284380736254" />
+      <mass value="1.1416684646202298" />
+      <inertia ixx="0.001567" ixy="-1e-06" ixz="-2.9e-05" iyy="0.001273" iyz="1e-06" izz="0.001016" />
+    </inertial>
+  </link>
+  <joint name="openarm_left_joint1" type="revolute">
+    <origin rpy="0 0 0" xyz="0.0 0.0 0.0625" />
+    <parent link="openarm_left_link0" />
+    <child link="openarm_left_link1" />
+    <axis xyz="0 0 1" />
+    <limit effort="40" lower="-3.490659" upper="1.3962629999999998" velocity="16.754666" />
+  </joint>
+  <link name="openarm_left_link2">
+    <visual name="openarm_left_link2_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0301 0.0 -0.1225" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/link2.dae" scale="0.001 -0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_left_link2_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0301 0.0 -0.1225" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/collision/link2_symp.stl" scale="0.001 -0.001 0.001" />
+        
+      </geometry>
+    </collision>
+    `
+      
+    <inertial>
+      <origin rpy="0.0 0.0 0.0" xyz="0.00839629182351943 2.0145102027597523e-08 0.03256649300522363" />
+      <mass value="0.2775092746011571" />
+      <inertia ixx="0.000359" ixy="1e-06" ixz="-0.000109" iyy="0.000376" iyz="1e-06" izz="0.000232" />
+    </inertial>
+  </link>
+  <joint name="openarm_left_joint2" type="revolute">
+    <origin rpy="-1.57079632679 0 0" xyz="-0.0301 0.0 0.06" />
+    <parent link="openarm_left_link1" />
+    <child link="openarm_left_link2" />
+    <axis xyz="-1 0 0" />
+    <limit effort="40" lower="-3.3161253267948965" upper="0.17453267320510335" velocity="16.754666" />
+  </joint>
+  <link name="openarm_left_link3">
+    <visual name="openarm_left_link3_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0 -0.0 -0.18875" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/link3.dae" scale="0.001 -0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_left_link3_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0 -0.0 -0.18875" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/collision/link3_symp.stl" scale="0.001 -0.001 0.001" />
+        
+      </geometry>
+    </collision>
+    `
+      
+    <inertial>
+      <origin rpy="0.0 0.0 0.0" xyz="-0.002104752099628911 -0.0005549085042607548 0.09047470545721961" />
+      <mass value="1.073863338202347" />
+      <inertia ixx="0.004372" ixy="1e-06" ixz="1.1e-05" iyy="0.004319" iyz="-3.6e-05" izz="0.000661" />
+    </inertial>
+  </link>
+  <joint name="openarm_left_joint3" type="revolute">
+    <origin rpy="0 0 0" xyz="0.0301 0.0 0.06625" />
+    <parent link="openarm_left_link2" />
+    <child link="openarm_left_link3" />
+    <axis xyz="0 0 1" />
+    <limit effort="27" lower="-1.570796" upper="1.570796" velocity="5.445426" />
+  </joint>
+  <link name="openarm_left_link4">
+    <visual name="openarm_left_link4_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 -0.0315 -0.3425" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/link4.dae" scale="0.001 0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_left_link4_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 -0.0315 -0.3425" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/collision/link4_symp.stl" scale="0.001 0.001 0.001" />
+        
+      </geometry>
+    </collision>
+    `
+      
+    <inertial>
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0029006831074562967 -0.03030575826634669 0.06339637422196209" />
+      <mass value="0.6348534566833373" />
+      <inertia ixx="0.000623" ixy="-1e-06" ixz="-1.9e-05" iyy="0.000511" iyz="3.8e-05" izz="0.000334" />
+    </inertial>
+  </link>
+  <joint name="openarm_left_joint4" type="revolute">
+    <origin rpy="0 0 0" xyz="-0.0 0.0315 0.20375" />
+    <parent link="openarm_left_link3" />
+    <child link="openarm_left_link4" />
+    <axis xyz="0 1 0" />
+    <limit effort="27" lower="-0.02" upper="2.443461" velocity="5.445426" />
+  </joint>
+  <link name="openarm_left_link5">
+    <visual name="openarm_left_link5_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0 -0.0 -0.438" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/link5.dae" scale="0.001 -0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_left_link5_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0 -0.0 -0.438" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/collision/link5_symp.stl" scale="0.001 -0.001 0.001" />
+        
+      </geometry>
+    </collision>
+    `
+      
+    <inertial>
+      <origin rpy="0.0 0.0 0.0" xyz="-0.003049665024221911 -0.0008866902457326625 0.043079803024980934" />
+      <mass value="0.6156588026168502" />
+      <inertia ixx="0.000423" ixy="-8e-06" ixz="6e-06" iyy="0.000445" iyz="-6e-06" izz="0.000324" />
+    </inertial>
+  </link>
+  <joint name="openarm_left_joint5" type="revolute">
+    <origin rpy="0 0 0" xyz="0.0 -0.0315 0.0955" />
+    <parent link="openarm_left_link4" />
+    <child link="openarm_left_link5" />
+    <axis xyz="0 0 1" />
+    <limit effort="7" lower="-1.570796" upper="1.570796" velocity="20.943946" />
+  </joint>
+  <link name="openarm_left_link6">
+    <visual name="openarm_left_link6_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0375 -0.0 -0.5585" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/link6.dae" scale="0.001 -0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_left_link6_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0375 -0.0 -0.5585" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/collision/link6_symp.stl" scale="0.001 -0.001 0.001" />
+        
+      </geometry>
+    </collision>
+    `
+      
+    <inertial>
+      <origin rpy="0.0 0.0 0.0" xyz="-0.037136587005447405 -0.00033230528343419053 -9.498374522309838e-05" />
+      <mass value="0.475202773187987" />
+      <inertia ixx="0.000143" ixy="1e-06" ixz="1e-06" iyy="0.000157" iyz="1e-06" izz="0.000159" />
+    </inertial>
+  </link>
+  <joint name="openarm_left_joint6" type="revolute">
+    <origin rpy="0 0 0" xyz="0.0375 0.0 0.1205" />
+    <parent link="openarm_left_link5" />
+    <child link="openarm_left_link6" />
+    <axis xyz="1 0 0" />
+    <limit effort="7" lower="-0.785398" upper="0.785398" velocity="20.943946" />
+  </joint>
+  <link name="openarm_left_link7">
+    <visual name="openarm_left_link7_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 -0.0 -0.5585" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/link7.dae" scale="0.001 -0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_left_link7_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 -0.0 -0.5585" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/collision/link7_symp.stl" scale="0.001 -0.001 0.001" />
+        
+      </geometry>
+    </collision>
+    `
+      
+    <inertial>
+      <origin rpy="0.0 0.0 0.0" xyz="6.875510271106056e-05 -0.01266175250761268 0.06951945409987448" />
+      <mass value="0.4659771327380578" />
+      <inertia ixx="0.000639" ixy="1e-06" ixz="1e-06" iyy="0.000497" iyz="8.9e-05" izz="0.000342" />
+    </inertial>
+  </link>
+  <joint name="openarm_left_joint7" type="revolute">
+    <origin rpy="0 0 0" xyz="-0.0375 0.0 0.0" />
+    <parent link="openarm_left_link6" />
+    <child link="openarm_left_link7" />
+    <axis xyz="0 -1 0" />
+    <limit effort="7" lower="-1.570796" upper="1.570796" velocity="20.943946" />
+  </joint>
+  
+  <joint name="openarm_right_lift_link_joint" type="fixed">
+    <parent link="lift_link" />
+    <child link="openarm_right_link0" />
+    <origin rpy="1.5708 0 -1.5708" xyz="-0.03 -0.230 0.1085" />
+  </joint>
+  <link name="openarm_right_link0">
+    <visual name="openarm_right_link0_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/link0.dae" scale="0.001 0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_right_link0_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/collision/link0_symp.stl" scale="0.001 0.001 0.001" />
+        
+      </geometry>
+    </collision>
+    `
+      
+    <inertial>
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0009483362816297526 0.0001580207020448382 0.03076860287587199" />
+      <mass value="1.1432284943239561" />
+      <inertia ixx="0.001128" ixy="-4e-06" ixz="-3.3e-05" iyy="0.000962" iyz="-7e-06" izz="0.00147" />
+    </inertial>
+  </link>
+  <link name="openarm_right_link1">
+    <visual name="openarm_right_link1_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0 0.0 -0.0625" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/link1.dae" scale="0.001 0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_right_link1_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0 0.0 -0.0625" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/collision/link1_symp.stl" scale="0.001 0.001 0.001" />
+        
+      </geometry>
+    </collision>
+    `
+      
+    <inertial>
+      <origin rpy="0.0 0.0 0.0" xyz="0.0011467657911800769 3.319987657026362e-05 0.05395284380736254" />
+      <mass value="1.1416684646202298" />
+      <inertia ixx="0.001567" ixy="-1e-06" ixz="-2.9e-05" iyy="0.001273" iyz="1e-06" izz="0.001016" />
+    </inertial>
+  </link>
+  <joint name="openarm_right_joint1" type="revolute">
+    <origin rpy="0 0 0" xyz="0.0 0.0 0.0625" />
+    <parent link="openarm_right_link0" />
+    <child link="openarm_right_link1" />
+    <axis xyz="0 0 1" />
+    <limit effort="40" lower="-1.396263" upper="3.490659" velocity="16.754666" />
+  </joint>
+  <link name="openarm_right_link2">
+    <visual name="openarm_right_link2_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0301 0.0 -0.1225" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/link2.dae" scale="0.001 0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_right_link2_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0301 0.0 -0.1225" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/collision/link2_symp.stl" scale="0.001 0.001 0.001" />
+        
+      </geometry>
+    </collision>
+    `
+      
+    <inertial>
+      <origin rpy="0.0 0.0 0.0" xyz="0.00839629182351943 -2.0145102027597523e-08 0.03256649300522363" />
+      <mass value="0.2775092746011571" />
+      <inertia ixx="0.000359" ixy="1e-06" ixz="-0.000109" iyy="0.000376" iyz="1e-06" izz="0.000232" />
+    </inertial>
+  </link>
+  <joint name="openarm_right_joint2" type="revolute">
+    <origin rpy="1.57079632679 0 0" xyz="-0.0301 0.0 0.06" />
+    <parent link="openarm_right_link1" />
+    <child link="openarm_right_link2" />
+    <axis xyz="-1 0 0" />
+    <limit effort="40" lower="-0.17453267320510335" upper="3.3161253267948965" velocity="16.754666" />
+  </joint>
+  <link name="openarm_right_link3">
+    <visual name="openarm_right_link3_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0 -0.0 -0.18875" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/link3.dae" scale="0.001 0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_right_link3_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0 -0.0 -0.18875" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/collision/link3_symp.stl" scale="0.001 0.001 0.001" />
+        
+      </geometry>
+    </collision>
+    `
+      
+    <inertial>
+      <origin rpy="0.0 0.0 0.0" xyz="-0.002104752099628911 0.0005549085042607548 0.09047470545721961" />
+      <mass value="1.073863338202347" />
+      <inertia ixx="0.004372" ixy="1e-06" ixz="1.1e-05" iyy="0.004319" iyz="-3.6e-05" izz="0.000661" />
+    </inertial>
+  </link>
+  <joint name="openarm_right_joint3" type="revolute">
+    <origin rpy="0 0 0" xyz="0.0301 0.0 0.06625" />
+    <parent link="openarm_right_link2" />
+    <child link="openarm_right_link3" />
+    <axis xyz="0 0 1" />
+    <limit effort="27" lower="-1.570796" upper="1.570796" velocity="5.445426" />
+  </joint>
+  <link name="openarm_right_link4">
+    <visual name="openarm_right_link4_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 -0.0315 -0.3425" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/link4.dae" scale="0.001 0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_right_link4_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 -0.0315 -0.3425" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/collision/link4_symp.stl" scale="0.001 0.001 0.001" />
+        
+      </geometry>
+    </collision>
+    `
+      
+    <inertial>
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0029006831074562967 -0.03030575826634669 0.06339637422196209" />
+      <mass value="0.6348534566833373" />
+      <inertia ixx="0.000623" ixy="-1e-06" ixz="-1.9e-05" iyy="0.000511" iyz="3.8e-05" izz="0.000334" />
+    </inertial>
+  </link>
+  <joint name="openarm_right_joint4" type="revolute">
+    <origin rpy="0 0 0" xyz="-0.0 0.0315 0.20375" />
+    <parent link="openarm_right_link3" />
+    <child link="openarm_right_link4" />
+    <axis xyz="0 1 0" />
+    <limit effort="27" lower="-0.02" upper="2.443461" velocity="5.445426" />
+  </joint>
+  <link name="openarm_right_link5">
+    <visual name="openarm_right_link5_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0 -0.0 -0.438" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/link5.dae" scale="0.001 0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_right_link5_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0 -0.0 -0.438" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/collision/link5_symp.stl" scale="0.001 0.001 0.001" />
+        
+      </geometry>
+    </collision>
+    `
+      
+    <inertial>
+      <origin rpy="0.0 0.0 0.0" xyz="-0.003049665024221911 0.0008866902457326625 0.043079803024980934" />
+      <mass value="0.6156588026168502" />
+      <inertia ixx="0.000423" ixy="-8e-06" ixz="6e-06" iyy="0.000445" iyz="-6e-06" izz="0.000324" />
+    </inertial>
+  </link>
+  <joint name="openarm_right_joint5" type="revolute">
+    <origin rpy="0 0 0" xyz="0.0 -0.0315 0.0955" />
+    <parent link="openarm_right_link4" />
+    <child link="openarm_right_link5" />
+    <axis xyz="0 0 1" />
+    <limit effort="7" lower="-1.570796" upper="1.570796" velocity="20.943946" />
+  </joint>
+  <link name="openarm_right_link6">
+    <visual name="openarm_right_link6_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0375 -0.0 -0.5585" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/link6.dae" scale="0.001 0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_right_link6_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="-0.0375 -0.0 -0.5585" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/collision/link6_symp.stl" scale="0.001 0.001 0.001" />
+        
+      </geometry>
+    </collision>
+    `
+      
+    <inertial>
+      <origin rpy="0.0 0.0 0.0" xyz="-0.037136587005447405 0.00033230528343419053 -9.498374522309838e-05" />
+      <mass value="0.475202773187987" />
+      <inertia ixx="0.000143" ixy="1e-06" ixz="1e-06" iyy="0.000157" iyz="1e-06" izz="0.000159" />
+    </inertial>
+  </link>
+  <joint name="openarm_right_joint6" type="revolute">
+    <origin rpy="0 0 0" xyz="0.0375 0.0 0.1205" />
+    <parent link="openarm_right_link5" />
+    <child link="openarm_right_link6" />
+    <axis xyz="1 0 0" />
+    <limit effort="7" lower="-0.785398" upper="0.785398" velocity="20.943946" />
+  </joint>
+  <link name="openarm_right_link7">
+    <visual name="openarm_right_link7_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 -0.0 -0.5585" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/link7.dae" scale="0.001 0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_right_link7_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 -0.0 -0.5585" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/collision/link7_symp.stl" scale="0.001 0.001 0.001" />
+        
+      </geometry>
+    </collision>
+    `
+      
+    <inertial>
+      <origin rpy="0.0 0.0 0.0" xyz="6.875510271106056e-05 0.01266175250761268 0.06951945409987448" />
+      <mass value="0.4659771327380578" />
+      <inertia ixx="0.000639" ixy="1e-06" ixz="1e-06" iyy="0.000497" iyz="8.9e-05" izz="0.000342" />
+    </inertial>
+  </link>
+  <joint name="openarm_right_joint7" type="revolute">
+    <origin rpy="0 0 0" xyz="-0.0375 0.0 0.0" />
+    <parent link="openarm_right_link6" />
+    <child link="openarm_right_link7" />
+    <axis xyz="0 1 0" />
+    <limit effort="7" lower="-1.570796" upper="1.570796" velocity="20.943946" />
+  </joint>
+  
+  <link name="openarm_left_hand">
+    <visual name="openarm_left_hand_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 -0.6585" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/ee/openarm_hand/visual/hand.dae" scale="0.001 0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_left_hand_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 -0.6585" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/ee/openarm_hand/collision/hand.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.0 0.002 0.03" />
+      <mass value="0.35" />
+      <inertia ixx="0.0002473" ixy="1e-06" ixz="1e-06" iyy="1.763e-05" iyz="1e-06" izz="0.0002521" />
+    </inertial>
+  </link>
+  
+  
+  <joint name="left_openarm_hand_joint" type="fixed">
+    <parent link="openarm_left_link7" />
+    <child link="openarm_left_hand" />
+    <origin rpy="0 0 0" xyz="0 -0.0 0.1001" />
+  </joint>
+  
+  <link name="openarm_left_hand_tcp" />
+  <joint name="openarm_left_hand_tcp_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 -0.0 0.08" />
+    <parent link="openarm_left_hand" />
+    <child link="openarm_left_hand_tcp" />
+  </joint>
+  <link name="openarm_left_left_finger">
+    <visual name="openarm_left_left_finger_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 -0.05 -0.673001" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/ee/openarm_hand/visual/finger.dae" scale="0.001 0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_left_left_finger_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 -0.05 -0.673001" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/ee/openarm_hand/collision/finger.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.0064528 0.01702 0.0219685" />
+      <mass value="0.03602545343277134" />
+      <inertia ixx="0.00023749999999999997" ixy="0.0" ixz="0.0" iyy="0.00023749999999999997" iyz="0.0" izz="7.5e-05" />
+    </inertial>
+  </link>
+  <link name="openarm_left_right_finger">
+    <visual name="openarm_left_right_finger_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.05 -0.673001" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/ee/openarm_hand/visual/finger.dae" scale="0.001 -0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_left_right_finger_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.05 -0.673001" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/ee/openarm_hand/collision/finger.stl" scale="0.001 -0.001 0.001" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.0064528 -0.01702 0.0219685" />
+      <mass value="0.03602545343277134" />
+      <inertia ixx="0.00023749999999999997" ixy="0.0" ixz="0.0" iyy="0.00023749999999999997" iyz="0.0" izz="7.5e-05" />
+    </inertial>
+  </link>
+  <joint name="openarm_left_finger_joint1" type="fixed">
+    <parent link="openarm_left_hand" />
+    <child link="openarm_left_right_finger" />
+    <origin rpy="0 0 0" xyz="0 -0.006 0.015" />
+    </joint>
+  <joint name="openarm_left_finger_joint2" type="fixed">
+    <parent link="openarm_left_hand" />
+    <child link="openarm_left_left_finger" />
+    <origin rpy="0 0 0" xyz="0 0.006 0.015" />
+    </joint>
+  <link name="openarm_left_wristcam_bracket">
+    <visual name="openarm_left_wristcam_bracket_visual">
+      <origin rpy="3.125 -1.57 0" xyz="0.0095 0 -0.0055" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/wristcam_bracket.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="wristcam_bracket_material">
+        <color rgba="0.2 0.2 0.2 1.0" />
+      </material>
+    </visual>
+    <collision name="openarm_left_wristcam_bracket_collision">
+      <origin rpy="3.125 -1.57 0" xyz="0.0095 0 -0.0055" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/wristcam_bracket.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="openarm_left_wristcam_bracket_joint" type="fixed">
+    <parent link="openarm_left_hand" />
+    <child link="openarm_left_wristcam_bracket" />
+    <origin rpy="0 0 0 " xyz="0 0 0" />
+  </joint>
+  <link name="openarm_right_hand">
+    <visual name="openarm_right_hand_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 -0.6585" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/ee/openarm_hand/visual/hand.dae" scale="0.001 0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_right_hand_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 -0.6585" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/ee/openarm_hand/collision/hand.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.0 0.002 0.03" />
+      <mass value="0.35" />
+      <inertia ixx="0.0002473" ixy="1e-06" ixz="1e-06" iyy="1.763e-05" iyz="1e-06" izz="0.0002521" />
+    </inertial>
+  </link>
+  
+  
+  <joint name="right_openarm_hand_joint" type="fixed">
+    <parent link="openarm_right_link7" />
+    <child link="openarm_right_hand" />
+    <origin rpy="0 0 0" xyz="0 -0.0 0.1001" />
+  </joint>
+  
+  <link name="openarm_right_hand_tcp" />
+  <joint name="openarm_right_hand_tcp_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0 -0.0 0.08" />
+    <parent link="openarm_right_hand" />
+    <child link="openarm_right_hand_tcp" />
+  </joint>
+  <link name="openarm_right_left_finger">
+    <visual name="openarm_right_left_finger_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 -0.05 -0.673001" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/ee/openarm_hand/visual/finger.dae" scale="0.001 0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_right_left_finger_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 -0.05 -0.673001" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/ee/openarm_hand/collision/finger.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.0064528 0.01702 0.0219685" />
+      <mass value="0.03602545343277134" />
+      <inertia ixx="0.00023749999999999997" ixy="0.0" ixz="0.0" iyy="0.00023749999999999997" iyz="0.0" izz="7.5e-05" />
+    </inertial>
+  </link>
+  <link name="openarm_right_right_finger">
+    <visual name="openarm_right_right_finger_visual">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.05 -0.673001" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/ee/openarm_hand/visual/finger.dae" scale="0.001 -0.001 0.001" />
+      </geometry>
+    </visual>
+    <collision name="openarm_right_right_finger_collision">
+      <origin rpy="0.0 0.0 0.0" xyz="0.0 0.05 -0.673001" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/ee/openarm_hand/collision/finger.stl" scale="0.001 -0.001 0.001" />
+      </geometry>
+    </collision>
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.0064528 -0.01702 0.0219685" />
+      <mass value="0.03602545343277134" />
+      <inertia ixx="0.00023749999999999997" ixy="0.0" ixz="0.0" iyy="0.00023749999999999997" iyz="0.0" izz="7.5e-05" />
+    </inertial>
+  </link>
+  <joint name="openarm_right_finger_joint1" type="fixed">
+    <parent link="openarm_right_hand" />
+    <child link="openarm_right_right_finger" />
+    <origin rpy="0 0 0" xyz="0 -0.006 0.015" />
+    </joint>
+  <joint name="openarm_right_finger_joint2" type="fixed">
+    <parent link="openarm_right_hand" />
+    <child link="openarm_right_left_finger" />
+    <origin rpy="0 0 0" xyz="0 0.006 0.015" />
+    </joint>
+  <link name="openarm_right_wristcam_bracket">
+    <visual name="openarm_right_wristcam_bracket_visual">
+      <origin rpy="3.125 -1.57 0" xyz="0.0095 0 -0.0055" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/wristcam_bracket.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name="wristcam_bracket_material">
+        <color rgba="0.2 0.2 0.2 1.0" />
+      </material>
+    </visual>
+    <collision name="openarm_right_wristcam_bracket_collision">
+      <origin rpy="3.125 -1.57 0" xyz="0.0095 0 -0.0055" />
+      <geometry>
+        <mesh filename="file:///workspaces/isaac_ros-dev/openarm_cumotion/desc/meshes/openarm/arm/v10/visual/wristcam_bracket.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="openarm_right_wristcam_bracket_joint" type="fixed">
+    <parent link="openarm_right_hand" />
+    <child link="openarm_right_wristcam_bracket" />
+    <origin rpy="0 0 0 " xyz="0 0 0" />
+  </joint>
+</robot>

@@ -54,7 +54,14 @@ tmux send-keys -t "${P[0]}" -l 'ros2 run rmw_zenoh_cpp rmw_zenohd'
 tmux send-keys -t "${P[1]}" -l 'ros2 launch robot_bringup lift_homing.launch.py'
 tmux send-keys -t "${P[2]}" -l 'ros2 launch robot_bringup real_omnibot.launch.py'
 tmux send-keys -t "${P[3]}" -l 'ros2 launch robot_navigation localization_Nav2_real.launch.py'
-tmux send-keys -t "${P[4]}" -l 'ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=real_robot'
+# move_group: exactly ONE instance. Default = cuMotion (GPU) move_group, run
+# INSIDE the Isaac container under zenoh so it joins this host router and serves
+# BOTH the cumotion and ompl pipelines (pick per request via the commander's
+# planning_pipeline param; "" = ompl fallback). The host's own move_group is
+# therefore NOT started. To revert to a host-only OMPL move_group, swap the two
+# lines below.
+tmux send-keys -t "${P[4]}" -l 'bash src/walkie-ros/scripts/bringup/cumotion_move_group_real.sh'
+# tmux send-keys -t "${P[4]}" -l 'ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=real_robot'
 tmux send-keys -t "${P[5]}" -l 'ros2 launch openarm_bimanual_commander_cpp commander.launch.py'
 tmux send-keys -t "${P[6]}" -l 'ros2 launch joy_interface joy_control_smooth.launch.py'
 # P[7] left idle.

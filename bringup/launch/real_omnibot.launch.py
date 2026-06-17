@@ -254,8 +254,10 @@ def generate_launch_description():
     )
 
     # Startup pose: drive each arm to a home configuration instead of all-zeros.
-    # Left:  joint1 = +15 deg, joint4 = +15 deg, rest 0   (0.2618 rad)
-    # Right: joint1 = -15 deg, joint4 = +15 deg, rest 0
+    # Both: joint1 = 0, joint4 = +15 deg (0.2618 rad), rest 0.
+    # joint1 was +-15 deg, but that shoulder yaw swung the hand against the torso
+    # collision box (-26mm) so cuMotion (with base/torso spheres) rejected plans
+    # from home; joint1=0 clears it (+49mm). joint4 kept for a slight elbow bend.
     # Sent once the trajectory controllers are active; time_from_start ramps the
     # motion (use a longer time for the first power-on if joints start far away).
     arm_home_left = ExecuteProcess(
@@ -265,7 +267,7 @@ def generate_launch_description():
             'trajectory_msgs/msg/JointTrajectory',
             '{joint_names: [openarm_left_joint1, openarm_left_joint2, openarm_left_joint3, '
             'openarm_left_joint4, openarm_left_joint5, openarm_left_joint6, openarm_left_joint7], '
-            'points: [{positions: [0.2618, 0.0, 0.0, 0.2618, 0.0, 0.0, 0.0], '
+            'points: [{positions: [0.0, 0.0, 0.0, 0.2618, 0.0, 0.0, 0.0], '
             'time_from_start: {sec: 5, nanosec: 0}}]}',
         ],
         output='screen',
@@ -278,7 +280,7 @@ def generate_launch_description():
             'trajectory_msgs/msg/JointTrajectory',
             '{joint_names: [openarm_right_joint1, openarm_right_joint2, openarm_right_joint3, '
             'openarm_right_joint4, openarm_right_joint5, openarm_right_joint6, openarm_right_joint7], '
-            'points: [{positions: [-0.2618, 0.0, 0.0, 0.2618, 0.0, 0.0, 0.0], '
+            'points: [{positions: [0.0, 0.0, 0.0, 0.2618, 0.0, 0.0, 0.0], '
             'time_from_start: {sec: 5, nanosec: 0}}]}',
         ],
         output='screen',

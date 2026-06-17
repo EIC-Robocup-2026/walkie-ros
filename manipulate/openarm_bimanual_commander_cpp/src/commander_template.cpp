@@ -113,12 +113,22 @@ public:
         std::string planner_id = node_->declare_parameter<std::string>("planner_id", "RRTConnect");
         double arm_planning_time = node_->declare_parameter<double>("arm_planning_time", 5.0);
 
+        // Planning pipeline selection. Empty (the default) means "don't override" —
+        // MoveGroupInterface uses move_group's default pipeline (ompl), so behaviour
+        // is unchanged unless this is set. Set to "isaac_ros_cumotion" to plan on the
+        // GPU via the cuMotion pipeline (only available when move_group was launched
+        // with that pipeline registered). Switchable live, like planner_id.
+        std::string planning_pipeline =
+            node_->declare_parameter<std::string>("planning_pipeline", "");
+
         // Grippers keep the default planner (RRTstar isn't configured for the
         // gripper groups) and the short 1 s budget.
         for (auto &grp : {left_arm_, right_arm_, left_arm_lift_, right_arm_lift_,
                           both_arms_, both_arms_lift_})
         {
             grp->setPlannerId(planner_id);
+            if (!planning_pipeline.empty())
+                grp->setPlanningPipelineId(planning_pipeline);
         }
 
         left_arm_->setPlanningTime(arm_planning_time);
@@ -134,14 +144,15 @@ public:
                     "Arm groups using planner '%s' with %.1f s planning time",
                     planner_id.c_str(), arm_planning_time);
 
-        left_arm_->setNumPlanningAttempts(10000);
-        right_arm_->setNumPlanningAttempts(10000);
         left_gripper_->setNumPlanningAttempts(100);
         right_gripper_->setNumPlanningAttempts(100);
-        left_arm_lift_->setNumPlanningAttempts(10000);
-        right_arm_lift_->setNumPlanningAttempts(10000);
-        both_arms_->setNumPlanningAttempts(10000);
-        both_arms_lift_->setNumPlanningAttempts(10000);
+        // Arm attempts depend on the pipeline: OMPL (RRT*) benefits from many
+        // retries; cuMotion is a deterministic GPU optimizer where retrying is
+        // mostly wasted — and a target it can't solve (e.g. ValidateSolution
+        // rejects a base-grazing path) would re-run the GPU up to 10000x and
+        // appear "stuck planning". So cap cuMotion attempts low. Set per the
+        // current pipeline here and re-applied live when it changes.
+        applyArmPlanningAttempts(planning_pipeline);
 
         // Software gripper speed cap (command-position units per second).
         // GripperActionController has no velocity limit, so controlGripper()
@@ -377,6 +388,15 @@ public:
                             grp->setPlanningTime(p.as_double());
                         RCLCPP_INFO(node_->get_logger(),
                                     "arm_planning_time -> %.2f s (live)", p.as_double());
+                    } else if (p.get_name() == "planning_pipeline") {
+                        // Empty string restores move_group's default (ompl).
+                        for (auto & grp : {left_arm_, right_arm_, left_arm_lift_,
+                                           right_arm_lift_, both_arms_, both_arms_lift_})
+                            grp->setPlanningPipelineId(p.as_string());
+                        // Re-tune attempts for the new pipeline (cuMotion few, OMPL many).
+                        applyArmPlanningAttempts(p.as_string());
+                        RCLCPP_INFO(node_->get_logger(),
+                                    "planning_pipeline -> '%s' (live)", p.as_string().c_str());
                     } else if (p.get_name().rfind("finger_pad", 0) == 0) {
                         finger_changed = true;   // finger_padding / _enable / _links
                     } else if (p.get_name() == "allow_gripper_vs_octomap") {
@@ -922,6 +942,18 @@ public:
                 applyGripperOctomapAllowance();
             },
             callback_group_);
+    }
+
+    // Set arm-group planning attempts based on the selected pipeline. cuMotion
+    // (deterministic GPU optimizer) uses few attempts so an unsolvable target
+    // fails fast instead of re-running thousands of times ("stuck planning");
+    // OMPL keeps the large count where extra sampling retries actually help.
+    void applyArmPlanningAttempts(const std::string & pipeline)
+    {
+        const int n = (pipeline == "isaac_ros_cumotion" || pipeline == "cumotion") ? 4 : 10000;
+        for (auto & grp : {left_arm_, right_arm_, left_arm_lift_, right_arm_lift_,
+                           both_arms_, both_arms_lift_})
+            grp->setNumPlanningAttempts(n);
     }
 
     // --- Helper: group selection ---

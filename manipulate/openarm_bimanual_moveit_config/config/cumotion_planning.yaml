@@ -1,0 +1,40 @@
+# cuMotion (cuRobo) planning pipeline config.
+#
+# Registered as an ADDITIONAL move_group pipeline alongside ompl; ompl stays the
+# default (see the cumotion variant of move_group.launch.py). Select this
+# pipeline per-request from the commander with:
+#   ros2 param set <commander_node> planning_pipeline isaac_ros_cumotion
+# and restore ompl with an empty string.
+#
+# This is a local, tunable copy of isaac_ros_cumotion_moveit's bundled
+# isaac_ros_cumotion_planning.yaml. The plugin forwards each planning request to
+# the cumotion_planner_node (GPU); request adapters below run in move_group
+# before that hand-off. num_steps is the trajectory waypoint count cuRobo
+# optimizes — raise for smoother/denser paths at some GPU cost.
+planning_plugins:
+  - isaac_ros_cumotion_moveit/CumotionPlanner
+request_adapters:
+  - default_planning_request_adapters/ValidateWorkspaceBounds
+  - default_planning_request_adapters/CheckStartStateBounds
+  - default_planning_request_adapters/CheckStartStateCollision
+  - default_planning_request_adapters/ResolveConstraintFrames
+# Response adapters run AFTER the planner. The stock cuMotion config ships NONE,
+# so move_group never publishes /display_planned_path for cuMotion plans and RViz
+# shows nothing (OMPL shows because its pipeline includes DisplayMotionPath).
+# DisplayMotionPath publishes the trajectory so RViz animates it.
+#
+# ValidateSolution is REQUIRED: cuMotion has no base/torso collision spheres, so
+# it freely plans the arm THROUGH the body. Without this adapter such plans
+# EXECUTE -> the arm drives into the base/torso and ends in collision, after which
+# CheckStartStateCollision blocks every later plan (arm stuck). With it, move_group
+# mesh-checks the whole trajectory (full robot state via the patched
+# cumotion_interface.cpp) vs base/torso + SRDF ACM and REJECTS body-colliding
+# plans so they never execute. Trade-off: near-body cuMotion goals fail (cuMotion
+# can't route around the body) -> use OMPL for those; the real fix (cuMotion avoids
+# the body) needs base self-collision spheres. (Self-collision + obstacle avoidance
+# are handled by cuMotion itself; ValidateSolution's unique add is base/torso.)
+response_adapters:
+  - default_planning_response_adapters/ValidateSolution
+  - default_planning_response_adapters/DisplayMotionPath
+start_state_max_bounds_error: 0.1
+num_steps: 32

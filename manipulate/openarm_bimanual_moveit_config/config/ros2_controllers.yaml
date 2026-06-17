@@ -55,6 +55,11 @@ left_joint_trajectory_controller:
     # Check goal satisfaction at 20 Hz (default) — keeps CPU load low while
     # still reporting SUCCEEDED within ~50 ms of the trajectory end.
     action_monitor_rate: 20.0
+    # cuMotion's minimum-jerk trajectories can end with a tiny (~1e-3 rad/s)
+    # non-zero velocity on the final point; the JTC otherwise REJECTS the goal
+    # ("Velocity of last trajectory point ... is not zero"). No-op for OMPL
+    # (TOTG ends at exactly zero), required for the cumotion pipeline.
+    allow_nonzero_velocity_at_trajectory_end: true
     constraints:
       # Allow up to 0.5 s after the planned trajectory end-time for the robot
       # to settle into the goal position.  Without this the JTC immediately
@@ -90,6 +95,8 @@ right_joint_trajectory_controller:
       - velocity
     state_publish_rate: 50.0
     action_monitor_rate: 20.0
+    # See left controller: permit cuMotion's tiny non-zero terminal velocity.
+    allow_nonzero_velocity_at_trajectory_end: true
     constraints:
       goal_time: 0.5
       stopped_velocity_tolerance: 0.05
@@ -120,6 +127,8 @@ lift_controller:
       - velocity
     state_publish_rate: 20.0
     action_monitor_rate: 10.0
+    # See left controller: permit cuMotion's tiny non-zero terminal velocity.
+    allow_nonzero_velocity_at_trajectory_end: true
     constraints:
       # Lift is limited to ~3 cm/s so give it generous goal time.
       # lift_homing_node.py signals SUCCEEDED when the motor physically
