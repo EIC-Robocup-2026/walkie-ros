@@ -30,6 +30,8 @@ response_adapters:
   - default_planning_response_adapters/ValidateSolution
   - default_planning_response_adapters/DisplayMotionPath
 
+start_state_max_bounds_error: 0.1
+
 # Per-group dense collision checking along planned segments.
 #
 # `planner_configs` lists which planners are selectable for each group. The
