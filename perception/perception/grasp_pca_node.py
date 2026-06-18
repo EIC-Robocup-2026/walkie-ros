@@ -722,10 +722,10 @@ class GraspPCANode(Node):
         response.object_bbox_pose.position.z = (z_min + z_max) / 2.0
         response.object_bbox_pose.orientation.w = 1.0
 
-        response.poses_base.poses.clear()
-        response.approach_poses_base.poses.clear()
-        response.height_below_grasp.clear()
-        response.height_above_grasp.clear()
+        del response.poses_base.poses[:]
+        del response.approach_poses_base.poses[:]
+        del response.height_below_grasp[:]
+        del response.height_above_grasp[:]
 
         # EE alignment: rotate −90° about Y in the planning (world) frame so the
         # gripper approach points along the arm EE's local Z. Pre-multiply.

@@ -629,12 +629,12 @@ class GraspFromCloudNode(Node):
             request, gg, poses_plan, approach_axes, z_min, z_max)[:n_out]
 
         # Fill the response in ranked order.
-        response.poses_base.poses.clear()
-        response.approach_poses_base.poses.clear()
-        response.scores.clear()
-        response.widths.clear()
-        response.height_below_grasp.clear()
-        response.height_above_grasp.clear()
+        del response.poses_base.poses[:]
+        del response.approach_poses_base.poses[:]
+        del response.scores[:]
+        del response.widths[:]
+        del response.height_below_grasp[:]
+        del response.height_above_grasp[:]
         approach_dist = self.get_parameter("approach_dist_m").value
 
         for idx in order:
