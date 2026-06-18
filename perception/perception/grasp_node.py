@@ -648,6 +648,17 @@ class GraspNode(Node):
         t_start: float,
     ) -> GraspFromMask.Response:
 
+        m = request.mask
+        self.get_logger().info(
+            f"[from_mask] req: mask={m.width}x{m.height} ({len(m.data)} bytes, "
+            f"enc='{m.encoding}') tracker_id={request.tracker_id} "
+            f"bbox=(cx={request.bbox.center.position.x:.0f},"
+            f"cy={request.bbox.center.position.y:.0f},"
+            f"w={request.bbox.size_x:.0f},h={request.bbox.size_y:.0f}) "
+            f"num_frames={request.num_frames} score_thr={request.score_threshold} "
+            f"max_grasps={request.max_grasps} | source="
+            f"{'cloud ' + self.cloud_topic if self.use_cloud else 'depth ' + self.depth_topic}")
+
         cached      = self._snapshot_frames()
         object_mask = self._build_region_mask(request, cached)
         cloud_valid = self._depth_path_cloud_gate(cached)
@@ -752,6 +763,13 @@ class GraspNode(Node):
         else:
             frames_to_try = [min(request.num_frames, len(cached))]
 
+        self.get_logger().info(
+            f"[from_mask] region mask: {int(object_mask.sum())} px "
+            f"(grid {object_mask.shape[1]}x{object_mask.shape[0]}); "
+            f"cloud_gate={'on' if cloud_valid is not None else 'off'} "
+            f"edge_filter={'on' if self.depth_edge_filter else 'off'} "
+            f"range_gate={self.RANGE_MIN_M}-{self.RANGE_MAX_M} m")
+
         last_count = 0
         for n_frames in frames_to_try:
             all_pts = []
@@ -762,6 +780,10 @@ class GraspNode(Node):
                     p = self._unproject(frame_msg, object_mask, cloud_valid)
                 if len(p) > 0:
                     all_pts.append(p)
+
+            raw = int(sum(len(p) for p in all_pts))
+            self.get_logger().info(
+                f"[from_mask] {n_frames} frame(s): extracted {raw} pts before filtering")
 
             if not all_pts:
                 continue
@@ -1230,6 +1252,12 @@ class GraspNode(Node):
         frame_id = cloud_msg.header.frame_id or "map"
         stamp = cloud_msg.header.stamp
 
+        self.get_logger().info(
+            f"[from_cloud] req: cloud frame='{cloud_msg.header.frame_id}' "
+            f"{cloud_msg.width}x{cloud_msg.height} ({len(cloud_msg.data)} bytes, "
+            f"step={cloud_msg.point_step}, fields={[f.name for f in cloud_msg.fields]}) "
+            f"score_thr={request.score_threshold} max_grasps={request.max_grasps}")
+
         pts = self._cloud_to_xyz(cloud_msg)
         points_in = len(pts)
         if points_in == 0:
@@ -1521,6 +1549,11 @@ class GraspNode(Node):
         # 0. Object cloud (segment + validation surface) ----------------
         obj_msg = request.object_cloud
         obj_frame = obj_msg.header.frame_id or "map"
+        self.get_logger().info(
+            f"[pos] req: object_cloud frame='{obj_msg.header.frame_id}' "
+            f"{obj_msg.width}x{obj_msg.height} ({len(obj_msg.data)} bytes) "
+            f"crop_margin={request.crop_margin_m} score_thr={request.score_threshold} "
+            f"max_grasps={request.max_grasps}")
         obj_pts = self._cloud_to_xyz(obj_msg)
         if len(obj_pts) < self.antipodal_min_pts:
             raise PipelineAbort(
