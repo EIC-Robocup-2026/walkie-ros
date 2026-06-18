@@ -1,0 +1,46 @@
+# REQUEST
+# "Absolute best" grasp finder. Combines a live in-distribution camera view
+# (subscribed by the node) with the segmented, near-complete object cloud
+# supplied here:
+#   1. crop the LIVE cloud to this object's box (+margin) and feed THAT to
+#      GraspNet (in-distribution → calibrated scores, collision context),
+#   2. keep grasps whose centre lies in the object box (OBB containment),
+#   3. validate each grasp against THIS cloud's surface normals (antipodal
+#      quality, incl. the occluded far contact), refining width/centre,
+#   4. rank by GraspNet quality + antipodal quality + soft preferences.
+sensor_msgs/PointCloud2 object_cloud   # segmented mapped object cloud (header.frame_id = its frame, e.g. map)
+float32 crop_margin_m                  # live-view crop margin around the object box (<=0 → 0.12 m)
+float32 score_threshold                # GraspNet score floor (0 = no filter)
+int32 max_grasps                       # cap on returned poses (0 = up to 20)
+
+# ── Soft selection preferences (planning frame). All-zero weights → the node
+# defaults to ranking by GraspNet quality + antipodal quality. ──
+geometry_msgs/Vector3 preferred_approach  # desired approach/travel direction, e.g. (0,0,-1)=top-down
+float32 approach_weight
+geometry_msgs/Point   preferred_position  # desired grasp point
+float32 position_weight
+float32 position_falloff_m                # distance scale for the position score (<=0 → 0.05 m)
+float32 preferred_width                   # desired gripper opening width, metres
+float32 width_weight
+float32 region_frac                       # height fraction along object: 0=bottom … 1=top
+float32 region_weight
+float32 quality_weight                    # weight on GraspNet's own quality score
+float32 antipodal_weight                  # weight on geometric antipodal quality (vs object cloud)
+---
+# RESPONSE
+geometry_msgs/PoseArray poses_base            # grasp poses in planning frame
+geometry_msgs/PoseArray approach_poses_base   # pre-grasp approach poses (backed out along approach axis)
+string planning_frame
+float32[] scores                              # GraspNet quality score per grasp
+float32[] antipodal_scores                    # geometric antipodal quality [0,1] per grasp
+float32[] widths                              # refined opening width per grasp, metres
+bool success
+string message
+
+# Object bounding box in planning frame (from the supplied object cloud)
+geometry_msgs/Vector3 object_size
+geometry_msgs/Pose    object_bbox_pose
+
+# Per-grasp vertical decomposition (planning frame Z = up)
+float32[] height_below_grasp
+float32[] height_above_grasp

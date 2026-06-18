@@ -1,23 +1,26 @@
 # REQUEST
-sensor_msgs/Image mask
-int32 tracker_id
-vision_msgs/BoundingBox2D bbox
+sensor_msgs/Image mask          # mask image; any non-zero pixel = object
+int32 tracker_id                # optional: >0 selects that label in a multi-object mask; 0 = use all non-zero pixels
+vision_msgs/BoundingBox2D bbox  # fallback region used when the mask is empty
 int32 num_frames
 float32 score_threshold
 int32 max_grasps
 ---
 # RESPONSE
-geometry_msgs/PoseArray poses           # in camera frame
-geometry_msgs/PoseArray poses_base      # in planning frame (base_link by default), empty if TF unavailable
-string planning_frame                   # frame used for poses_base
+# Grasp pose(s) in the planning frame: position + orientation (grasp angle).
+geometry_msgs/PoseArray poses_base            # grasp poses in planning frame
+geometry_msgs/PoseArray approach_poses_base   # pre-grasp approach poses (backed out along approach axis)
+string planning_frame                         # frame used for poses_base / approach_poses_base
 float32[] scores
 float32[] widths
 bool success
 string message
-float32 inference_ms
-float32 total_ms
-int32 points_extracted
-int32 points_fed
-int32 grasps_raw
-int32 grasps_returned
-int32 frames_used
+# Timing/point counts are logged to the node terminal, not returned here.
+
+# Object bounding box in planning frame — use to build a MoveIt CollisionObject
+geometry_msgs/Vector3 object_size       # AABB dimensions (x, y, z) in metres
+geometry_msgs/Pose    object_bbox_pose  # centre of AABB in planning frame (identity orientation)
+
+# Per-grasp vertical decomposition (planning frame Z = up)
+float32[] height_below_grasp           # metres from object bottom to each grasp point
+float32[] height_above_grasp           # metres from each grasp point to object top
