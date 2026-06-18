@@ -28,7 +28,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/GraspFromMask.srv"
   "srv/GraspFromCloud.srv"
   "srv/GraspPos.srv"
-  "srv/PCAHeuristicGrasp.srv"
   DEPENDENCIES geometry_msgs vision_msgs sensor_msgs
 )
 
@@ -62,23 +61,13 @@ install(PROGRAMS perception/yolo_node.py
 install(PROGRAMS perception/obb_3d.py
   RENAME obb3d DESTINATION lib/${PROJECT_NAME})
 
-install(PROGRAMS perception/grasp_from_mask_node.py
-  RENAME grasp_from_mask DESTINATION lib/${PROJECT_NAME})
-
-install(PROGRAMS perception/grasp_from_cloud_node.py
-  RENAME grasp_from_cloud DESTINATION lib/${PROJECT_NAME})
-
-install(PROGRAMS perception/grasp_pos_node.py
-  RENAME grasp_pos DESTINATION lib/${PROJECT_NAME})
-
-install(PROGRAMS perception/grasp_pca_node.py
-  RENAME grasp_pca DESTINATION lib/${PROJECT_NAME})
+# Unified GraspNet server — one model, three services
+# (/grasp/from_mask, /grasp/from_cloud, /grasp/pos).
+install(PROGRAMS perception/grasp_node.py
+  RENAME grasp_server DESTINATION lib/${PROJECT_NAME})
 
 install(PROGRAMS perception/test_grasp_viz.py
   RENAME test_grasp_viz DESTINATION lib/${PROJECT_NAME})
-
-install(PROGRAMS perception/test_grasp_compare.py
-  RENAME test_grasp_compare DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY srv
   DESTINATION share/${PROJECT_NAME})
