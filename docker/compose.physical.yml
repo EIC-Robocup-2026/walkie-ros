@@ -43,6 +43,9 @@ services:
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       # Your local workspace (optional — only if you have custom packages)
       - ../../../src:/ros2_ws/src
+      # Checkpoint for the RS model (optional, but avoids re-downloading and re-optimizing on every run)
+      #pls pass the actual model path in the left side, e.g. /home/user/checkpoint-rs.tar
+      - ./models/checkpoint-rs.tar:/root/graspnet-baseline/logs/log_rs/checkpoint-rs.tar:ro
       # Persistent ZED SDK AI models (avoids re-optimizing on every run)
       - zed_resources:/usr/local/zed/resources
       - zed_settings:/usr/local/zed/settings
@@ -55,27 +58,7 @@ services:
 
     # Just launch the ZED 2i wrapper
     command: >
-      bash -c "source /opt/ros/jazzy/setup.bash 
-               cd /ros2_ws   
-              #  apt update && 
-              #  rosdep update 
-              #  rosdep install --from-paths src -y -i  
-               source /home/zed_deps_ws/install/setup.bash 
-               colcon build --symlink-install --parallel-workers 1 
-               source install/setup.bash 
-               cd src/walkie-ros/bringup
-               uv sync 
-               cd /ros2_ws  
-               ros2 run rmw_zenoh_cpp rmw_zenohd &
-               ros2 launch robot_bringup lift_homing.launch.py &
-               sleep 10
-               ros2 launch robot_bringup real_omnibot.launch.py &
-               sleep 5
-               ros2 launch joy_interface joy_control_smooth.launch.py &
-               ros2 launch robot_navigation localization_Nav2_real.launch.py &
-               ros2 run walkie_perception ob_pose_service_cpp &
-               ros2 launch openarm_bimanual_moveit_config  moveit_only.launch.py &
-               ros2 launch openarm_bimanual_commander_cpp commander.launch.py"
+      bash /ros2_ws/src/walkie-ros/docker/entrypoint.sh
 
 volumes:
   zed_resources:

@@ -31,7 +31,7 @@ stop-real :
 
 shell CONTAINER_NAME:
     @echo "Entering shell for container '{{CONTAINER_NAME}}'..."
-    sudo docker exec -it {{CONTAINER_NAME}} /bin/bash -c "source /ros_entrypoint.sh && /bin/bash"
+    sudo docker exec -it {{CONTAINER_NAME}} /bin/bash -c "/bin/bash"
 
 _run-as-root:
     #!/bin/bash

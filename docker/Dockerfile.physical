@@ -141,6 +141,7 @@ RUN /bin/bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash && \
 # -----------------------------------------------------------------------------
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh 
+ENV PATH="/root/.local/bin:${PATH}"
 
 
 
@@ -165,17 +166,30 @@ RUN apt-get update && apt-get install -y \
       bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash" && \
       rosdep update && \
       rosdep install --from-paths src -y -i && \
-      # Build
-      bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && \
-      colcon build --symlink-install --parallel-workers 3" && \
-      bash -c "source /ros2_ws/install/setup.bash" && \
       # Size optimization
       apt-get remove -y ros-dev-tools && \
       apt-get autoremove -y && \
       apt-get clean && \
       rm -rf /var/lib/apt/lists/* && \
       rm -rf $APT_CACHE_DIR
-      
+    
+# graspnet dependencies and pretrained model (for grasping demo)
+WORKDIR /ros2_ws/src/walkie-ros/perception
+
+# build CUDA extensions for this GPU arch (no GPU at build time, so set arch explicitly)
+ENV TORCH_CUDA_ARCH_LIST="12.0"
+
+# Option A: wrap this RUN in bash, like your other working ones
+RUN --mount=type=cache,target=/root/.cache/uv \
+    /bin/bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash && \
+    ./setup_env.sh --grasp && \
+    git clone https://github.com/graspnet/graspnet-baseline.git ~/graspnet-baseline && \
+    source ~/perception-venv/bin/activate && \
+    cd ~/graspnet-baseline/pointnet2 && python setup.py install && \
+    cd ~/graspnet-baseline/knn && python setup.py install"
+
+# download the pretrained checkpoint (replace with the real link from the README)
+RUN mkdir -p ~/graspnet-baseline/logs/log_rs 
 
 # -----------------------------------------------------------------------------
 # Shell setup                                                     [from ZED file]
