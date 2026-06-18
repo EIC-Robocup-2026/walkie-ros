@@ -29,6 +29,9 @@ run-real :
 stop-real :
     sudo docker compose -f compose.physical.yml down
 
+run-remote :
+    sudo docker compose -f compose.remote.yml up
+
 shell CONTAINER_NAME:
     @echo "Entering shell for container '{{CONTAINER_NAME}}'..."
     sudo docker exec -it {{CONTAINER_NAME}} /bin/bash -c "/bin/bash"

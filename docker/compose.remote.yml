@@ -1,0 +1,16 @@
+services:
+  docker-remote-desktop:
+    image: ghcr.io/lanjelin/docker-remote-desktop:latest
+    container_name: docker-remote-desktop
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Oslo
+      - AUTOSTART_RUSTDESK=false
+    ports:
+      - "3000:3000" #http
+      - "3001:3001" #https
+    volumes:
+      - /path/to/config:/config
+    restart: unless-stopped
+
