@@ -1,5 +1,7 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
 import tf2_ros
 from walkie_tf_interfaces.srv import GetTransform
 
@@ -8,8 +10,19 @@ class TFServerNode(Node):
     def __init__(self):
         super().__init__("walkie_tf_server")
         self._buffer = tf2_ros.Buffer()
+        # TransformListener subscriptions stay in the node's default
+        # (mutually-exclusive) callback group; the service runs in its own
+        # reentrant group. With a MultiThreadedExecutor this lets the /tf
+        # callbacks keep feeding the buffer while a service handler is blocked
+        # inside lookup_transform's timeout, instead of starving it.
         self._listener = tf2_ros.TransformListener(self._buffer, self)
-        self.create_service(GetTransform, "get_transform", self._handle)
+        self._service_cb_group = ReentrantCallbackGroup()
+        self.create_service(
+            GetTransform,
+            "get_transform",
+            self._handle,
+            callback_group=self._service_cb_group,
+        )
         self.get_logger().info("walkie_tf_server ready")
 
     def _handle(self, request, response):
@@ -35,5 +48,10 @@ class TFServerNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = TFServerNode()
-    rclpy.spin(node)
-    rclpy.shutdown()
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+    try:
+        executor.spin()
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
