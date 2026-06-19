@@ -1,0 +1,144 @@
+<sdf version='1.10'>
+  <world name='manipulation_test'>
+
+    <!-- ── Physics ─────────────────────────────────────────────────── -->
+    <physics name='1ms' type='ignored'>
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+    </physics>
+
+    <!-- ── Required Gazebo plugins ───────────────────────────────────── -->
+    <plugin name='gz::sim::systems::Physics'         filename='gz-sim-physics-system'/>
+    <plugin name='gz::sim::systems::UserCommands'    filename='gz-sim-user-commands-system'/>
+    <plugin name='gz::sim::systems::SceneBroadcaster' filename='gz-sim-scene-broadcaster-system'/>
+    <plugin name='gz::sim::systems::Sensors'         filename='gz-sim-sensors-system'>
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin name='gz::sim::systems::Contact'         filename='gz-sim-contact-system'/>
+
+    <!-- ── Environment ───────────────────────────────────────────────── -->
+    <gravity>0 0 -9.8</gravity>
+    <magnetic_field>5.565e-06 2.288e-05 -4.239e-05</magnetic_field>
+    <atmosphere type='adiabatic'/>
+
+    <scene>
+      <ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.5 0.6 0.7 1</background>
+      <shadows>true</shadows>
+    </scene>
+
+    <!-- ── Sun ───────────────────────────────────────────────────────── -->
+    <light name='sun' type='directional'>
+      <pose>0 0 10 0 0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <intensity>1</intensity>
+      <direction>-0.5 0.1 -0.9</direction>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <attenuation>
+        <range>1000</range>
+        <linear>0.01</linear>
+        <constant>0.9</constant>
+        <quadratic>0.001</quadratic>
+      </attenuation>
+    </light>
+
+    <!-- Overhead fill light for better object visibility -->
+    <light name='overhead' type='point'>
+      <pose>1.5 0 2.5 0 0 0</pose>
+      <cast_shadows>false</cast_shadows>
+      <intensity>0.6</intensity>
+      <diffuse>1 1 1 1</diffuse>
+      <specular>0.3 0.3 0.3 1</specular>
+      <attenuation>
+        <range>6</range>
+        <linear>0.1</linear>
+        <constant>0.3</constant>
+        <quadratic>0.01</quadratic>
+      </attenuation>
+    </light>
+
+    <!-- ── Ground plane ──────────────────────────────────────────────── -->
+    <model name='ground_plane'>
+      <static>true</static>
+      <link name='link'>
+        <collision name='collision'>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>20 20</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction><ode/></friction>
+            <bounce/>
+            <contact/>
+          </surface>
+        </collision>
+        <visual name='visual'>
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>20 20</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.75 0.75 0.75 1</ambient>
+            <diffuse>0.75 0.75 0.75 1</diffuse>
+            <specular>0.1 0.1 0.1 1</specular>
+          </material>
+        </visual>
+        <pose>0 0 0 0 0 0</pose>
+      </link>
+    </model>
+
+    <!-- ── Table (center at x=1.5, y=0, tabletop surface at z=0.75) ─── -->
+    <!--   Robot spawn recommended at x=0, y=0, facing +x                -->
+    <include>
+      <uri>model://manipulation_table</uri>
+      <name>table</name>
+      <pose>1.5 0 0 0 0 0</pose>
+    </include>
+
+    <!-- ── Graspable objects on the table ────────────────────────────── -->
+
+    <!-- Water bottle  (r=0.035, h=0.22) → centre z = 0.75+0.11 = 0.86  -->
+    <include>
+      <uri>model://water_bottle</uri>
+      <name>water_bottle</name>
+      <pose>1.35 0.10 0.86 0 0 0</pose>
+    </include>
+
+    <!-- Pickle jar    (r=0.05,  h=0.15) → centre z = 0.75+0.075 = 0.825 -->
+    <include>
+      <uri>model://pickle_jar</uri>
+      <name>pickle_jar</name>
+      <pose>1.50 -0.10 0.825 0 0 0</pose>
+    </include>
+
+    <!-- Soda can      (r=0.033, h=0.122)→ centre z = 0.75+0.061 = 0.811 -->
+    <include>
+      <uri>model://soda_can</uri>
+      <name>soda_can</name>
+      <pose>1.65 0.15 0.811 0 0 0</pose>
+    </include>
+
+    <!-- Extra soda can offset for variety -->
+    <include>
+      <uri>model://soda_can</uri>
+      <name>soda_can_2</name>
+      <pose>1.35 -0.18 0.811 0 0 0.5</pose>
+    </include>
+
+    <!-- ── Default camera pose ───────────────────────────────────────── -->
+    <gui fullscreen='0'>
+      <camera name='user_camera'>
+        <pose>-0.8 -2.5 2.2 0 0.55 1.1</pose>
+        <view_controller>orbit</view_controller>
+        <projection_type>perspective</projection_type>
+      </camera>
+    </gui>
+
+  </world>
+</sdf>

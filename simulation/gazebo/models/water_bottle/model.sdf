@@ -1,0 +1,53 @@
+<?xml version="1.0"?>
+<sdf version="1.10">
+  <model name="water_bottle">
+    <link name="link">
+      <inertial>
+        <mass>0.5</mass>
+        <!-- Solid cylinder: ixx=iyy=m(3r²+h²)/12, izz=mr²/2 ; r=0.035, h=0.22 -->
+        <inertia>
+          <ixx>0.002170</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.002170</iyy>
+          <iyz>0</iyz>
+          <izz>0.000306</izz>
+        </inertia>
+      </inertial>
+      <collision name="collision">
+        <geometry>
+          <cylinder>
+            <radius>0.035</radius>
+            <length>0.22</length>
+          </cylinder>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>0.8</mu>
+              <mu2>0.8</mu2>
+            </ode>
+          </friction>
+          <contact/>
+          <bounce/>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <geometry>
+          <cylinder>
+            <radius>0.035</radius>
+            <length>0.22</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.2 0.6 1.0 0.85</ambient>
+          <diffuse>0.2 0.6 1.0 0.85</diffuse>
+          <specular>0.8 0.8 0.8 1</specular>
+        </material>
+      </visual>
+      <enable_wind>false</enable_wind>
+    </link>
+    <static>false</static>
+    <self_collide>false</self_collide>
+  </model>
+</sdf>
