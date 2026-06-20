@@ -100,6 +100,7 @@ Look for `-> PATCHED overlay (good)` in the output. For in-container RViz, run
 | `move_group_cumotion.launch.py` | move_group (ompl+cumotion) + GPU planner | wiring into an existing bringup |
 | `moveit_only_cumotion.launch.py` | `mock_components` (default): RSP + mock control + controllers + move_group + RViz + GPU planner (self-contained, robot renders). `real_robot`/`gazebo`/`isaac`: overlay (move_group + RViz + planner only, assumes a bringup) | RViz interactive planning |
 | `moveit_demo_with_commander_cumotion.launch.py` | mock `ros2_control` + controllers + move_group + GPU planner + **commander** + RViz | full self-contained test with mock execution |
+| `nvblox_cumotion.launch.py` | robot_segmenter + nvblox_node + move_group_cumotion (`read_esdf_world:=true`) | perceived-environment (nvBlox ESDF) avoidance; run alongside the sim/robot (§9) |
 
 Common args: `cumotion_xrdf:=<path>` (selects the group; default
 `config/curobo/openarm_bimanual.xrdf` = both_arms), `cumotion_urdf:=<flat urdf>`,
@@ -242,30 +243,65 @@ python3 make_single_arm_xrdf.py both_arms_lift        # right_arm | left_arm | *
 
 ---
 
-## 8. Base/torso collision — covered by mesh ValidateSolution (reject)
+## 8. Base/torso collision — trimmed body spheres + ValidateSolution backstop
 
-cuMotion has **no base/torso collision spheres** (adding them over-constrains —
-see below), so it does not *route around* the body. Instead, arm-vs-base/torso is
-**caught and rejected** by MoveIt's `ValidateSolution` response adapter, which
-mesh-checks the whole planned trajectory against the scene + SRDF ACM
-(base_link↔arm link0-3 disabled, link4-7 checked). This required patching the
-cuMotion plugin's response (`cumotion_interface.cpp`) to seed `trajectory_start`
-from the scene's **full current state** — otherwise non-group joints default to 0
-(lift down / idle arm folded) and ValidateSolution false-rejects everything.
+cuMotion now carries **trimmed base_link/lift_link collision spheres** (the torso
+column + the mobile base's top deck — see "Body spheres" below), so it **routes the
+arms around the body in-plan**. As a backstop, MoveIt's `ValidateSolution` response
+adapter also mesh-checks the whole planned trajectory against the scene + SRDF ACM
+(base_link↔arm link0-3 disabled, link4-7 checked) and **rejects** any residual
+body-colliding plan. ValidateSolution required patching the cuMotion plugin's
+response (`cumotion_interface.cpp`) to seed `trajectory_start` from the scene's
+**full current state** — otherwise non-group joints default to 0 (lift down / idle
+arm folded) and it false-rejects everything.
 
-- **Behavior:** rejects unsafe plans (commander gets a failure → retry / OMPL
-  fallback); does NOT plan around the body. Verified: normal goals pass,
-  self-collision and arm-into-torso goals are rejected
-  (`contact between 'base_link' and 'openarm_left_link5'`).
+- **Behavior:** body spheres steer the optimizer around the torso/base; anything
+  that still grazes the body is rejected (commander gets a failure → retry / OMPL
+  fallback). Verified: normal goals pass; self-collision and arm-into-torso goals
+  are rejected (`contact between 'base_link' and 'openarm_left_link5'`).
 - Start/goal were already covered by `CheckStartStateCollision`; ValidateSolution
   adds the **mid-path** coverage.
-- For true **avoidance** (route around), an **nvBlox ESDF world**
-  (`read_esdf_world`) is the follow-up.
+- For the **perceived environment** (sensed obstacles, not the body), use the
+  **nvBlox ESDF world** — implemented; see §9.
 
-### Why not body spheres (`gen_body_spheres.py`)
+### Body spheres (`gen_body_spheres.py`) — applied, trimmed
 
-Adding base_link/lift_link spheres over-constrains the planner: cuMotion pads the
-over-approximate spheres, and the arms operate within that padded distance of the
-lift/torso, so normal poses get falsely rejected (two attempts confirm this; the
-activation distance is not a tunable param, and `buffer_distance` only widens the
-margin). The tool is kept but not applied.
+A first pass with **full** base_link/lift_link spheres over-constrained the planner:
+cuMotion pads the over-approximate spheres and the arms operate within that padded
+distance of the lift/torso, so normal poses got falsely rejected (the activation
+distance isn't tunable and `buffer_distance` only widens the margin). The fix is to
+**trim**: base_link keeps only the torso column + the mobile base's top deck
+(380 → 232 spheres), inset by the sphere radius so each surface sits flush.
+Clearance analysis (`body_clearance.py`) confirms the kept spheres never bind at
+valid poses, so they are now applied in every xrdf — giving §8's in-plan body
+avoidance.
+
+## 9. Perceived-environment avoidance (nvBlox ESDF)
+
+cuMotion's world is otherwise built only from explicit MoveIt `CollisionObject`s —
+it does **not** see the octomap or the MoveIt ACM. To make it avoid **sensed**
+geometry, feed it an **nvBlox ESDF** (the canonical cuRobo path):
+
+```
+depth (ZED head; same topics in sim + real)
+  -> robot_segmenter (mask the robot out -> /cumotion/world_depth)
+  -> nvblox_node (fuse -> 3D ESDF; serve /nvblox_node/get_esdf_and_gradient)
+  -> cuMotion (read_esdf_world:=true queries it per plan, in base_footprint)
+```
+
+- **Enable:** `nvblox_cumotion.launch.py` (segmenter + nvblox + move_group with
+  `read_esdf_world:=true`), run alongside the sim or real robot, which provide the
+  depth, TF, and `/joint_states` this stack consumes. Opt-in: `read_esdf_world`
+  defaults **off**, so nothing changes until this stack is up.
+- **Install (container):** `ros-jazzy-nvblox-ros` +
+  `ros-jazzy-isaac-ros-cumotion-robot-segmenter` (~766 MB; **not** the
+  `isaac-ros-nvblox` metapackage — see [`DEPLOY.md`](DEPLOY.md) §1.C).
+- **Config:** `nvblox/nvblox.yaml` (`esdf_mode: 3d`; `voxel_size: 0.05` locked to
+  cuMotion's `publish_voxel_size`; `global_frame: base_footprint` = cuMotion's
+  request frame — nvblox returns an **empty grid** if they differ) and
+  `nvblox/robot_segmenter.yaml` (masks using the planner's URDF/XRDF, so it never
+  maps the arms as obstacles). The segmenter is **required** — without it nvblox
+  fuses the robot's own body and cuMotion deadlocks avoiding itself.
+- **Status:** wiring verified (cuMotion connects to + queries the ESDF service per
+  plan; nvblox logs `Received request for ESDF`); full obstacle-avoidance
+  validation in the Gazebo sim is pending.
