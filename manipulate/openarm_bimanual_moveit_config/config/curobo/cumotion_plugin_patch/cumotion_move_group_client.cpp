@@ -63,8 +63,17 @@ CumotionMoveGroupClient::CumotionMoveGroupClient(const rclcpp::Node::SharedPtr &
     &CumotionMoveGroupClient::goalResponseCallback, this, std::placeholders::_1);
   send_goal_options_.feedback_callback = std::bind(
     &CumotionMoveGroupClient::feedbackCallback, this, std::placeholders::_1, std::placeholders::_2);
-  send_goal_options_.result_callback = std::bind(
-    &CumotionMoveGroupClient::resultCallback, this, std::placeholders::_1);
+  // NOTE: result_callback is intentionally NOT registered. getGoal() already
+  // retrieves the result via async_get_result()'s future on the planning thread
+  // (the solve() poll loop). Registering resultCallback too made the action
+  // result drive TWO writers concurrently -- getGoal() on the planning thread and
+  // resultCallback() on a multi-threaded-executor thread -- both reassigning
+  // plan_response.trajectory (a std::vector free+realloc) with no lock. On
+  // SUCCESSFUL plans (error_code.val == 1, the only branch that writes the
+  // vector) that races into a heap double-free -> move_group aborts with
+  // "malloc_consolidate(): invalid chunk size". async_get_result still satisfies
+  // result_future_ without this callback, so getGoal() is unaffected. resultCallback
+  // is left defined (unreferenced) only to avoid editing the container-only header.
 }
 
 void CumotionMoveGroupClient::updateGoal(
