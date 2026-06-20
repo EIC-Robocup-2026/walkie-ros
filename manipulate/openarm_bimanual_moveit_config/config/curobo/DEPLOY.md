@@ -6,6 +6,9 @@ it was built. For *what it is* and *how to drive it once running*, see
 [`README.md`](README.md) in this directory — this doc only covers getting it
 onto a new box.
 
+> In a hurry? [`DEPLOY-QUICKREF.md`](DEPLOY-QUICKREF.md) is the condensed
+> checklist (commands only). This doc is the full version with the gotchas.
+
 > **Audience note (Claude):** **THREE** things must travel to the new machine —
 > the image alone is NOT enough:
 > 1. the Docker **image** `isaac_ros_cumotion:walkie` (CUDA + cuRobo + the
