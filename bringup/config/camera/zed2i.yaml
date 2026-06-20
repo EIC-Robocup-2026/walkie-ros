@@ -18,6 +18,7 @@
       hue: 0 # [DYNAMIC] Image hue. Range: 0 to 11
 
     depth:
+      depth_mode: 'NEURAL_PLUS'  
       min_depth: 0.01 # Min: 0.01, Max: 3.0
       max_depth: 15.0 # Min: 0.5, Max: 20.0
 
