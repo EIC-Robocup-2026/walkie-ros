@@ -25,16 +25,16 @@ request_adapters:
 # shows nothing (OMPL shows because its pipeline includes DisplayMotionPath).
 # DisplayMotionPath publishes the trajectory so RViz animates it.
 #
-# ValidateSolution is REQUIRED: cuMotion has no base/torso collision spheres, so
-# it freely plans the arm THROUGH the body. Without this adapter such plans
-# EXECUTE -> the arm drives into the base/torso and ends in collision, after which
-# CheckStartStateCollision blocks every later plan (arm stuck). With it, move_group
-# mesh-checks the whole trajectory (full robot state via the patched
-# cumotion_interface.cpp) vs base/torso + SRDF ACM and REJECTS body-colliding
-# plans so they never execute. Trade-off: near-body cuMotion goals fail (cuMotion
-# can't route around the body) -> use OMPL for those; the real fix (cuMotion avoids
-# the body) needs base self-collision spheres. (Self-collision + obstacle avoidance
-# are handled by cuMotion itself; ValidateSolution's unique add is base/torso.)
+# ValidateSolution is the base/torso BACKSTOP. cuMotion now carries trimmed
+# base_link/lift_link spheres (torso column + base top deck) so it avoids the body
+# IN-PLAN; ValidateSolution is the safety net that mesh-checks the whole trajectory
+# (full robot state via the patched cumotion_interface.cpp) vs base/torso + SRDF ACM
+# and REJECTS any residual body-colliding plan so it never executes. Without it a bad
+# plan would EXECUTE -> the arm drives into the base/torso and ends in collision,
+# after which CheckStartStateCollision blocks every later plan (arm stuck). Keep it.
+# (Self-collision + the perceived environment are handled by cuMotion itself -- the
+# latter via the nvBlox ESDF world, read_esdf_world; ValidateSolution's unique add is
+# the mesh-accurate base/torso reject.)
 response_adapters:
   - default_planning_response_adapters/ValidateSolution
   - default_planning_response_adapters/DisplayMotionPath
