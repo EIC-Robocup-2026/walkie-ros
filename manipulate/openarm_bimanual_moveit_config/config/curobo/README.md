@@ -13,6 +13,9 @@ when it's off.
 > cuMotion must run **inside the container**. The plain (OMPL) launches stay on
 > the host, unchanged.
 
+> **Deploying to another machine** (image transfer, branch checkout, the
+> description-submodule gotcha): see [`DEPLOY.md`](DEPLOY.md).
+
 ---
 
 ## 1. Architecture / key facts
