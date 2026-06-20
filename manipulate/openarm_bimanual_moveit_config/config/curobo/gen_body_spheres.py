@@ -30,6 +30,16 @@ import numpy as np
 import yaml
 
 BODY_LINKS = ("base_link", "lift_link")
+
+# base_link's URDF collision is a low mobile-base CYLINDER (r=0.275 @ z 0..0.33)
+# plus the torso-column BOXES (z 0.33..1.37). The arms mount high on the torso and
+# never reach the mobile base below their workspace, so the lower cylinder layers
+# only over-constrain planning (and risk false collisions near the floor/wheels).
+# Keep ONLY the cylinder's TOP layer (the base's top deck, the one surface the arm
+# could swing down onto) and drop the layers below it -> the torso column plus that
+# top deck constrain the arm.
+CYL_TOP_LAYER_ONLY = {"base_link"}
+
 R = 0.045         # sphere radius. Spheres are INSET by R so their surface sits
                   # flush with the primitive face (no outward bulge into the arm's
                   # near-field) -> tight, accurate body shell.
@@ -94,8 +104,13 @@ def link_spheres(urdf, link_name):
         if box is not None:
             spheres += box_spheres([float(v) for v in box.get("size").split()], o)
         elif cyl is not None:
-            spheres += cyl_spheres(float(cyl.get("radius")),
-                                   float(cyl.get("length")), o)
+            cs = cyl_spheres(float(cyl.get("radius")),
+                             float(cyl.get("length")), o)
+            if link_name in CYL_TOP_LAYER_ONLY:
+                # keep only the highest z-layer (the cylinder's top deck)
+                zmax = max(s["center"][2] for s in cs)
+                cs = [s for s in cs if abs(s["center"][2] - zmax) < 1e-6]
+            spheres += cs
     return spheres
 
 
