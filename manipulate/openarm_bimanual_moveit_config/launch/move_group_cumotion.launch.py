@@ -55,6 +55,13 @@ def generate_launch_description():
 
     ld.add_action(DeclareLaunchArgument("cumotion_xrdf", default_value=default_xrdf))
     ld.add_action(DeclareLaunchArgument("cumotion_urdf", default_value=default_urdf))
+    # nvBlox ESDF world (perceived-environment avoidance) -- OPT-IN, default OFF so
+    # this launch is unchanged unless the nvblox pipeline is also up. With it on the
+    # planner queries nvblox's ESDF on every plan request.
+    ld.add_action(DeclareLaunchArgument(
+        "cumotion_read_esdf_world", default_value="false"))
+    ld.add_action(DeclareLaunchArgument(
+        "cumotion_esdf_service", default_value="/nvblox_node/get_esdf_and_gradient"))
 
     try:
         cumotion_launch = os.path.join(
@@ -67,7 +74,12 @@ def generate_launch_description():
                     LaunchConfiguration("cumotion_urdf"),
                 "cumotion_action_server.xrdf_file_path":
                     LaunchConfiguration("cumotion_xrdf"),
-                "cumotion_action_server.read_esdf_world": "false",
+                "cumotion_action_server.read_esdf_world":
+                    LaunchConfiguration("cumotion_read_esdf_world"),
+                "cumotion_action_server.esdf_service_name":
+                    LaunchConfiguration("cumotion_esdf_service"),
+                # Match nvblox voxel_size (0.05); base param default is 0.01.
+                "cumotion_action_server.publish_voxel_size": "0.05",
                 "cumotion_action_server.add_ground_plane": "false",
             }.items(),
         ))

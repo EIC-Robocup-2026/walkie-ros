@@ -1,0 +1,40 @@
+# isaac_ros_cumotion_robot_segmenter params.
+#
+# Masks the robot out of the depth image (using the SAME cuMotion URDF + XRDF
+# spheres the planner uses) and republishes a "world_depth" with the arms removed,
+# so nvblox doesn't fuse the robot's own body into the ESDF (which would make
+# cuMotion collide-avoid itself and deadlock).
+#
+# urdf_path / xrdf_path are set by the launch so they track the active CUMOTION_XRDF;
+# the defaults below point at the staged container paths. Depth topics are the ZED
+# head, which the sim bridges on the SAME names as the real robot (gz_bridge.yaml),
+# so this one config drives both sim and hardware.
+/**:
+  ros__parameters:
+    # Robot description for masking — MUST match the planner's robot or the mask
+    # is wrong. Overridden by the launch (tracks the selected group's xrdf).
+    urdf_path: "/workspaces/isaac_ros-dev/openarm_cumotion/openarm_bimanual.urdf"
+    xrdf_path: "/workspaces/isaac_ros-dev/openarm_cumotion/openarm_bimanual.xrdf"
+
+    # ZED head depth (sim and real share these topic names).
+    depth_image_topics: ["/zed_head/zed_node/depth/depth_registered"]
+    depth_camera_infos: ["/zed_head/zed_node/depth/depth_registered/camera_info"]
+
+    # Outputs: robot-masked depth (nvblox input) + the mask (debug/RViz).
+    world_depth_publish_topics: ["/cumotion/world_depth"]
+    robot_mask_publish_topics: ["/cumotion/robot_mask"]
+
+    joint_states_topic: "/joint_states"
+    robot_base_frame: "base_link"
+    num_cameras: 1
+
+    # Extra margin (m) grown around the robot spheres when masking, so depth
+    # pixels just grazing the arm are removed too.
+    distance_threshold: 0.05
+    additional_buffer_distance: 0.0
+
+    # Depth from the ZED / gz bridge is best-effort sensor data.
+    input_qos: "SENSOR_DATA"
+    output_qos: "SENSOR_DATA"
+
+    enable_performance_logging: false

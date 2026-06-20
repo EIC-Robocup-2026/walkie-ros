@@ -25,6 +25,14 @@ CUMOTION_URDF = f"{BASE}/{os.environ.get('CUMOTION_URDF', 'openarm_bimanual.urdf
 XRDF = f"{BASE}/{os.environ.get('CUMOTION_XRDF', 'openarm_bimanual.xrdf')}"
 MC = f"{BASE}/moveit_config"
 
+# nvBlox ESDF world (perceived-environment avoidance) -- OPT-IN, default OFF so the
+# stack is unchanged unless the nvblox pipeline is up. nvblox_cumotion.launch.py /
+# launch_cumotion_stack.sh set CUMOTION_READ_ESDF=true to turn it on; the planner
+# then queries nvblox's ESDF (esdf_service_name) on every plan request.
+READ_ESDF = os.environ.get("CUMOTION_READ_ESDF", "false")
+ESDF_SERVICE = os.environ.get(
+    "CUMOTION_ESDF_SERVICE", "/nvblox_node/get_esdf_and_gradient")
+
 
 def load_yaml(path):
     with open(path) as f:
@@ -104,7 +112,11 @@ def generate_launch_description():
         launch_arguments={
             "cumotion_action_server.urdf_file_path": CUMOTION_URDF,
             "cumotion_action_server.xrdf_file_path": XRDF,
-            "cumotion_action_server.read_esdf_world": "false",
+            "cumotion_action_server.read_esdf_world": READ_ESDF,
+            "cumotion_action_server.esdf_service_name": ESDF_SERVICE,
+            # Match nvblox voxel_size (0.05) for consistent world-voxel viz; the
+            # base param default is 0.01.
+            "cumotion_action_server.publish_voxel_size": "0.05",
             "cumotion_action_server.add_ground_plane": "false",
         }.items(),
     )

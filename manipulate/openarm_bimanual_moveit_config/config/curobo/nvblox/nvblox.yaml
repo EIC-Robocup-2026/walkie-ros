@@ -1,0 +1,47 @@
+# nvblox_node params for the cuMotion ESDF world.
+#
+# nvblox fuses the (robot-masked) depth into a TSDF and serves a 3D ESDF on
+# /nvblox_node/get_esdf_and_gradient, which the cuMotion planner queries per plan
+# request when read_esdf_world:=true. The depth INPUT topics are remapped in the
+# launch (camera_0/depth/{image,camera_info} -> the segmenter's world_depth + the
+# camera's camera_info); this file sets the mapper/ESDF behaviour.
+#
+# nvblox-ros ships no default param yaml (only the example bringup we deliberately
+# skipped), so the values here are the node defaults with the few cuMotion-critical
+# overrides called out below. Confirmed against a live `ros2 param get /nvblox_node`.
+/**:
+  ros__parameters:
+    # CRITICAL: the node default is "2d" (a single horizontal ESDF slice, for
+    # nav). cuMotion needs the full 3D ESDF for arm planning -> "3d".
+    esdf_mode: "3d"
+
+    # MUST equal cuMotion's publish_voxel_size (0.05). nvblox default is already
+    # 0.05; set explicitly so the two can't drift apart.
+    voxel_size: 0.05
+
+    # Map frame. nvblox builds in global_frame and transforms the ESDF into
+    # cuMotion's requested frame (robot_base_frame = base_link) via TF, so TF
+    # global_frame -> base_link AND global_frame -> camera must exist. odom works
+    # for sim (gazebo) and the real robot (nav2); override to base_link for a
+    # static-base bench test with no odom.
+    global_frame: "odom"
+
+    # Single depth camera (the ZED head). Input topics are remapped in the launch.
+    num_cameras: 1
+    use_depth: true
+    use_color: false
+    use_lidar: false
+
+    # Drop map blocks farther than this from the clearing frame so a moving robot
+    # doesn't accumulate stale geometry. Tied to the robot, not the world origin.
+    map_clearing_radius_m: 5.0
+    map_clearing_frame_id: "base_link"
+
+    # Publish the ESDF slice + voxels for RViz (nvblox_rviz_plugin) during bring-up.
+    publish_esdf_distance_slice: true
+
+    # Mostly-static manipulation scene: integrate into the static mapper and bound
+    # the ESDF distance to the arm's reach so queries stay cheap.
+    static_mapper:
+      esdf_integrator_max_distance_m: 1.0
+      projective_integrator_max_integration_distance_m: 4.0
