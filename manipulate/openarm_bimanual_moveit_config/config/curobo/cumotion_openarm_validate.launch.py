@@ -107,7 +107,7 @@ def generate_launch_description():
     )
     cumotion = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(
-            get_package_share_directory("cumotion"),
+            get_package_share_directory("isaac_ros_cumotion"),
             "launch", "isaac_ros_cumotion.launch.py")),
         launch_arguments={
             "cumotion_action_server.urdf_file_path": CUMOTION_URDF,

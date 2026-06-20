@@ -19,12 +19,13 @@
     # 0.05; set explicitly so the two can't drift apart.
     voxel_size: 0.05
 
-    # Map frame. nvblox builds in global_frame and transforms the ESDF into
-    # cuMotion's requested frame (robot_base_frame = base_link) via TF, so TF
-    # global_frame -> base_link AND global_frame -> camera must exist. odom works
-    # for sim (gazebo) and the real robot (nav2); override to base_link for a
-    # static-base bench test with no odom.
-    global_frame: "odom"
+    # Map frame. MUST be the frame cuMotion requests the ESDF in -- that is the
+    # planner's robot_base_frame, which for this robot is "base_footprint" (nvblox
+    # returns an EMPTY grid if they differ). For arm manipulation the base is
+    # static, so mapping directly in base_footprint is correct and needs no odom;
+    # only TF base_footprint -> camera must exist (robot_state_publisher provides
+    # it). Use odom instead only if mapping while the base drives.
+    global_frame: "base_footprint"
 
     # Single depth camera (the ZED head). Input topics are remapped in the launch.
     num_cameras: 1
@@ -35,7 +36,7 @@
     # Drop map blocks farther than this from the clearing frame so a moving robot
     # doesn't accumulate stale geometry. Tied to the robot, not the world origin.
     map_clearing_radius_m: 5.0
-    map_clearing_frame_id: "base_link"
+    map_clearing_frame_id: "base_footprint"
 
     # Publish the ESDF slice + voxels for RViz (nvblox_rviz_plugin) during bring-up.
     publish_esdf_distance_slice: true
