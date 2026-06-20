@@ -57,6 +57,11 @@ colcon build --packages-select isaac_ros_cumotion_moveit isaac_ros_cumotion   # 
 Stage git-tracked scripts into `openarm_cumotion/`: `launch_cumotion_stack.sh`,
 `goto.py`, `pub_js.py`, `set_xrdf.py`, `scale_spheres.py`, `shrink_*.py`,
 `scale_body.py`. The flat `openarm_bimanual.urdf` + meshes are big → rsync only.
+```bash
+# OPTIONAL: nvBlox ESDF (read_esdf_world / nvblox_cumotion.launch.py). Node only,
+# NOT ros-jazzy-isaac-ros-nvblox (meta = ~6.8 GB unused deps). ~766 MB.
+apt-get install -y ros-jazzy-nvblox-ros ros-jazzy-isaac-ros-cumotion-robot-segmenter
+```
 
 ## 4. Container + walkie overlay
 ```bash
@@ -92,3 +97,5 @@ cd <repo>/manipulate/openarm_bimanual_moveit_config/config/curobo
 - [ ] `find ~/workspaces/isaac_ros-dev -name libisaac_ros_cumotion_moveit.so` → `install/` path
 - [ ] `libcumotion_impl.so` contains `re-latching`
 - [ ] mock `both_arms` < 1 s; cross-arm swap WARN-not-FATAL
+- [ ] (nvBlox feature only) `ros2 pkg list | grep nvblox_ros`; `read_esdf_world:=true`
+      → planner logs `ESDF service … available`, nvblox logs `Received request for ESDF`

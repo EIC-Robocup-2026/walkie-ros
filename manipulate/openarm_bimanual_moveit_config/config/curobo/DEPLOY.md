@@ -94,6 +94,24 @@ plugin **and** planner. (Two packages: `cumotion_move_group_client.cpp` +
 `robot_manager_impl.cpp` is the planner node in `isaac_ros_cumotion`.) Tag the
 result `isaac_ros_cumotion:walkie`.
 
+### C. Optional: nvBlox ESDF (perceived-environment avoidance)
+
+Only needed for the `read_esdf_world` feature (cuMotion avoiding sensed geometry
+via `nvblox_cumotion.launch.py`); base cuMotion runs without it. Inside the
+container:
+
+```bash
+# Install the NODE only -- NOT ros-jazzy-isaac-ros-nvblox (the metapackage drags
+# in nvblox-examples-bringup/nav2/realsense/zed ~6.8 GB; the node is ~766 MB and
+# CUDA is already in the base image).
+apt-get install -y ros-jazzy-nvblox-ros \
+                   ros-jazzy-isaac-ros-cumotion-robot-segmenter
+```
+
+Verify: `ros2 pkg list | grep nvblox_ros` and the segmenter component loads
+(`ros2 component types | grep RobotSegmenter`). nvblox adds ~766 MB to the image,
+so re-`docker save` (§1.A) after installing if you transfer the image.
+
 ---
 
 ## 1.5. Transfer the host Isaac workspace (the patched overlay) — REQUIRED
@@ -239,3 +257,6 @@ host + container.
 - [ ] A mock `both_arms` plan returns a trajectory in RViz in well under a second.
 - [ ] (Real robot) host `rmw_zenohd` up; container launched with `RMW=zenoh`;
       `ros2 node list` from the host sees the container's move_group.
+- [ ] (Only if using the nvBlox ESDF feature, §1.C) `ros2 pkg list | grep nvblox_ros`
+      present; with `read_esdf_world:=true` the planner logs `ESDF service … is
+      available` and `nvblox_node` logs `Received request for ESDF` on a plan.
