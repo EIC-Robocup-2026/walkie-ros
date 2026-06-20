@@ -1,9 +1,11 @@
 # cuMotion (cuRobo) planning pipeline config.
 #
 # Registered as an ADDITIONAL move_group pipeline alongside ompl; ompl stays the
-# default (see the cumotion variant of move_group.launch.py). Select this
-# pipeline per-request from the commander with:
-#   ros2 param set <commander_node> planning_pipeline isaac_ros_cumotion
+# default (see the cumotion variant of move_group.launch.py). The pipeline id is
+# "cumotion" (derived from this file's name, cumotion_planning.yaml) -- NOT the
+# plugin name isaac_ros_cumotion. Select this pipeline per-request from the
+# commander with:
+#   ros2 param set <commander_node> planning_pipeline cumotion
 # and restore ompl with an empty string.
 #
 # This is a local, tunable copy of isaac_ros_cumotion_moveit's bundled

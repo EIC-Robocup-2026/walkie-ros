@@ -63,9 +63,9 @@ def generate_launch_description():
     ompl_cfg = load_yaml(f"{MC}/ompl_planning.yaml")
 
     planning_pipelines = {
-        "planning_pipelines": ["isaac_ros_cumotion", "ompl"],
-        "default_planning_pipeline": "isaac_ros_cumotion",
-        "isaac_ros_cumotion": cumotion_cfg,
+        "planning_pipelines": ["cumotion", "ompl"],
+        "default_planning_pipeline": "cumotion",
+        "cumotion": cumotion_cfg,
         "ompl": ompl_cfg,
     }
 
@@ -99,7 +99,7 @@ def generate_launch_description():
     )
     cumotion = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(
-            get_package_share_directory("isaac_ros_cumotion"),
+            get_package_share_directory("cumotion"),
             "launch", "isaac_ros_cumotion.launch.py")),
         launch_arguments={
             "cumotion_action_server.urdf_file_path": CUMOTION_URDF,

@@ -115,8 +115,9 @@ public:
 
         // Planning pipeline selection. Empty (the default) means "don't override" —
         // MoveGroupInterface uses move_group's default pipeline (ompl), so behaviour
-        // is unchanged unless this is set. Set to "isaac_ros_cumotion" to plan on the
-        // GPU via the cuMotion pipeline (only available when move_group was launched
+        // is unchanged unless this is set. Set to "cumotion" to plan on the GPU via
+        // the cuMotion pipeline (the id the *_cumotion launches register; NOT the
+        // plugin name isaac_ros_cumotion — only available when move_group was launched
         // with that pipeline registered). Switchable live, like planner_id.
         std::string planning_pipeline =
             node_->declare_parameter<std::string>("planning_pipeline", "");

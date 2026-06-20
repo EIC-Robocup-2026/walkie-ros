@@ -74,7 +74,7 @@ class Goto(Node):
         joints, _ = GROUPS[self.group]
         self.ac.wait_for_server(timeout_sec=20.0)
         g = MoveGroup.Goal(); m = g.request
-        m.group_name = self.group; m.pipeline_id = "isaac_ros_cumotion"
+        m.group_name = self.group; m.pipeline_id = "cumotion"
         m.num_planning_attempts = 10; m.allowed_planning_time = 15.0
         m.max_velocity_scaling_factor = 1.0; m.max_acceleration_scaling_factor = 1.0
         rs = RobotState(); js = JointState(); js.name = list(joints)
