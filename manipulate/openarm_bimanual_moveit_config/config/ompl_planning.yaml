@@ -4,10 +4,13 @@
 # builder loads this one because it exists in config/). The plugins/adapters
 # block below is copied verbatim from that default so OMPL still loads.
 #
-# `planner_configs` is intentionally NOT defined here: MoveItConfigsBuilder has a
-# special rule (moveit_configs_builder.py) that auto-merges the full default
-# planner_configs from ompl_defaults.yaml whenever this file omits them. Keeping
-# them out avoids duplicating ~150 lines that we don't need to change.
+# `planner_configs` IS defined below. Normally MoveItConfigsBuilder auto-merges
+# the full default planner_configs from ompl_defaults.yaml whenever this file
+# omits them — but BIT* (BITstar) is NOT in those defaults, so the configs must
+# be listed explicitly. Defining our own planner_configs disables the auto-merge,
+# so every planner referenced by a group below is spelled out: the existing
+# RRTConnect/RRT/RRTstar plus the added BKPIECE, BITstar (BIT*), and TRRT — all
+# copied verbatim from ompl_defaults.yaml except BITstar.
 #
 # SAFETY TUNING — denser path checking:
 #   longest_valid_segment_fraction sets how finely OMPL checks for collisions
@@ -32,53 +35,108 @@ response_adapters:
 
 start_state_max_bounds_error: 0.1
 
+# Planner definitions. RRTConnect/RRT/RRTstar/BKPIECE/TRRT are copied verbatim
+# from moveit's ompl_defaults.yaml; BITstar (BIT*) is added here since it is
+# absent from those defaults. Defining this block disables the auto-merge, so
+# anything a group lists below MUST appear here.
+planner_configs:
+  RRTConnect:
+    type: geometric::RRTConnect
+    range: 0.0
+  RRT:
+    type: geometric::RRT
+    range: 0.0
+    goal_bias: 0.05
+  RRTstar:
+    type: geometric::RRTstar
+    range: 0.0
+    goal_bias: 0.05
+    delay_collision_checking: 1
+  BKPIECE:
+    type: geometric::BKPIECE
+    range: 0.0
+    border_fraction: 0.9
+    failed_expansion_score_factor: 0.5
+    min_valid_path_fraction: 0.5
+  BITstar:
+    type: geometric::BITstar
+  TRRT:
+    type: geometric::TRRT
+    range: 0.0
+    goal_bias: 0.05
+    max_states_failed: 10
+    temp_change_factor: 2.0
+    min_temperature: 10e-10
+    init_temperature: 10e-6
+    frountier_threshold: 0.0
+    frountierNodeRatio: 0.1
+    k_constant: 0.0
+
 # Per-group dense collision checking along planned segments.
 #
 # `planner_configs` lists which planners are selectable for each group. The
-# referenced names (RRTConnect, RRT, RRTstar) come from the
-# default planner_configs auto-merged from ompl_defaults.yaml. The first entry
-# is used as the default when no planner_id is requested. RRTConnect is the
-# default here (fast bidirectional search, early-exits on first feasible path);
-# the commander's planner_id param also defaults to RRTConnect and can switch live.
+# referenced names are defined in the top-level planner_configs block above.
+# `default_planner_config` is used when no planner_id is requested. RRTConnect is
+# the default here (fast bidirectional search, early-exits on first feasible
+# path); the commander's planner_id param also defaults to RRTConnect and can
+# switch live to any listed planner (BKPIECE, BITstar/BIT*, TRRT, RRT, RRTstar).
 left_arm:
-  longest_valid_segment_fraction: 0.01
+  longest_valid_segment_fraction: 0.003
   default_planner_config: RRTConnect
   planner_configs:
     - RRTConnect
     - RRT
     - RRTstar
+    - BKPIECE
+    - BITstar
+    - TRRT
 right_arm:
-  longest_valid_segment_fraction: 0.01
+  longest_valid_segment_fraction: 0.003
   default_planner_config: RRTConnect
   planner_configs:
     - RRTConnect
     - RRT
     - RRTstar
+    - BKPIECE
+    - BITstar
+    - TRRT
 both_arms:
-  longest_valid_segment_fraction: 0.01
+  longest_valid_segment_fraction: 0.003
   default_planner_config: RRTConnect
   planner_configs:
     - RRTConnect
     - RRT
     - RRTstar
+    - BKPIECE
+    - BITstar
+    - TRRT
 left_arm_lift:
-  longest_valid_segment_fraction: 0.01
+  longest_valid_segment_fraction: 0.003
   default_planner_config: RRTConnect
   planner_configs:
     - RRTConnect
     - RRT
     - RRTstar
+    - BKPIECE
+    - BITstar
+    - TRRT
 right_arm_lift:
-  longest_valid_segment_fraction: 0.01
+  longest_valid_segment_fraction: 0.003
   default_planner_config: RRTConnect
   planner_configs:
     - RRTConnect
     - RRT
     - RRTstar
+    - BKPIECE
+    - BITstar
+    - TRRT
 both_arms_lift:
-  longest_valid_segment_fraction: 0.01
+  longest_valid_segment_fraction: 0.003
   default_planner_config: RRTConnect
   planner_configs:
     - RRTConnect
     - RRT
     - RRTstar
+    - BKPIECE
+    - BITstar
+    - TRRT

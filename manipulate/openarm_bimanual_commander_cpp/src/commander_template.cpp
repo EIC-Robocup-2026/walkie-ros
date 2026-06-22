@@ -36,6 +36,7 @@
 #include <cmath>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_srvs/srv/trigger.hpp>
+#include <std_srvs/srv/set_bool.hpp>
 #include <thread>
 #include <mutex>
 #include <cstdint>
@@ -104,8 +105,9 @@ public:
         both_arms_lift_->setMaxVelocityScalingFactor(1.0);
         both_arms_lift_->setMaxAccelerationScalingFactor(1.0);
 
-        // OMPL planner selection. The arm groups list RRTConnect/RRT/RRTstar in
-        // ompl_planning.yaml. RRTConnect (the default here) early-exits as soon
+        // OMPL planner selection. The arm groups list RRTConnect/RRT/RRTstar/
+        // BKPIECE/BITstar/TRRT in ompl_planning.yaml. RRTConnect (the default
+        // here) early-exits as soon
         // as it finds a path, so it plans fast. RRTstar is asymptotically optimal
         // (shorter, smoother paths) but never early-exits — it burns the FULL
         // planning-time budget every call, so it needs a larger arm_planning_time
@@ -248,6 +250,18 @@ public:
         clear_collision_objects_service_ = node_->create_service<std_srvs::srv::Trigger>(
             "clear_collision_objects",
             std::bind(&Commander::handle_clear_collision_objects, this, _1, _2),
+            rclcpp::ServicesQoS(),
+            callback_group_);
+
+        // ToggleOctomapCollision: select whether planning USES the octomap.
+        // data=true  -> use it (collision checked, normal);
+        // data=false -> ignore it (planning plans through sensed voxels).
+        // Works by flipping the "<octomap>" default entry in the ACM, like the
+        // gripper toggle. The octomap keeps being built from the point cloud;
+        // this only controls whether collision checking considers it.
+        toggle_octomap_collision_service_ = node_->create_service<std_srvs::srv::SetBool>(
+            "toggle_octomap_collision",
+            std::bind(&Commander::handle_toggle_octomap_collision, this, _1, _2),
             rclcpp::ServicesQoS(),
             callback_group_);
 
@@ -642,6 +656,67 @@ public:
         RCLCPP_INFO(node_->get_logger(), "%s", response->message.c_str());
     }
 
+    // ========== ToggleOctomapCollision Service ==========
+    // Select whether planning uses the octomap, by flipping the "<octomap>"
+    // entry in the AllowedCollisionMatrix. data=true -> collision checked (use);
+    // data=false -> allowed (ignored). The octomap keeps updating either way.
+    void handle_toggle_octomap_collision(
+        const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+        std::shared_ptr<std_srvs::srv::SetBool::Response> response)
+    {
+        const bool use_octomap = request->data;
+        const bool allowed = !use_octomap;   // allowed == ignored in planning
+
+        if (!get_planning_scene_client_->service_is_ready() ||
+            !apply_planning_scene_client_->service_is_ready()) {
+            response->success = false;
+            response->message = "Planning scene services not available (is move_group up?)";
+            return;
+        }
+
+        // 1. Read the current ACM.
+        auto get_req = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
+        get_req->components.components =
+            moveit_msgs::msg::PlanningSceneComponents::ALLOWED_COLLISION_MATRIX;
+        auto get_future = get_planning_scene_client_->async_send_request(get_req);
+        if (get_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+            response->success = false;
+            response->message = "Timed out reading planning scene";
+            return;
+        }
+        auto acm = get_future.get()->scene.allowed_collision_matrix;
+
+        // 2. Flip the octomap's default ACM entry.
+        const std::string oct = "<octomap>";
+        auto it = std::find(acm.default_entry_names.begin(),
+                            acm.default_entry_names.end(), oct);
+        if (it != acm.default_entry_names.end()) {
+            acm.default_entry_values[
+                std::distance(acm.default_entry_names.begin(), it)] = allowed;
+        } else {
+            acm.default_entry_names.push_back(oct);
+            acm.default_entry_values.push_back(allowed);
+        }
+
+        // 3. Write it back as a diff.
+        auto apply_req = std::make_shared<moveit_msgs::srv::ApplyPlanningScene::Request>();
+        apply_req->scene.is_diff = true;
+        apply_req->scene.allowed_collision_matrix = acm;
+        auto apply_future = apply_planning_scene_client_->async_send_request(apply_req);
+        if (apply_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready ||
+            !apply_future.get()->success) {
+            response->success = false;
+            response->message = "Failed to apply ACM update";
+            return;
+        }
+
+        response->success = true;
+        response->message = use_octomap
+            ? "Octomap ENABLED (planning uses the octomap)"
+            : "Octomap DISABLED (planning ignores the octomap)";
+        RCLCPP_INFO(node_->get_logger(), "%s", response->message.c_str());
+    }
+
     // ========== ToggleGripperCollision Service ==========
     // Enable/disable collision checking for a gripper's links against the rest
     // of the world. Works by flipping each gripper link's *default* entry in the
@@ -965,7 +1040,7 @@ public:
 
         group->setStartStateToCurrentState();
         group->setPoseReferenceFrame("base_footprint");
-        group->setGoalTolerance(0.01);
+        group->setGoalTolerance(0.02);
 
         if (cartesian) {
             std::vector<geometry_msgs::msg::Pose> waypoints = {target};
@@ -1368,7 +1443,7 @@ public:
         group->setStartStateToCurrentState();
         std::string frame = goal->frame_id.empty() ? "base_footprint" : goal->frame_id;
         group->setPoseReferenceFrame(frame);
-        group->setGoalTolerance(0.01);
+        group->setGoalTolerance(0.02);
 
         tf2::Quaternion q;
         q.setRPY(goal->roll, goal->pitch, goal->yaw);
@@ -1486,7 +1561,7 @@ public:
 
         group->setStartStateToCurrentState();
         group->setPoseReferenceFrame(target_frame);
-        group->setGoalTolerance(0.01);
+        group->setGoalTolerance(0.02);
 
         tf2::Quaternion q_current;
         tf2::fromMsg(current_pose.orientation, q_current);
@@ -1610,7 +1685,7 @@ public:
         group->setStartStateToCurrentState();
         std::string frame = goal->frame_id.empty() ? "base_footprint" : goal->frame_id;
         group->setPoseReferenceFrame(frame);
-        group->setGoalTolerance(0.01);
+        group->setGoalTolerance(0.02);
 
         tf2::Quaternion q(goal->qx, goal->qy, goal->qz, goal->qw);
         q.normalize();
@@ -1820,7 +1895,7 @@ public:
 
         group->setStartStateToCurrentState();
         group->setPoseReferenceFrame("base_footprint");
-        group->setGoalTolerance(0.01);
+        group->setGoalTolerance(0.02);
 
         // Use the SRDF named state rather than a fabricated all-zeros target.
         // For lift-inclusive groups the states keep lift_joint = 0.7435 (the
@@ -1918,7 +1993,7 @@ public:
         }
 
         group->setStartStateToCurrentState();
-        group->setGoalTolerance(0.01);
+        group->setGoalTolerance(0.02);
 
         RCLCPP_INFO(node_->get_logger(), "SetJointPosition for %s:", goal->group_name.c_str());
         for (size_t i = 0; i < goal->joint_positions.size(); ++i) {
@@ -1989,6 +2064,8 @@ private:
     rclcpp::Service<ToggleGripperCollision>::SharedPtr toggle_gripper_collision_service_;
     // Detach + remove all collision objects from the planning scene.
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr clear_collision_objects_service_;
+    // Select whether planning uses the octomap (ACM toggle).
+    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr toggle_octomap_collision_service_;
     rclcpp::Client<moveit_msgs::srv::GetPlanningScene>::SharedPtr get_planning_scene_client_;
     rclcpp::Client<moveit_msgs::srv::ApplyPlanningScene>::SharedPtr apply_planning_scene_client_;
 
