@@ -36,6 +36,7 @@
 #include <cmath>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_srvs/srv/trigger.hpp>
+#include <std_srvs/srv/empty.hpp>
 #include <thread>
 #include <mutex>
 #include <cstdint>
@@ -43,6 +44,8 @@
 #include <set>
 #include <vector>
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 
 using MoveGroupInterface = moveit::planning_interface::MoveGroupInterface;
 using PlanningSceneInterface = moveit::planning_interface::PlanningSceneInterface;
@@ -64,6 +67,21 @@ using GetJointStates = my_robot_interfaces::srv::GetJointStates;
 using ToggleGripperCollision = my_robot_interfaces::srv::ToggleGripperCollision;
 
 using namespace std::placeholders;
+
+// RAII marker held for the duration of a group's plan()+execute() call so
+// handle_clear_octomap() can tell whether it is safe to clear the octree.
+// Scoped (not just a bool) because several goal handlers run concurrently on
+// their own detached threads.
+class BusyGuard
+{
+public:
+    explicit BusyGuard(std::atomic<int> & counter) : counter_(counter) { ++counter_; }
+    ~BusyGuard() { --counter_; }
+    BusyGuard(const BusyGuard &) = delete;
+    BusyGuard & operator=(const BusyGuard &) = delete;
+private:
+    std::atomic<int> & counter_;
+};
 
 class Commander
 {
@@ -250,6 +268,22 @@ public:
             std::bind(&Commander::handle_clear_collision_objects, this, _1, _2),
             rclcpp::ServicesQoS(),
             callback_group_);
+
+        // ClearOctomap (guarded): calling MoveIt's own /clear_octomap while
+        // move_group is mid-plan/execute races the planning thread's collision
+        // checker (and the PointCloudOctomapUpdater) against the octree being
+        // reset in place, and segfaults move_group — a long-standing upstream
+        // bug (ros-planning/moveit#399), not something fixable from here. This
+        // wrapper waits for moveit_busy_count_ to drain to zero before
+        // forwarding the call, so it's only ever cleared while move_group is
+        // idle.
+        clear_octomap_service_ = node_->create_service<std_srvs::srv::Trigger>(
+            "clear_octomap",
+            std::bind(&Commander::handle_clear_octomap, this, _1, _2),
+            rclcpp::ServicesQoS(),
+            callback_group_);
+        clear_octomap_client_ = node_->create_client<std_srvs::srv::Empty>(
+            "/clear_octomap", rclcpp::ServicesQoS(), callback_group_);
 
         // 5. Grasp attach/detach
         // When the gripper closes past grasp_close_threshold we attach a box to
@@ -720,6 +754,45 @@ public:
             ? "Gripper collision ENABLED for " + request->group_name
             : "Gripper collision DISABLED for " + request->group_name;
         RCLCPP_INFO(node_->get_logger(), "%s", response->status.c_str());
+    }
+
+    // ========== ClearOctomap Service (guarded) ==========
+    // Waits for any in-flight plan()/execute() to finish (moveit_busy_count_
+    // drains to zero) before forwarding to MoveIt's real /clear_octomap.
+    // Polls with a bounded deadline rather than blocking forever so a stuck
+    // busy count can't wedge this service permanently.
+    void handle_clear_octomap(
+        const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+        std::shared_ptr<std_srvs::srv::Trigger::Response> response)
+    {
+        (void)request;
+
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (moveit_busy_count_.load() > 0 && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        if (moveit_busy_count_.load() > 0) {
+            response->success = false;
+            response->message = "move_group is busy planning/executing; clear_octomap "
+                                 "skipped to avoid crashing it. Retry once idle.";
+            return;
+        }
+
+        if (!clear_octomap_client_->wait_for_service(std::chrono::seconds(2))) {
+            response->success = false;
+            response->message = "/clear_octomap service not available (is move_group up?)";
+            return;
+        }
+
+        auto req = std::make_shared<std_srvs::srv::Empty::Request>();
+        auto fut = clear_octomap_client_->async_send_request(req);
+        if (fut.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+            response->success = false;
+            response->message = "Timed out calling /clear_octomap";
+            return;
+        }
+        response->success = true;
+        response->message = "Octomap cleared";
     }
 
     // ========== Finger collision padding ==========
@@ -1364,6 +1437,7 @@ public:
             result->success = false; result->status = "Invalid Group";
             goal_handle->abort(result); return;
         }
+        BusyGuard busy_guard(moveit_busy_count_);
 
         group->setStartStateToCurrentState();
         std::string frame = goal->frame_id.empty() ? "base_footprint" : goal->frame_id;
@@ -1463,6 +1537,7 @@ public:
             result->success = false; result->status = "Invalid Group";
             goal_handle->abort(result); return;
         }
+        BusyGuard busy_guard(moveit_busy_count_);
 
         std::string target_frame = goal->frame_id.empty() ? "base_footprint" : goal->frame_id;
         std::string source_frame = group->getEndEffectorLink();
@@ -1606,6 +1681,7 @@ public:
             result->success = false; result->status = "Invalid Group";
             goal_handle->abort(result); return;
         }
+        BusyGuard busy_guard(moveit_busy_count_);
 
         group->setStartStateToCurrentState();
         std::string frame = goal->frame_id.empty() ? "base_footprint" : goal->frame_id;
@@ -1811,6 +1887,7 @@ public:
         if (!group) {
             goal_handle->abort(result); return;
         }
+        BusyGuard busy_guard(moveit_busy_count_);
 
         const std::string pose_name =
             goal->pose_name.empty() ? "home" : goal->pose_name;
@@ -1916,6 +1993,7 @@ public:
             result->success = false; result->status = "Invalid Group";
             goal_handle->abort(result); return;
         }
+        BusyGuard busy_guard(moveit_busy_count_);
 
         group->setStartStateToCurrentState();
         group->setGoalTolerance(0.01);
@@ -1991,6 +2069,13 @@ private:
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr clear_collision_objects_service_;
     rclcpp::Client<moveit_msgs::srv::GetPlanningScene>::SharedPtr get_planning_scene_client_;
     rclcpp::Client<moveit_msgs::srv::ApplyPlanningScene>::SharedPtr apply_planning_scene_client_;
+
+    // Guarded /clear_octomap wrapper: moveit_busy_count_ is incremented for the
+    // duration of every group plan()+execute() call (see BusyGuard) and read by
+    // handle_clear_octomap() before forwarding to the real service.
+    std::atomic<int> moveit_busy_count_{0};
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr clear_octomap_service_;
+    rclcpp::Client<std_srvs::srv::Empty>::SharedPtr clear_octomap_client_;
 
     // Software gripper speed cap and last commanded position per gripper group,
     // used by controlGripper() to ramp the setpoint (GripperActionController

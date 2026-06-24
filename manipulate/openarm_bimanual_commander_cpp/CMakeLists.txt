@@ -15,6 +15,7 @@ find_package(rclcpp_action REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(moveit_core REQUIRED)
 find_package(visualization_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 
 add_executable(commander src/commander_template.cpp)
 ament_target_dependencies(commander
@@ -26,6 +27,7 @@ ament_target_dependencies(commander
   control_msgs
   moveit_msgs
   moveit_core
+  std_srvs
 )
 
 add_executable(pick_and_place_isaac src/pick_and_place_isaac.cpp)
