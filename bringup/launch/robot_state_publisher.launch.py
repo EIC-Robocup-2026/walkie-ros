@@ -35,6 +35,7 @@ def generate_launch_description():
     use_fake_arm_hardware = LaunchConfiguration('use_fake_arm_hardware', default='false')
     left_can_interface = LaunchConfiguration('left_can_interface', default='can1')
     right_can_interface = LaunchConfiguration('right_can_interface', default='can0')
+    right_joint2_fixed = LaunchConfiguration('right_joint2_fixed', default='false')
 
     declare_robot_model = DeclareLaunchArgument(
         'robot_model', default_value=os.path.join(get_package_share_directory('robot_bringup'), 'urdf','tb3_custom','robot.urdf.xacro'),
@@ -49,6 +50,7 @@ def generate_launch_description():
             ' use_fake_arm_hardware:=', use_fake_arm_hardware,
             ' left_can_interface:=', left_can_interface,
             ' right_can_interface:=', right_can_interface,
+            ' right_joint2_fixed:=', right_joint2_fixed,
         ]),
         value_type=str
     )
@@ -75,6 +77,11 @@ def generate_launch_description():
             'right_can_interface',
             default_value='can0',
             description='CAN interface for the right arm'),
+        DeclareLaunchArgument(
+            'right_joint2_fixed',
+            default_value='false',
+            description='Lock the right arm joint2 as a fixed URDF joint at its '
+                        'nominal (zero) position'),
 
         DeclareLaunchArgument(
             'use_sim_time',

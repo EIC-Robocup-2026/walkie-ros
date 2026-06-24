@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import os
+import tempfile
 
+import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
@@ -16,7 +18,7 @@ from launch.launch_description_sources import (
     AnyLaunchDescriptionSource,
     PythonLaunchDescriptionSource,
 )
-from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
@@ -43,6 +45,7 @@ def generate_launch_description():
     use_fake_arm_hardware = LaunchConfiguration("use_fake_arm_hardware", default="false")
     left_can_interface = LaunchConfiguration("left_can_interface", default="can1")
     right_can_interface = LaunchConfiguration("right_can_interface", default="can0")
+    right_joint2_fixed = LaunchConfiguration("right_joint2_fixed", default="false")
     unitree_cloud_frame = LaunchConfiguration("unitree_cloud_frame", default="unitree4d_l2_imu_initial")
     unitree_imu_frame = LaunchConfiguration("unitree_imu_frame", default="unitree4d_l2_imu")
 
@@ -66,6 +69,12 @@ def generate_launch_description():
     )
     declare_right_can_interface = DeclareLaunchArgument(
         "right_can_interface", default_value="can0", description="CAN interface for the right arm"
+    )
+    declare_right_joint2_fixed = DeclareLaunchArgument(
+        "right_joint2_fixed",
+        default_value="false",
+        description="Lock the right arm joint2 as a fixed URDF joint at its nominal "
+                    "(zero) position, dropping it from MoveIt's IK/planning DOF",
     )
     declare_use_unitree_lidar = DeclareLaunchArgument(
         "use_unitree_lidar",
@@ -99,6 +108,8 @@ def generate_launch_description():
             left_can_interface,
             " right_can_interface:=",
             right_can_interface,
+            " right_joint2_fixed:=",
+            right_joint2_fixed,
         ]
     )
 
@@ -140,12 +151,36 @@ def generate_launch_description():
         "ros2_controller",
         "real_controllers.yaml",
     )
+    # Pre-generate a copy with openarm_right_joint2 stripped from the controllers
+    # that claim it; a controller claiming a fixed joint crashes ros2_control_node
+    # at load time. Always built (cheap) and selected at runtime via PythonExpression
+    # since this file builds plain Node actions, not an OpaqueFunction.
+    with open(controllers_config) as _cf:
+        _real_controllers_no_joint2 = yaml.safe_load(_cf)
+    for _ctrl_name in (
+        "right_forward_position_controller",
+        "right_forward_velocity_controller",
+        "right_joint_trajectory_controller",
+        "joint_broad",
+    ):
+        _joints = _real_controllers_no_joint2.get(_ctrl_name, {}).get(
+            "ros__parameters", {}
+        ).get("joints", [])
+        if "openarm_right_joint2" in _joints:
+            _joints.remove("openarm_right_joint2")
+    _fd, controllers_config_no_joint2 = tempfile.mkstemp(suffix=".yaml")
+    with os.fdopen(_fd, "w") as _cf:
+        yaml.safe_dump(_real_controllers_no_joint2, _cf)
+    controllers_config_selected = PythonExpression([
+        "'", controllers_config_no_joint2, "' if '", right_joint2_fixed,
+        "' == 'true' else '", controllers_config, "'",
+    ])
     controller_manager_spawner = Node(
         package="controller_manager",
         executable="ros2_control_node",
         parameters=[
             {"robot_description": ParameterValue(robot_description_content, value_type=str)},
-            controllers_config,
+            controllers_config_selected,
         ],
     )
 
@@ -538,6 +573,7 @@ def generate_launch_description():
     ld.add_action(declare_use_fake_arm_hardware)
     ld.add_action(declare_left_can_interface)
     ld.add_action(declare_right_can_interface)
+    ld.add_action(declare_right_joint2_fixed)
     ld.add_action(declare_use_unitree_lidar)
     ld.add_action(declare_unitree_cloud_frame)
     ld.add_action(declare_unitree_imu_frame)

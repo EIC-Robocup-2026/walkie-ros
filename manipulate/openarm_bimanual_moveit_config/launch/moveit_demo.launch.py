@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import tempfile
 import yaml
 import xacro
 from ament_index_python.packages import get_package_share_directory
@@ -35,42 +36,73 @@ from moveit_configs_utils import MoveItConfigsBuilder
 _HW_MAPPINGS = {
     "mock_components": {
         "ros2_control": "mock",
-        "openarm_ros2_control": "true",
-        "openarm_use_fake_hardware": "true",
         "add_world_link": "true",
     },
     "gazebo": {
         "ros2_control": "gazebo",
-        "openarm_ros2_control": "false",
         "add_world_link": "false",
     },
     "isaac": {
         "ros2_control": "isaac",
-        "openarm_ros2_control": "false",
         "add_world_link": "true",
     },
     "real_robot": {
         "ros2_control": "real_robot",
-        "openarm_ros2_control": "true",
-        "openarm_use_fake_hardware": "false",
         "add_world_link": "false",
     },
 }
 
 
 def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc,
-                point_cloud_topic_lc, octomap_resolution_lc):
+                point_cloud_topic_lc, octomap_resolution_lc,
+                left_use_fake_arm_hardware_lc, right_use_fake_arm_hardware_lc,
+                right_joint2_fixed_lc):
     hardware_type = context.perform_substitution(hardware_type_lc)
     controllers_file = context.perform_substitution(controllers_file_lc)
     point_cloud_topic = context.perform_substitution(point_cloud_topic_lc)
     octomap_resolution = float(context.perform_substitution(octomap_resolution_lc))
+    left_use_fake_arm_hardware = context.perform_substitution(left_use_fake_arm_hardware_lc)
+    right_use_fake_arm_hardware = context.perform_substitution(right_use_fake_arm_hardware_lc)
+    right_joint2_fixed = context.perform_substitution(right_joint2_fixed_lc)
 
-    mappings = _HW_MAPPINGS.get(hardware_type, _HW_MAPPINGS["mock_components"])
+    mappings = dict(_HW_MAPPINGS.get(hardware_type, _HW_MAPPINGS["mock_components"]))
+    # Arm hardware (mock vs real OpenArm CAN) is selectable per side, independent
+    # of hardware_type, which only controls the base/lift/wheels backend.
+    mappings["left_use_fake_arm_hardware"] = left_use_fake_arm_hardware
+    mappings["right_use_fake_arm_hardware"] = right_use_fake_arm_hardware
+    mappings["right_joint2_fixed"] = right_joint2_fixed
 
     pkg_walkie = get_package_share_directory("walkie_description")
     pkg_moveit = get_package_share_directory("openarm_bimanual_moveit_config")
     pkg_ros_gz = get_package_share_directory("ros_gz_sim")
     pkg_robot_sim = get_package_share_directory("robot_simulation")
+
+    if hardware_type == "gazebo" and right_joint2_fixed == "true":
+        # sim_controllers.yaml is read directly by the gz_ros2_control Gazebo
+        # plugin (baked into the URDF as a file path), not through any Python
+        # launch mechanism, so the filtered copy has to be a real file whose
+        # path gets substituted into the xacro mappings below.
+        _sim_controllers_path = os.path.join(
+            pkg_walkie, "config", "ros2_controller", "sim_controllers.yaml"
+        )
+        with open(_sim_controllers_path) as _cf:
+            _sim_controllers_no_joint2 = yaml.safe_load(_cf)
+        for _ctrl_name in (
+            "arm_controller",
+            "right_arm_controller",
+            "right_forward_position_controller",
+            "right_forward_velocity_controller",
+            "right_joint_trajectory_controller",
+        ):
+            _joints = _sim_controllers_no_joint2.get(_ctrl_name, {}).get(
+                "ros__parameters", {}
+            ).get("joints", [])
+            if "openarm_right_joint2" in _joints:
+                _joints.remove("openarm_right_joint2")
+        _fd, _sim_controllers_filtered_path = tempfile.mkstemp(suffix=".yaml")
+        with os.fdopen(_fd, "w") as _cf:
+            yaml.safe_dump(_sim_controllers_no_joint2, _cf)
+        mappings["sim_controllers_yaml"] = _sim_controllers_filtered_path
 
     xacro_path = os.path.join(pkg_walkie, "robots", "gz_walkie.urdf.xacro")
     robot_description_xml = xacro.process_file(
@@ -84,6 +116,12 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc,
         .robot_description(
             file_path="config/openarm_bimanual.urdf.xacro",
             mappings=mappings,
+        )
+        # SRDF group_state defaults reference openarm_right_joint2; that line is
+        # gated by the same flag in the SRDF so it's skipped once the joint is fixed.
+        .robot_description_semantic(
+            file_path="config/openarm_bimanual.srdf",
+            mappings={"right_joint2_fixed": right_joint2_fixed},
         )
         .trajectory_execution(moveit_manage_controllers=False)
         .to_moveit_configs()
@@ -209,6 +247,24 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc,
     # non-Gazebo: mock_components / isaac / real_robot
     # Jazzy ros2_control_node reads robot_description from /robot_description topic.
     # RSP is returned first so it starts and publishes before control_node subscribes.
+    if right_joint2_fixed == "true":
+        # openarm_right_joint2 has no command/state interfaces once fixed; a
+        # controller claiming it would crash ros2_control_node at load time.
+        # ros2_control_node relies on --params-file to discover each
+        # dynamically-spawned controller's params by node name, so the filtered
+        # config has to stay a real multi-node YAML file, not a Python dict.
+        with open(controllers_file) as _cf:
+            controllers_params = yaml.safe_load(_cf)
+        _rjtc = controllers_params.get(
+            "right_joint_trajectory_controller", {}
+        ).get("ros__parameters", {})
+        if "openarm_right_joint2" in _rjtc.get("joints", []):
+            _rjtc["joints"].remove("openarm_right_joint2")
+        _rjtc.get("constraints", {}).pop("openarm_right_joint2", None)
+        _fd, controllers_file = tempfile.mkstemp(suffix=".yaml")
+        with os.fdopen(_fd, "w") as _cf:
+            yaml.safe_dump(controllers_params, _cf)
+
     control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
@@ -287,16 +343,39 @@ def generate_launch_description():
             default_value="0.05",
             description="Octomap voxel size in metres.",
         ),
+        DeclareLaunchArgument(
+            "left_use_fake_arm_hardware",
+            default_value="true",
+            description="Mock (true) or real OpenArm CAN hardware (false) for the "
+                        "left arm. Only takes effect when hardware_type=real_robot.",
+        ),
+        DeclareLaunchArgument(
+            "right_use_fake_arm_hardware",
+            default_value="true",
+            description="Mock (true) or real OpenArm CAN hardware (false) for the "
+                        "right arm. Only takes effect when hardware_type=real_robot.",
+        ),
+        DeclareLaunchArgument(
+            "right_joint2_fixed",
+            default_value="false",
+            description="Lock the right arm's joint2 as a fixed URDF joint at its "
+                        "nominal (zero) position, dropping it from MoveIt's IK/"
+                        "planning DOF for the right arm groups.",
+        ),
     ]
 
     hardware_type = LaunchConfiguration("hardware_type")
     controllers_file = LaunchConfiguration("controllers_file")
     point_cloud_topic = LaunchConfiguration("point_cloud_topic")
     octomap_resolution = LaunchConfiguration("octomap_resolution")
+    left_use_fake_arm_hardware = LaunchConfiguration("left_use_fake_arm_hardware")
+    right_use_fake_arm_hardware = LaunchConfiguration("right_use_fake_arm_hardware")
+    right_joint2_fixed = LaunchConfiguration("right_joint2_fixed")
 
     nodes_func = OpaqueFunction(
         function=_make_nodes,
-        args=[hardware_type, controllers_file, point_cloud_topic, octomap_resolution],
+        args=[hardware_type, controllers_file, point_cloud_topic, octomap_resolution,
+              left_use_fake_arm_hardware, right_use_fake_arm_hardware, right_joint2_fixed],
     )
 
     return LaunchDescription(declared_arguments + [nodes_func])

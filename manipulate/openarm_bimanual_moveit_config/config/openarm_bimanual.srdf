@@ -19,7 +19,12 @@
     This is a format for representing semantic information about the robot structure.
     A URDF file must exist for this robot as well, where the joints and the links that are referenced are defined
 -->
-<robot name="walkie_bot">
+<robot name="walkie_bot" xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <!-- right_joint2_fixed must match the value passed when building the URDF:
+         when true, openarm_right_joint2 is a fixed URDF joint (0 DOF) and must
+         not appear in group_state default values below. -->
+    <xacro:arg name="right_joint2_fixed" default="false"/>
+
     <!--VIRTUAL JOINT: connects world frame to walkie robot root-->
     <virtual_joint name="virtual_joint" type="fixed" parent_frame="world" child_link="base_footprint"/>
 
@@ -78,7 +83,7 @@
 
     <group_state name="home" group="right_arm">
         <joint name="openarm_right_joint1" value="-0.2618"/>
-        <joint name="openarm_right_joint2" value="0"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="0"/>
         <joint name="openarm_right_joint4" value="0.2618"/>
         <joint name="openarm_right_joint5" value="0"/>
@@ -95,7 +100,7 @@
         <joint name="openarm_left_joint6" value="0"/>
         <joint name="openarm_left_joint7" value="0"/>
         <joint name="openarm_right_joint1" value="-0.2618"/>
-        <joint name="openarm_right_joint2" value="0"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="0"/>
         <joint name="openarm_right_joint4" value="0.2618"/>
         <joint name="openarm_right_joint5" value="0"/>
@@ -115,7 +120,7 @@
 
     <group_state name="hands_up" group="right_arm">
         <joint name="openarm_right_joint1" value="-0.6458"/>
-        <joint name="openarm_right_joint2" value="0"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="0"/>
         <joint name="openarm_right_joint4" value="2.0769"/>
         <joint name="openarm_right_joint5" value="0"/>
@@ -132,7 +137,7 @@
         <joint name="openarm_left_joint6" value="0"/>
         <joint name="openarm_left_joint7" value="-0.2094"/>
         <joint name="openarm_right_joint1" value="-0.6458"/>
-        <joint name="openarm_right_joint2" value="0"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="0"/>
         <joint name="openarm_right_joint4" value="2.0769"/>
         <joint name="openarm_right_joint5" value="0"/>
@@ -152,7 +157,7 @@
 
     <group_state name="standby" group="right_arm">
         <joint name="openarm_right_joint1" value="-0.6458"/>
-        <joint name="openarm_right_joint2" value="0"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="0"/>
         <joint name="openarm_right_joint4" value="2.0769"/>
         <joint name="openarm_right_joint5" value="0"/>
@@ -169,7 +174,7 @@
         <joint name="openarm_left_joint6" value="0"/>
         <joint name="openarm_left_joint7" value="-1.5708"/>
         <joint name="openarm_right_joint1" value="-0.6458"/>
-        <joint name="openarm_right_joint2" value="0"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="0"/>
         <joint name="openarm_right_joint4" value="2.0769"/>
         <joint name="openarm_right_joint5" value="0"/>
@@ -194,7 +199,7 @@
     <group_state name="home" group="right_arm_lift">
         <joint name="lift_joint" value="0.7435"/>
         <joint name="openarm_right_joint1" value="-0.2618"/>
-        <joint name="openarm_right_joint2" value="0"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="0"/>
         <joint name="openarm_right_joint4" value="0.2618"/>
         <joint name="openarm_right_joint5" value="0"/>
@@ -212,7 +217,7 @@
         <joint name="openarm_left_joint6" value="0"/>
         <joint name="openarm_left_joint7" value="0"/>
         <joint name="openarm_right_joint1" value="-0.2618"/>
-        <joint name="openarm_right_joint2" value="0"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="0"/>
         <joint name="openarm_right_joint4" value="0.2618"/>
         <joint name="openarm_right_joint5" value="0"/>
@@ -234,7 +239,7 @@
     <group_state name="hands_up" group="right_arm_lift">
         <joint name="lift_joint" value="0.7435"/> <!-- Adjust this lift height as needed -->
         <joint name="openarm_right_joint1" value="-0.6458"/>
-        <joint name="openarm_right_joint2" value="0"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="0"/>
         <joint name="openarm_right_joint4" value="2.0769"/>
         <joint name="openarm_right_joint5" value="0"/>
@@ -252,7 +257,7 @@
         <joint name="openarm_left_joint6" value="0"/>
         <joint name="openarm_left_joint7" value="-0.2094"/>
         <joint name="openarm_right_joint1" value="-0.6458"/>
-        <joint name="openarm_right_joint2" value="0"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="0"/>
         <joint name="openarm_right_joint4" value="2.0769"/>
         <joint name="openarm_right_joint5" value="0"/>
@@ -274,7 +279,7 @@
     <group_state name="standby" group="right_arm_lift">
         <joint name="lift_joint" value="0.7435"/>
         <joint name="openarm_right_joint1" value="-0.6458"/>
-        <joint name="openarm_right_joint2" value="0"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="0"/>
         <joint name="openarm_right_joint4" value="2.0769"/>
         <joint name="openarm_right_joint5" value="0"/>
@@ -292,7 +297,7 @@
         <joint name="openarm_left_joint6" value="0"/>
         <joint name="openarm_left_joint7" value="-1.5708"/>
         <joint name="openarm_right_joint1" value="-0.6458"/>
-        <joint name="openarm_right_joint2" value="0"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="0"/>
         <joint name="openarm_right_joint4" value="2.0769"/>
         <joint name="openarm_right_joint5" value="0"/>
