@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import os
+import tempfile
 
+import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
@@ -15,7 +17,7 @@ from launch.launch_description_sources import (
     AnyLaunchDescriptionSource,
     PythonLaunchDescriptionSource,
 )
-from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
@@ -37,9 +39,16 @@ def generate_launch_description():
     robot_model = LaunchConfiguration("robot_model", default=default_robot)
     ros2_control = LaunchConfiguration("ros2_control", default="topic_base")
     use_zed = LaunchConfiguration("use_zed", default="true")
+    right_joint2_fixed = LaunchConfiguration("right_joint2_fixed", default="false")
 
     declare_use_zed = DeclareLaunchArgument(
         "use_zed", default_value="true", description="Whether to use ZED camera"
+    )
+    declare_right_joint2_fixed = DeclareLaunchArgument(
+        "right_joint2_fixed",
+        default_value="false",
+        description="Lock the right arm joint2 as a fixed URDF joint at its nominal "
+                    "(zero) position, dropping it from MoveIt's IK/planning DOF",
     )
 
     robot_description_content = Command(
@@ -50,6 +59,8 @@ def generate_launch_description():
             ros2_control,
             " use_zed:=",
             use_zed,
+            " right_joint2_fixed:=",
+            right_joint2_fixed,
         ]
     )
 
@@ -118,13 +129,38 @@ def generate_launch_description():
         "ros2_controller",
         "isaac_controllers.yaml",
     )
+    # Pre-generate a copy with openarm_right_joint2 stripped from the controllers
+    # that claim it; a controller claiming a fixed joint crashes ros2_control_node
+    # at load time. Always built (cheap) and selected at runtime via PythonExpression
+    # since this file builds plain Node actions.
+    with open(controllers_config) as _cf:
+        _isaac_controllers_no_joint2 = yaml.safe_load(_cf)
+    for _ctrl_name in (
+        "arm_controller",
+        "right_arm_controller",
+        "right_forward_position_controller",
+        "right_forward_velocity_controller",
+        "right_joint_trajectory_controller",
+    ):
+        _joints = _isaac_controllers_no_joint2.get(_ctrl_name, {}).get(
+            "ros__parameters", {}
+        ).get("joints", [])
+        if "openarm_right_joint2" in _joints:
+            _joints.remove("openarm_right_joint2")
+    _fd, controllers_config_no_joint2 = tempfile.mkstemp(suffix=".yaml")
+    with os.fdopen(_fd, "w") as _cf:
+        yaml.safe_dump(_isaac_controllers_no_joint2, _cf)
+    controllers_config_selected = PythonExpression([
+        "'", controllers_config_no_joint2, "' if '", right_joint2_fixed,
+        "' == 'true' else '", controllers_config, "'",
+    ])
     controller_manager_spawner = Node(
         package="controller_manager",
         executable="ros2_control_node",
         parameters=[
             {"robot_description", robot_description_content},
             {"use_sim_time": use_sim_time},
-            controllers_config,
+            controllers_config_selected,
         ],
     )
 
@@ -249,6 +285,7 @@ def generate_launch_description():
     ld = LaunchDescription()
     # Add launch arguments
     ld.add_action(declare_use_zed)
+    ld.add_action(declare_right_joint2_fixed)
     ld.add_action(robot_state_publisher_cmd)
 
     ld.add_action(twist_mux)

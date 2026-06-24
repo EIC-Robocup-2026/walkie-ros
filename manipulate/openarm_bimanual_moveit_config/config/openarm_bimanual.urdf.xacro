@@ -24,6 +24,7 @@
     <xacro:arg name="ros2_control"             default="mock"/>
     <xacro:arg name="left_use_fake_arm_hardware" default="true"/>
     <xacro:arg name="right_use_fake_arm_hardware" default="true"/>
+    <xacro:arg name="right_joint2_fixed"       default="false"/>
     <xacro:arg name="add_world_link"           default="true"/>
     <xacro:arg name="dual_lidar"               default="True"/>
 
