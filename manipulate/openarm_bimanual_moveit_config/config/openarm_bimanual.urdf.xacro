@@ -22,8 +22,8 @@
 
     <!-- Override gz_walkie defaults for MoveIt standalone demo -->
     <xacro:arg name="ros2_control"             default="mock"/>
-    <xacro:arg name="openarm_ros2_control"     default="true"/>
-    <xacro:arg name="openarm_use_fake_hardware" default="true"/>
+    <xacro:arg name="left_use_fake_arm_hardware" default="true"/>
+    <xacro:arg name="right_use_fake_arm_hardware" default="true"/>
     <xacro:arg name="add_world_link"           default="true"/>
     <xacro:arg name="dual_lidar"               default="True"/>
 

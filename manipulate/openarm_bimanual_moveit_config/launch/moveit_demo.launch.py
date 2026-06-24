@@ -35,37 +35,38 @@ from moveit_configs_utils import MoveItConfigsBuilder
 _HW_MAPPINGS = {
     "mock_components": {
         "ros2_control": "mock",
-        "openarm_ros2_control": "true",
-        "openarm_use_fake_hardware": "true",
         "add_world_link": "true",
     },
     "gazebo": {
         "ros2_control": "gazebo",
-        "openarm_ros2_control": "false",
         "add_world_link": "false",
     },
     "isaac": {
         "ros2_control": "isaac",
-        "openarm_ros2_control": "false",
         "add_world_link": "true",
     },
     "real_robot": {
         "ros2_control": "real_robot",
-        "openarm_ros2_control": "true",
-        "openarm_use_fake_hardware": "false",
         "add_world_link": "false",
     },
 }
 
 
 def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc,
-                point_cloud_topic_lc, octomap_resolution_lc):
+                point_cloud_topic_lc, octomap_resolution_lc,
+                left_use_fake_arm_hardware_lc, right_use_fake_arm_hardware_lc):
     hardware_type = context.perform_substitution(hardware_type_lc)
     controllers_file = context.perform_substitution(controllers_file_lc)
     point_cloud_topic = context.perform_substitution(point_cloud_topic_lc)
     octomap_resolution = float(context.perform_substitution(octomap_resolution_lc))
+    left_use_fake_arm_hardware = context.perform_substitution(left_use_fake_arm_hardware_lc)
+    right_use_fake_arm_hardware = context.perform_substitution(right_use_fake_arm_hardware_lc)
 
-    mappings = _HW_MAPPINGS.get(hardware_type, _HW_MAPPINGS["mock_components"])
+    mappings = dict(_HW_MAPPINGS.get(hardware_type, _HW_MAPPINGS["mock_components"]))
+    # Arm hardware (mock vs real OpenArm CAN) is selectable per side, independent
+    # of hardware_type, which only controls the base/lift/wheels backend.
+    mappings["left_use_fake_arm_hardware"] = left_use_fake_arm_hardware
+    mappings["right_use_fake_arm_hardware"] = right_use_fake_arm_hardware
 
     pkg_walkie = get_package_share_directory("walkie_description")
     pkg_moveit = get_package_share_directory("openarm_bimanual_moveit_config")
@@ -287,16 +288,31 @@ def generate_launch_description():
             default_value="0.05",
             description="Octomap voxel size in metres.",
         ),
+        DeclareLaunchArgument(
+            "left_use_fake_arm_hardware",
+            default_value="true",
+            description="Mock (true) or real OpenArm CAN hardware (false) for the "
+                        "left arm. Only takes effect when hardware_type=real_robot.",
+        ),
+        DeclareLaunchArgument(
+            "right_use_fake_arm_hardware",
+            default_value="true",
+            description="Mock (true) or real OpenArm CAN hardware (false) for the "
+                        "right arm. Only takes effect when hardware_type=real_robot.",
+        ),
     ]
 
     hardware_type = LaunchConfiguration("hardware_type")
     controllers_file = LaunchConfiguration("controllers_file")
     point_cloud_topic = LaunchConfiguration("point_cloud_topic")
     octomap_resolution = LaunchConfiguration("octomap_resolution")
+    left_use_fake_arm_hardware = LaunchConfiguration("left_use_fake_arm_hardware")
+    right_use_fake_arm_hardware = LaunchConfiguration("right_use_fake_arm_hardware")
 
     nodes_func = OpaqueFunction(
         function=_make_nodes,
-        args=[hardware_type, controllers_file, point_cloud_topic, octomap_resolution],
+        args=[hardware_type, controllers_file, point_cloud_topic, octomap_resolution,
+              left_use_fake_arm_hardware, right_use_fake_arm_hardware],
     )
 
     return LaunchDescription(declared_arguments + [nodes_func])
