@@ -306,6 +306,12 @@ def generate_launch_description():
         output='screen',
         condition=IfCondition(use_arm),
     )
+    # right_joint_trajectory_controller drops openarm_right_joint2 once it's a
+    # fixed URDF joint (see controllers_config_selected above), so the home-pose
+    # command's joint list must match whichever controller config is active.
+    arm_home_right_condition = IfCondition(PythonExpression(
+        ["'", use_arm, "' == 'true' and '", right_joint2_fixed, "' != 'true'"]
+    ))
     arm_home_right = ExecuteProcess(
         cmd=[
             'ros2', 'topic', 'pub', '--times', '1',
@@ -317,13 +323,29 @@ def generate_launch_description():
             'time_from_start: {sec: 5, nanosec: 0}}]}',
         ],
         output='screen',
-        condition=IfCondition(use_arm),
+        condition=arm_home_right_condition,
+    )
+    arm_home_right_joint2_fixed_condition = IfCondition(PythonExpression(
+        ["'", use_arm, "' == 'true' and '", right_joint2_fixed, "' == 'true'"]
+    ))
+    arm_home_right_joint2_fixed = ExecuteProcess(
+        cmd=[
+            'ros2', 'topic', 'pub', '--times', '1',
+            '/right_joint_trajectory_controller/joint_trajectory',
+            'trajectory_msgs/msg/JointTrajectory',
+            '{joint_names: [openarm_right_joint1, openarm_right_joint3, '
+            'openarm_right_joint4, openarm_right_joint5, openarm_right_joint6, openarm_right_joint7], '
+            'points: [{positions: [-0.2618, 0.0, 0.2618, 0.0, 0.0, 0.0], '
+            'time_from_start: {sec: 5, nanosec: 0}}]}',
+        ],
+        output='screen',
+        condition=arm_home_right_joint2_fixed_condition,
     )
 
     delayed_arm_home = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=arm_trajectory_spawner,
-            on_exit=[arm_home_left, arm_home_right],
+            on_exit=[arm_home_left, arm_home_right, arm_home_right_joint2_fixed],
         )
     )
 
