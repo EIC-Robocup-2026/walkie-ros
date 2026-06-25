@@ -410,6 +410,44 @@ def generate_launch_description():
         parameters=[
             {"pointcloud.enable": True},
             {"camera_name": "bottom"},
+            # Visual preset: 3 = High Accuracy. Raises the depth ASIC's
+            # stereo-confidence thresholds so low-confidence pixels (the
+            # random top-edge-of-FOV blob, flying pixels at depth
+            # discontinuities) are never emitted as depth in the first place.
+            # Trades density for trust: sparser cloud, but the points that
+            # remain are reliable. This is the D415's only real "drop
+            # low-confidence points" knob (no per-pixel confidence channel).
+            {"depth_module.visual_preset": 3},
+            # --- Depth post-processing filters (applied before the cloud is
+            # built, in librealsense's recommended order). These reduce the
+            # raw RealSense pointcloud noise: flying pixels, surface fuzz and
+            # frame-to-frame jitter. Tune the *_filter params to taste.
+            # Threshold: clamp depth to a valid range -> removes flying/edge
+            # points that land at a wrong (usually far) distance. max_distance
+            # is the farthest this bottom camera actually needs to see -- TUNE.
+            {"threshold_filter.enable": True},
+            {"threshold_filter.min_distance": 0.3},
+            {"threshold_filter.max_distance": 3.0},
+            # Decimation: 2x2 downsample -> fewer points, fills small holes.
+            {"decimation_filter.enable": True},
+            {"decimation_filter.filter_magnitude": 8},
+            # NOTE: do NOT enable disparity_filter. It converts depth -> a
+            # disparity frame, which the pointcloud block cannot deproject, so
+            # NO pointcloud is published at all (raw topic goes silent). The
+            # reverse disparity->depth step needed before the cloud stage is
+            # not inserted by this realsense-ros version. Spatial/temporal
+            # below still run in depth space without it.
+            # Spatial: edge-preserving smoothing of flat surfaces.
+            {"spatial_filter.enable": True},
+            {"spatial_filter.filter_magnitude": 4},
+            {"spatial_filter.filter_smooth_alpha": 0.3},
+            {"spatial_filter.filter_smooth_delta": 40},
+            {"spatial_filter.holes_fill": 0},
+            # Temporal: averages across frames -> kills jitter/flicker.
+            {"temporal_filter.enable": True},
+            {"temporal_filter.filter_smooth_alpha": 0.15},
+            {"temporal_filter.filter_smooth_delta": 40},
+            {"temporal_filter.holes_fill": 0},
         ],
     )
 
@@ -593,8 +631,8 @@ def generate_launch_description():
     ld.add_action(unitree_lidar_node)
     # ld.add_action(unitree_pointcloud_filter)
     ld.add_action(unitree_self_filter)
-    # ld.add_action(realsense_camera_node)
-    # ld.add_action(realsense_self_filter)
+    ld.add_action(realsense_camera_node)
+    ld.add_action(realsense_self_filter)
     ld.add_action(zed_camera_launch)
     ld.add_action(zed_self_filter)
     ld.add_action(rosbridge_launch)
