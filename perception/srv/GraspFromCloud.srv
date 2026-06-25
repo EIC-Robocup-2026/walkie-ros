@@ -6,6 +6,7 @@
 sensor_msgs/PointCloud2 cloud
 float32 score_threshold         # minimum grasp quality score (0 = no filter)
 int32 max_grasps                # cap on returned poses (0 = up to 20)
+string planning_frame           # output frame for poses_base (empty = node's planning_frame param, default base_footprint)
 
 # ── Optional selection preferences (soft re-rank only) ──
 # GraspNet's candidates are re-ordered by a weighted score; nothing is rejected.

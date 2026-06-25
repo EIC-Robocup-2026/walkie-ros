@@ -138,8 +138,8 @@ class GraspNode(Node):
             ("cache_size",   10),
             ("min_points",   200),
             ("debug_cloud",  True),
-            ("planning_frame",  "base_footprint"),
-            ("approach_dist_m", 0.10),
+            ("planning_frame",  "map"),
+            ("approach_dist_m", 0.15),
             # ── shared outlier removal ──
             ("outlier_removal",      True),
             ("outlier_nb_neighbors", 20),
@@ -307,6 +307,15 @@ class GraspNode(Node):
         if state == NodeState.ACTIVE:
             return False, "Another inference is running — try again shortly"
         return True, ""
+
+    def _resolve_planning_frame(self, request) -> str:
+        """Output frame for the response poses: a non-empty request
+        `planning_frame` overrides the node's `planning_frame` parameter
+        (which itself defaults to base_footprint)."""
+        req_frame = (getattr(request, "planning_frame", "") or "").strip()
+        if req_frame:
+            return req_frame
+        return self.get_parameter("planning_frame").value
 
     # ── GPU / model helpers ──────────────────────────────────────────
 
@@ -682,8 +691,9 @@ class GraspNode(Node):
         # Camera-frame poses are intermediate only (kept local, not returned);
         # downstream consumers use poses_base in the planning frame.
         cam_poses = self._build_camera_poses(gg, response, frame_id, stamp)
-        planning_frame = self._transform_to_planning_frame(
-            response, cam_poses, pts, frame_id, stamp)
+        planning_frame = self._resolve_planning_frame(request)
+        self._transform_to_planning_frame(
+            response, cam_poses, pts, frame_id, stamp, planning_frame)
         self._publish_mask_markers(gg, frame_id, stamp, response, planning_frame)
 
         total_ms = (time.perf_counter() - t_start) * 1e3
@@ -1045,6 +1055,30 @@ class GraspNode(Node):
 
     # ── mask: grasp selection + planning-frame transform ─────────────
 
+    def _drop_invalid_rotations(self, gg: GraspGroup) -> GraspGroup:
+        """Drop grasps whose rotation matrix is not a proper rotation.
+
+        GraspNet occasionally emits degenerate / non-orthonormal matrices
+        (e.g. a near-zero row → singular, det ≤ 0). scipy ≥1.11 rejects these
+        in Rotation.from_matrix, which otherwise crashes the service. Filter
+        them out before any pose construction or visualisation so every
+        downstream consumer sees only valid grasps.
+        """
+        if len(gg) == 0:
+            return gg
+        mats = gg.rotation_matrices  # (N, 3, 3)
+        finite = np.isfinite(mats).all(axis=(1, 2))
+        dets = np.linalg.det(mats)
+        prod = np.matmul(mats, np.transpose(mats, (0, 2, 1)))
+        ortho = np.all(np.abs(prod - np.eye(3)) < 1e-3, axis=(1, 2))
+        valid = finite & ortho & (dets > 0.0)
+        n_bad = int((~valid).sum())
+        if n_bad:
+            self.get_logger().warn(
+                f"dropped {n_bad}/{len(gg)} grasp(s) with invalid "
+                f"rotation matrices")
+        return gg[valid]
+
     def _select_grasps_trim(
         self, raw_grasps, request: GraspFromMask.Request
     ) -> GraspGroup:
@@ -1054,6 +1088,7 @@ class GraspNode(Node):
 
         if request.score_threshold > 0:
             gg = gg[gg.scores >= request.score_threshold]
+        gg = self._drop_invalid_rotations(gg)
         if len(gg) == 0:
             return gg
 
@@ -1089,10 +1124,9 @@ class GraspNode(Node):
 
     def _transform_to_planning_frame(
         self, response: GraspFromMask.Response, cam_poses: PoseArray,
-        pts: np.ndarray, frame_id: str, stamp,
+        pts: np.ndarray, frame_id: str, stamp, planning_frame: str,
     ) -> str:
         """Transform grasp poses + object bbox into the planning frame."""
-        planning_frame = self.get_parameter("planning_frame").value
         response.planning_frame = planning_frame
         response.poses_base.header.frame_id          = planning_frame
         response.poses_base.header.stamp             = stamp
@@ -1324,6 +1358,7 @@ class GraspNode(Node):
 
         if request.score_threshold > 0:
             gg = gg[gg.scores >= request.score_threshold]
+        gg = self._drop_invalid_rotations(gg)
         if len(gg) == 0:
             return gg
 
@@ -1336,7 +1371,7 @@ class GraspNode(Node):
     ) -> Tuple[str, GraspGroup]:
         """Transform the candidate pool into the planning frame, re-rank by the
         request's preferences, trim to max_grasps, and fill the response."""
-        planning_frame = self.get_parameter("planning_frame").value
+        planning_frame = self._resolve_planning_frame(request)
         response.planning_frame = planning_frame
         response.poses_base.header.frame_id          = planning_frame
         response.poses_base.header.stamp             = stamp
@@ -1598,7 +1633,7 @@ class GraspNode(Node):
                 f"(OBB containment) — check the object cloud / crop margin")
 
         # 6. Transform candidates to the planning frame -----------------
-        planning_frame = self.get_parameter("planning_frame").value
+        planning_frame = self._resolve_planning_frame(request)
         RT_po = self._lookup_RT(planning_frame, opt_frame, stamp)
         response.planning_frame = planning_frame
         response.poses_base.header.frame_id          = planning_frame

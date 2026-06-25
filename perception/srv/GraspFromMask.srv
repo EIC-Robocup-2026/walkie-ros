@@ -5,6 +5,7 @@ vision_msgs/BoundingBox2D bbox  # fallback region used when the mask is empty
 int32 num_frames
 float32 score_threshold
 int32 max_grasps
+string planning_frame           # output frame for poses_base (empty = node's planning_frame param, default base_footprint)
 ---
 # RESPONSE
 # Grasp pose(s) in the planning frame: position + orientation (grasp angle).

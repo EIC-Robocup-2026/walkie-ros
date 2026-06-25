@@ -12,6 +12,7 @@ sensor_msgs/PointCloud2 object_cloud   # segmented mapped object cloud (header.f
 float32 crop_margin_m                  # live-view crop margin around the object box (<=0 → 0.12 m)
 float32 score_threshold                # GraspNet score floor (0 = no filter)
 int32 max_grasps                       # cap on returned poses (0 = up to 20)
+string planning_frame                  # output frame for poses_base (empty = node's planning_frame param, default base_footprint)
 
 # ── Soft selection preferences (planning frame). All-zero weights → the node
 # defaults to ranking by GraspNet quality + antipodal quality. ──
