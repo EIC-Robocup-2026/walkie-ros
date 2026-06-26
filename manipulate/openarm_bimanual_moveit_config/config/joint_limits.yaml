@@ -24,104 +24,145 @@ default_acceleration_scaling_factor: 0.3
 
 # Specific joint properties can be changed with the keys [max_position, min_position, max_velocity, max_acceleration]
 # Joint limits can be turned off with [has_velocity_limits, has_acceleration_limits]
+# min_position / max_position mirror the URDF (description package) limits, EXCEPT
+# joint4 and joint7 (both arms) which are widened by +/-0.02 rad. MoveIt 2.12 removed
+# start_state_max_bounds_error, so CheckStartStateBounds enforces these bounds
+# strictly with no tolerance; the buffer on joint4/joint7 lets a start state sitting
+# slightly past a hard stop (homing / encoder offset) still pass instead of making
+# the planner reject the request. joint1 / joint2 differ between arms because the
+# URDF applies a per-arm offset (and reflection) to those two joints.
 joint_limits:
   openarm_left_finger_joint1:
+    min_position: 0.0
+    max_position: 0.044
     has_velocity_limits: true
     max_velocity: 10.0
     has_acceleration_limits: true
     max_acceleration: 1.0
     max_deceleration: -1.5
   openarm_left_joint1:
+    min_position: -3.490659
+    max_position: 1.396263
     has_velocity_limits: true
     max_velocity: 16.754666
     has_acceleration_limits: true
     max_acceleration: 1.0
     max_deceleration: -1.5
   openarm_left_joint2:
+    min_position: -3.316125
+    max_position: 0.174533
     has_velocity_limits: true
     max_velocity: 16.754666
     has_acceleration_limits: true
     max_acceleration: 1.0
     max_deceleration: -1.5
   openarm_left_joint3:
+    min_position: -1.570796
+    max_position: 1.570796
     has_velocity_limits: true
     max_velocity: 5.445426
     has_acceleration_limits: true
     max_acceleration: 1.0
     max_deceleration: -1.5
   openarm_left_joint4:
+    min_position: -0.04      # URDF -0.02 widened by 0.02 rad buffer
+    max_position: 2.463461   # URDF 2.443461 widened by 0.02 rad buffer
     has_velocity_limits: true
     max_velocity: 5.445426
     has_acceleration_limits: true
     max_acceleration: 1.0
     max_deceleration: -1.5
   openarm_left_joint5:
+    min_position: -1.570796
+    max_position: 1.570796
     has_velocity_limits: true
     max_velocity: 20.943946
     has_acceleration_limits: true
     max_acceleration: 1.0
     max_deceleration: -1.5
   openarm_left_joint6:
+    min_position: -0.785398
+    max_position: 0.785398
     has_velocity_limits: true
     max_velocity: 20.943946
     has_acceleration_limits: true
     max_acceleration: 1.0
     max_deceleration: -1.5
   openarm_left_joint7:
+    min_position: -1.590796   # URDF -1.570796 widened by 0.02 rad buffer
+    max_position: 1.590796    # URDF 1.570796 widened by 0.02 rad buffer
     has_velocity_limits: true
     max_velocity: 20.943946
     has_acceleration_limits: true
     max_acceleration: 1.0
     max_deceleration: -1.5
   openarm_right_finger_joint1:
+    min_position: 0.0
+    max_position: 0.044
     has_velocity_limits: true
     max_velocity: 10.0
     has_acceleration_limits: true
     max_acceleration: 1.0
     max_deceleration: -1.5
   openarm_right_joint1:
+    min_position: -1.396263
+    max_position: 3.490659
     has_velocity_limits: true
     max_velocity: 16.754666
     has_acceleration_limits: true
     max_acceleration: 1.0
     max_deceleration: -1.5
   openarm_right_joint2:
+    min_position: -0.174533
+    max_position: 3.316125
     has_velocity_limits: true
     max_velocity: 16.754666
     has_acceleration_limits: true
     max_acceleration: 1.0
     max_deceleration: -1.5
   openarm_right_joint3:
+    min_position: -1.570796
+    max_position: 1.570796
     has_velocity_limits: true
     max_velocity: 5.445426
     has_acceleration_limits: true
     max_acceleration: 1.0
     max_deceleration: -1.5
   openarm_right_joint4:
+    min_position: -0.04      # URDF -0.02 widened by 0.02 rad buffer
+    max_position: 2.463461   # URDF 2.443461 widened by 0.02 rad buffer
     has_velocity_limits: true
     max_velocity: 5.445426
     has_acceleration_limits: true
     max_acceleration: 1.0
     max_deceleration: -1.5
   openarm_right_joint5:
+    min_position: -1.570796
+    max_position: 1.570796
     has_velocity_limits: true
     max_velocity: 20.943946
     has_acceleration_limits: true
     max_acceleration: 1.0
     max_deceleration: -1.5
   openarm_right_joint6:
+    min_position: -0.785398
+    max_position: 0.785398
     has_velocity_limits: true
     max_velocity: 20.943946
     has_acceleration_limits: true
     max_acceleration: 1.0
     max_deceleration: -1.5
   openarm_right_joint7:
+    min_position: -1.590796   # URDF -1.570796 widened by 0.02 rad buffer
+    max_position: 1.590796    # URDF 1.570796 widened by 0.02 rad buffer
     has_velocity_limits: true
     max_velocity: 20.943946
     has_acceleration_limits: true
     max_acceleration: 1.0
     max_deceleration: -1.5
   lift_joint:
+    min_position: 0.0
+    max_position: 0.7435
     has_velocity_limits: true
     max_velocity: 0.03   # 3 cm/s — matches hardware_max_cm_s in lift_homing_node.py
     has_acceleration_limits: true
