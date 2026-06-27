@@ -114,7 +114,7 @@ public:
         // to converge. Both are ROS params so you can switch/retune live.
         std::string planner_id = node_->declare_parameter<std::string>("planner_id", "RRTConnect");
         double arm_planning_time = node_->declare_parameter<double>("arm_planning_time", 5.0);
-        plan_only_ = node_->declare_parameter<bool>("plan_only", false);
+        node_->declare_parameter<bool>("plan_only", false);
         node_->declare_parameter<std::string>("execute_plan_group", "");
 
         // Grippers keep the default planner (RRTstar isn't configured for the
@@ -1538,7 +1538,7 @@ public:
         }
 
         if (plan_success) {
-            if (plan_only_) {
+            if (node_->get_parameter("plan_only").as_bool()) {
                 stored_plans_[goal->group_name] = plan;
                 result->success = true; result->status = "Plan Only";
                 goal_handle->succeed(result);
@@ -1683,7 +1683,7 @@ public:
             goal_handle->canceled(result); return;
         }
 
-        if (plan_success && plan_only_) {
+        if (plan_success && node_->get_parameter("plan_only").as_bool()) {
             if (using_cartesian_result) {
                 MoveGroupInterface::Plan stored;
                 stored.trajectory = cartesian_traj;
@@ -1803,7 +1803,7 @@ public:
         }
 
         if (plan_success) {
-            if (plan_only_) {
+            if (node_->get_parameter("plan_only").as_bool()) {
                 stored_plans_[goal->group_name] = plan;
                 result->success = true; result->status = "Plan Only";
                 goal_handle->succeed(result);
@@ -2003,7 +2003,7 @@ public:
         }
 
         if (plan_success) {
-            if (plan_only_) {
+            if (node_->get_parameter("plan_only").as_bool()) {
                 stored_plans_[goal->group_name] = plan;
                 result->success = true;
                 goal_handle->succeed(result);
@@ -2094,7 +2094,7 @@ public:
         }
 
         if (plan_success) {
-            if (plan_only_) {
+            if (node_->get_parameter("plan_only").as_bool()) {
                 stored_plans_[goal->group_name] = plan;
                 result->success = true; result->status = "Plan Only";
                 goal_handle->succeed(result);
@@ -2206,7 +2206,6 @@ private:
     // Finger collision padding: inflate the finger links' collision geometry by
     // finger_padding_ (m) so planning keeps clearance from the (octomap-sensed)
     // table. Applied once via a deferred one-shot timer after move_group is up.
-    bool plan_only_;
     std::map<std::string, MoveGroupInterface::Plan> stored_plans_;
 
     bool finger_padding_enable_;
