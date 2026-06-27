@@ -114,6 +114,8 @@ public:
         // to converge. Both are ROS params so you can switch/retune live.
         std::string planner_id = node_->declare_parameter<std::string>("planner_id", "RRTConnect");
         double arm_planning_time = node_->declare_parameter<double>("arm_planning_time", 5.0);
+        plan_only_ = node_->declare_parameter<bool>("plan_only", false);
+        node_->declare_parameter<std::string>("execute_plan_group", "");
 
         // Grippers keep the default planner (RRTstar isn't configured for the
         // gripper groups) and the short 1 s budget.
@@ -250,6 +252,12 @@ public:
         clear_collision_objects_service_ = node_->create_service<std_srvs::srv::Trigger>(
             "clear_collision_objects",
             std::bind(&Commander::handle_clear_collision_objects, this, _1, _2),
+            rclcpp::ServicesQoS(),
+            callback_group_);
+
+        execute_stored_plan_service_ = node_->create_service<std_srvs::srv::Trigger>(
+            "execute_stored_plan",
+            std::bind(&Commander::handle_execute_stored_plan, this, _1, _2),
             rclcpp::ServicesQoS(),
             callback_group_);
 
@@ -618,6 +626,50 @@ public:
         }
         planning_scene_->applyPlanningScene(ps);
         pending_grasp_removal_.clear();
+    }
+
+    // ========== ExecuteStoredPlan Service ==========
+    // Execute the plan stored by the last plan_only action for a given group.
+    // Set 'execute_plan_group' param to the target group before calling.
+    // The stored plan is consumed (removed) after successful execution.
+    void handle_execute_stored_plan(
+        const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+        std::shared_ptr<std_srvs::srv::Trigger::Response> response)
+    {
+        (void)request;
+        const std::string group_name =
+            node_->get_parameter("execute_plan_group").as_string();
+        if (group_name.empty()) {
+            response->success = false;
+            response->message = "Set 'execute_plan_group' param to the target group name first";
+            return;
+        }
+        auto it = stored_plans_.find(group_name);
+        if (it == stored_plans_.end()) {
+            response->success = false;
+            response->message = "No stored plan for group '" + group_name +
+                                 "' — send a goal with plan_only=true first";
+            return;
+        }
+        auto group = getGroup(group_name);
+        if (!group) {
+            response->success = false;
+            response->message = "Invalid group: " + group_name;
+            return;
+        }
+        auto err = group->execute(it->second);
+        if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+            flushPendingGraspRemovals();
+            stored_plans_.erase(it);
+            response->success = true;
+            response->message = "Executed stored plan for " + group_name;
+            RCLCPP_INFO(node_->get_logger(), "Executed stored plan for %s", group_name.c_str());
+        } else {
+            response->success = false;
+            response->message = "Execution failed for " + group_name +
+                                 " (plan still stored — call again to retry)";
+            RCLCPP_ERROR(node_->get_logger(), "Execute stored plan failed for %s", group_name.c_str());
+        }
     }
 
     // ========== ClearCollisionObjects Service ==========
@@ -1486,14 +1538,20 @@ public:
         }
 
         if (plan_success) {
-            auto err = group->execute(plan);
-            if (err == moveit::core::MoveItErrorCode::SUCCESS) {
-                flushPendingGraspRemovals();   // motion succeeded -> delete released grasp box(es)
-                result->success = true; result->status = "Success";
+            if (plan_only_) {
+                stored_plans_[goal->group_name] = plan;
+                result->success = true; result->status = "Plan Only";
                 goal_handle->succeed(result);
             } else {
-                result->success = false; result->status = "Execution Failed";
-                goal_handle->abort(result);
+                auto err = group->execute(plan);
+                if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+                    flushPendingGraspRemovals();
+                    result->success = true; result->status = "Success";
+                    goal_handle->succeed(result);
+                } else {
+                    result->success = false; result->status = "Execution Failed";
+                    goal_handle->abort(result);
+                }
             }
         } else {
             result->success = false; result->status = "Planning Failed";
@@ -1625,6 +1683,19 @@ public:
             goal_handle->canceled(result); return;
         }
 
+        if (plan_success && plan_only_) {
+            if (using_cartesian_result) {
+                MoveGroupInterface::Plan stored;
+                stored.trajectory = cartesian_traj;
+                stored_plans_[goal->group_name] = stored;
+            } else {
+                stored_plans_[goal->group_name] = plan;
+            }
+            result->success = true; result->status = "Plan Only";
+            goal_handle->succeed(result);
+            return;
+        }
+
         moveit::core::MoveItErrorCode err = moveit::core::MoveItErrorCode::FAILURE;
         if (plan_success) {
             err = using_cartesian_result ? group->execute(cartesian_traj) : group->execute(plan);
@@ -1732,14 +1803,20 @@ public:
         }
 
         if (plan_success) {
-            auto err = group->execute(plan);
-            if (err == moveit::core::MoveItErrorCode::SUCCESS) {
-                flushPendingGraspRemovals();   // motion succeeded -> delete released grasp box(es)
-                result->success = true; result->status = "Success";
+            if (plan_only_) {
+                stored_plans_[goal->group_name] = plan;
+                result->success = true; result->status = "Plan Only";
                 goal_handle->succeed(result);
             } else {
-                result->success = false; result->status = "Execution Failed";
-                goal_handle->abort(result);
+                auto err = group->execute(plan);
+                if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+                    flushPendingGraspRemovals();
+                    result->success = true; result->status = "Success";
+                    goal_handle->succeed(result);
+                } else {
+                    result->success = false; result->status = "Execution Failed";
+                    goal_handle->abort(result);
+                }
             }
         } else {
             result->success = false; result->status = "Planning Failed";
@@ -1926,14 +2003,20 @@ public:
         }
 
         if (plan_success) {
-            auto err = group->execute(plan);
-            if (err == moveit::core::MoveItErrorCode::SUCCESS) {
-                flushPendingGraspRemovals();   // motion succeeded -> delete released grasp box(es)
+            if (plan_only_) {
+                stored_plans_[goal->group_name] = plan;
                 result->success = true;
                 goal_handle->succeed(result);
             } else {
-                result->success = false;
-                goal_handle->abort(result);
+                auto err = group->execute(plan);
+                if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+                    flushPendingGraspRemovals();
+                    result->success = true;
+                    goal_handle->succeed(result);
+                } else {
+                    result->success = false;
+                    goal_handle->abort(result);
+                }
             }
         } else {
             RCLCPP_ERROR(node_->get_logger(), "Failed to plan path to '%s' for %s",
@@ -2011,16 +2094,22 @@ public:
         }
 
         if (plan_success) {
-            auto err = group->execute(plan);
-            if (err == moveit::core::MoveItErrorCode::SUCCESS) {
-                flushPendingGraspRemovals();   // motion succeeded -> delete released grasp box(es)
-                result->success = true; result->status = "Success";
+            if (plan_only_) {
+                stored_plans_[goal->group_name] = plan;
+                result->success = true; result->status = "Plan Only";
                 goal_handle->succeed(result);
-                RCLCPP_INFO(node_->get_logger(), "SetJointPosition succeeded for %s",
-                            goal->group_name.c_str());
             } else {
-                result->success = false; result->status = "Execution Failed";
-                goal_handle->abort(result);
+                auto err = group->execute(plan);
+                if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+                    flushPendingGraspRemovals();
+                    result->success = true; result->status = "Success";
+                    goal_handle->succeed(result);
+                    RCLCPP_INFO(node_->get_logger(), "SetJointPosition succeeded for %s",
+                                goal->group_name.c_str());
+                } else {
+                    result->success = false; result->status = "Execution Failed";
+                    goal_handle->abort(result);
+                }
             }
         } else {
             result->success = false; result->status = "Planning Failed";
@@ -2064,6 +2153,8 @@ private:
     rclcpp::Service<ToggleGripperCollision>::SharedPtr toggle_gripper_collision_service_;
     // Detach + remove all collision objects from the planning scene.
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr clear_collision_objects_service_;
+    // Execute the plan stored by the last plan_only action.
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr execute_stored_plan_service_;
     // Select whether planning uses the octomap (ACM toggle).
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr toggle_octomap_collision_service_;
     rclcpp::Client<moveit_msgs::srv::GetPlanningScene>::SharedPtr get_planning_scene_client_;
@@ -2115,6 +2206,9 @@ private:
     // Finger collision padding: inflate the finger links' collision geometry by
     // finger_padding_ (m) so planning keeps clearance from the (octomap-sensed)
     // table. Applied once via a deferred one-shot timer after move_group is up.
+    bool plan_only_;
+    std::map<std::string, MoveGroupInterface::Plan> stored_plans_;
+
     bool finger_padding_enable_;
     double finger_padding_;
     std::vector<std::string> finger_pad_links_;
