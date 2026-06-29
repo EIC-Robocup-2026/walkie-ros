@@ -212,8 +212,9 @@
         <joint name="openarm_right_joint7" value="1.5708"/>
     </group_state>
 
-    <!-- tray: tray-carry pose (deg j1-j6, j7=0); right j2 = 0 / joint2-fixed.
-         j5 and left j6 clamped a hair to stay inside their limits. -->
+    <!-- tray: deg  left j1-j7 = 34,-27,8,84,-90,-45,62 ;
+         right (no j2) j1,j3-j7 = -34,21,78,90,33,-91.
+         j5 / left-j6 clamped to limit; right j7 (-91 deg) uses the widened j7 limit. -->
     <group_state name="tray" group="both_arms">
         <joint name="openarm_left_joint1" value="0.5934"/>
         <joint name="openarm_left_joint2" value="-0.4712"/>
@@ -221,14 +222,14 @@
         <joint name="openarm_left_joint4" value="1.4661"/>
         <joint name="openarm_left_joint5" value="-1.5707"/>
         <joint name="openarm_left_joint6" value="-0.7853"/>
-        <joint name="openarm_left_joint7" value="0"/>
-        <joint name="openarm_right_joint1" value="1.0821"/>
+        <joint name="openarm_left_joint7" value="1.0821"/>
+        <joint name="openarm_right_joint1" value="-0.5934"/>
         <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="0.3665"/>
         <joint name="openarm_right_joint4" value="1.3614"/>
         <joint name="openarm_right_joint5" value="1.5707"/>
         <joint name="openarm_right_joint6" value="0.5760"/>
-        <joint name="openarm_right_joint7" value="0"/>
+        <joint name="openarm_right_joint7" value="-1.5882"/>
     </group_state>
 
     <!-- ============================================== -->
@@ -394,14 +395,14 @@
         <joint name="openarm_left_joint4" value="1.4661"/>
         <joint name="openarm_left_joint5" value="-1.5707"/>
         <joint name="openarm_left_joint6" value="-0.7853"/>
-        <joint name="openarm_left_joint7" value="0"/>
-        <joint name="openarm_right_joint1" value="1.0821"/>
+        <joint name="openarm_left_joint7" value="1.0821"/>
+        <joint name="openarm_right_joint1" value="-0.5934"/>
         <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="0.3665"/>
         <joint name="openarm_right_joint4" value="1.3614"/>
         <joint name="openarm_right_joint5" value="1.5707"/>
         <joint name="openarm_right_joint6" value="0.5760"/>
-        <joint name="openarm_right_joint7" value="0"/>
+        <joint name="openarm_right_joint7" value="-1.5882"/>
     </group_state>
 
     <group_state name="closed" group="left_gripper">
