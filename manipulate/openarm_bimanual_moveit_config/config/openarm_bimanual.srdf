@@ -182,6 +182,55 @@
         <joint name="openarm_right_joint7" value="1.5708"/>
     </group_state>
 
+    <!-- pre-place: from (37,0,0,71,90,-32,-90) deg; j5 clamped to 1.5707 (90 deg
+         exceeds j5 limit 1.570796); j7 -1.5708 relies on the widened j7 limit. -->
+    <group_state name="pre-place" group="left_arm">
+        <joint name="openarm_left_joint1" value="0.6458"/>
+        <joint name="openarm_left_joint2" value="0"/>
+        <joint name="openarm_left_joint3" value="0"/>
+        <joint name="openarm_left_joint4" value="1.2392"/>
+        <joint name="openarm_left_joint5" value="1.5707"/>
+        <joint name="openarm_left_joint6" value="-0.5585"/>
+        <joint name="openarm_left_joint7" value="-1.5708"/>
+    </group_state>
+
+    <!-- pre-place: left arm = pre-place pose, right arm = standby pose. -->
+    <group_state name="pre-place" group="both_arms">
+        <joint name="openarm_left_joint1" value="0.6458"/>
+        <joint name="openarm_left_joint2" value="0"/>
+        <joint name="openarm_left_joint3" value="0"/>
+        <joint name="openarm_left_joint4" value="1.2392"/>
+        <joint name="openarm_left_joint5" value="1.5707"/>
+        <joint name="openarm_left_joint6" value="-0.5585"/>
+        <joint name="openarm_left_joint7" value="-1.5708"/>
+        <joint name="openarm_right_joint1" value="-0.6458"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
+        <joint name="openarm_right_joint3" value="0"/>
+        <joint name="openarm_right_joint4" value="2.0769"/>
+        <joint name="openarm_right_joint5" value="0"/>
+        <joint name="openarm_right_joint6" value="0"/>
+        <joint name="openarm_right_joint7" value="1.5708"/>
+    </group_state>
+
+    <!-- tray: tray-carry pose (deg j1-j6, j7=0); right j2 = 0 / joint2-fixed.
+         j5 and left j6 clamped a hair to stay inside their limits. -->
+    <group_state name="tray" group="both_arms">
+        <joint name="openarm_left_joint1" value="0.5934"/>
+        <joint name="openarm_left_joint2" value="-0.4712"/>
+        <joint name="openarm_left_joint3" value="0.1396"/>
+        <joint name="openarm_left_joint4" value="1.4661"/>
+        <joint name="openarm_left_joint5" value="-1.5707"/>
+        <joint name="openarm_left_joint6" value="-0.7853"/>
+        <joint name="openarm_left_joint7" value="0"/>
+        <joint name="openarm_right_joint1" value="1.0821"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
+        <joint name="openarm_right_joint3" value="0.3665"/>
+        <joint name="openarm_right_joint4" value="1.3614"/>
+        <joint name="openarm_right_joint5" value="1.5707"/>
+        <joint name="openarm_right_joint6" value="0.5760"/>
+        <joint name="openarm_right_joint7" value="0"/>
+    </group_state>
+
     <!-- ============================================== -->
     <!-- WHOLE BODY GROUP STATES (Includes Lift Joint)  -->
     <!-- ============================================== -->
@@ -303,6 +352,56 @@
         <joint name="openarm_right_joint5" value="0"/>
         <joint name="openarm_right_joint6" value="0"/>
         <joint name="openarm_right_joint7" value="1.5708"/>
+    </group_state>
+
+    <!-- pre-place: same arm pose as left_arm pre-place, lift raised to 0.735 m. -->
+    <group_state name="pre-place" group="left_arm_lift">
+        <joint name="lift_joint" value="0.735"/>
+        <joint name="openarm_left_joint1" value="0.6458"/>
+        <joint name="openarm_left_joint2" value="0"/>
+        <joint name="openarm_left_joint3" value="0"/>
+        <joint name="openarm_left_joint4" value="1.2392"/>
+        <joint name="openarm_left_joint5" value="1.5707"/>
+        <joint name="openarm_left_joint6" value="-0.5585"/>
+        <joint name="openarm_left_joint7" value="-1.5708"/>
+    </group_state>
+
+    <!-- pre-place: left arm = pre-place pose, right arm = standby pose, lift 0.735 m. -->
+    <group_state name="pre-place" group="both_arms_lift">
+        <joint name="lift_joint" value="0.735"/>
+        <joint name="openarm_left_joint1" value="0.6458"/>
+        <joint name="openarm_left_joint2" value="0"/>
+        <joint name="openarm_left_joint3" value="0"/>
+        <joint name="openarm_left_joint4" value="1.2392"/>
+        <joint name="openarm_left_joint5" value="1.5707"/>
+        <joint name="openarm_left_joint6" value="-0.5585"/>
+        <joint name="openarm_left_joint7" value="-1.5708"/>
+        <joint name="openarm_right_joint1" value="-0.6458"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
+        <joint name="openarm_right_joint3" value="0"/>
+        <joint name="openarm_right_joint4" value="2.0769"/>
+        <joint name="openarm_right_joint5" value="0"/>
+        <joint name="openarm_right_joint6" value="0"/>
+        <joint name="openarm_right_joint7" value="1.5708"/>
+    </group_state>
+
+    <!-- tray: same arm pose as both_arms tray, lift raised to 0.7435 m. -->
+    <group_state name="tray" group="both_arms_lift">
+        <joint name="lift_joint" value="0.7435"/>
+        <joint name="openarm_left_joint1" value="0.5934"/>
+        <joint name="openarm_left_joint2" value="-0.4712"/>
+        <joint name="openarm_left_joint3" value="0.1396"/>
+        <joint name="openarm_left_joint4" value="1.4661"/>
+        <joint name="openarm_left_joint5" value="-1.5707"/>
+        <joint name="openarm_left_joint6" value="-0.7853"/>
+        <joint name="openarm_left_joint7" value="0"/>
+        <joint name="openarm_right_joint1" value="1.0821"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
+        <joint name="openarm_right_joint3" value="0.3665"/>
+        <joint name="openarm_right_joint4" value="1.3614"/>
+        <joint name="openarm_right_joint5" value="1.5707"/>
+        <joint name="openarm_right_joint6" value="0.5760"/>
+        <joint name="openarm_right_joint7" value="0"/>
     </group_state>
 
     <group_state name="closed" group="left_gripper">

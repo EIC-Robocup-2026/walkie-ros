@@ -33,7 +33,7 @@ Groups: left_arm  right_arm  left_arm_lift  right_arm_lift
  [1] go_to_pose          x y z roll pitch yaw [frame] [cartesian]
  [2] go_to_pose_relative x y z roll pitch yaw [frame] [cartesian]
  [3] go_to_pose_quat     x y z qx qy qz qw   [frame] [cartesian]
- [4] go_to_home          group
+ [4] go_to_home          group  (pose: home/standby/hands_up/pre-place/tray)
  [5] control_gripper     group position
  [6] set_joint_position  group j1 j2 ... jN
  [7] get_ee_pose         group [frame]
@@ -230,8 +230,13 @@ class InteractiveCommander(Node):
 
     def do_go_to_home(self):
         group = self._get_group()
+        # Press Enter for "home". Any SRDF named state works (passed straight
+        # to setNamedTarget); pre-place / tray are defined only for some
+        # groups (an unknown state aborts cleanly).
+        pose = prompt("pose (home/standby/hands_up/pre-place/tray)", "home")
         goal = GoToHome.Goal()
         goal.group_name = group
+        goal.pose_name  = pose
         ok, _ = send_action(self, self._home_client, goal)
         print(f"  Result: {'SUCCESS' if ok else 'FAILED'}")
 
