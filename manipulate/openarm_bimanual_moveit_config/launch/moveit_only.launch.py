@@ -20,6 +20,7 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription, LaunchContext
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from moveit_configs_utils import MoveItConfigsBuilder
@@ -49,13 +50,14 @@ _HW_MAPPINGS = {
 def _make_nodes(context: LaunchContext, hardware_type_lc,
                 point_cloud_topic_lc, octomap_resolution_lc,
                 left_use_fake_arm_hardware_lc, right_use_fake_arm_hardware_lc,
-                right_joint2_fixed_lc):
+                right_joint2_fixed_lc, use_rviz_lc):
     hardware_type = context.perform_substitution(hardware_type_lc)
     point_cloud_topic = context.perform_substitution(point_cloud_topic_lc)
     octomap_resolution = float(context.perform_substitution(octomap_resolution_lc))
     left_use_fake_arm_hardware = context.perform_substitution(left_use_fake_arm_hardware_lc)
     right_use_fake_arm_hardware = context.perform_substitution(right_use_fake_arm_hardware_lc)
     right_joint2_fixed = context.perform_substitution(right_joint2_fixed_lc)
+    use_rviz = context.perform_substitution(use_rviz_lc)
     mappings = dict(_HW_MAPPINGS.get(hardware_type, _HW_MAPPINGS["mock_components"]))
     # Arm hardware (mock vs real OpenArm CAN) is selectable per side, independent
     # of hardware_type, which only controls the base/lift/wheels backend.
@@ -131,6 +133,7 @@ def _make_nodes(context: LaunchContext, hardware_type_lc,
         arguments=["-d", os.path.join(pkg_moveit, "config", "moveit.rviz")],
         parameters=[moveit_params],
         output="log",
+        condition=IfCondition(use_rviz),
     )
 
     return [move_group, rviz]
@@ -174,6 +177,11 @@ def generate_launch_description():
                         "nominal (zero) position, dropping it from MoveIt's IK/"
                         "planning DOF for the right arm groups.",
         ),
+        DeclareLaunchArgument(
+            "use_rviz",
+            default_value="true",
+            description="Launch RViz2 alongside move_group.",
+        ),
     ]
 
     hardware_type = LaunchConfiguration("hardware_type")
@@ -182,11 +190,13 @@ def generate_launch_description():
     left_use_fake_arm_hardware = LaunchConfiguration("left_use_fake_arm_hardware")
     right_use_fake_arm_hardware = LaunchConfiguration("right_use_fake_arm_hardware")
     right_joint2_fixed = LaunchConfiguration("right_joint2_fixed")
+    use_rviz = LaunchConfiguration("use_rviz")
 
     nodes_func = OpaqueFunction(
         function=_make_nodes,
         args=[hardware_type, point_cloud_topic, octomap_resolution,
-              left_use_fake_arm_hardware, right_use_fake_arm_hardware, right_joint2_fixed],
+              left_use_fake_arm_hardware, right_use_fake_arm_hardware,
+              right_joint2_fixed, use_rviz],
     )
 
     return LaunchDescription(declared_arguments + [nodes_func])
