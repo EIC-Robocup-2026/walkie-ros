@@ -21,6 +21,7 @@
 #include <control_msgs/action/follow_joint_trajectory.hpp>
 #include <moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>
 #include <moveit/robot_state/robot_state.hpp>
+#include <moveit_msgs/msg/planning_scene.hpp>
 #include <thread>
 
 using MoveGroupInterface = moveit::planning_interface::MoveGroupInterface;
@@ -70,7 +71,9 @@ public:
         // Set Planning Attempts
         left_arm_->setNumPlanningAttempts(10000);     // <--- Added
         left_gripper_->setNumPlanningAttempts(100); // <--- Added
-        
+
+        disableAllCollisionChecking();
+
         // Initialize Gripper Action Client (LEFT ONLY)
         left_gripper_client_ = rclcpp_action::create_client<control_msgs::action::FollowJointTrajectory>(
             node_, "/left_hand_controller/follow_joint_trajectory");
@@ -120,7 +123,26 @@ public:
 
         RCLCPP_INFO(node_->get_logger(), "Commander Node Initialized (Left Arm Only)");
     }
-    
+
+    // Marks every robot link as "always allowed to collide" in the
+    // AllowedCollisionMatrix. A one-sided default entry (i.e. only one of
+    // the two names in a pair needs a default) is enough for MoveIt's ACM
+    // to allow the pair, so this disables both self-collision checking AND
+    // robot-vs-world-object collision checking during planning, without
+    // needing to touch or know about individual collision object ids.
+    void disableAllCollisionChecking()
+    {
+        moveit_msgs::msg::PlanningScene diff_scene;
+        diff_scene.is_diff = true;
+
+        const auto &link_names = left_arm_->getRobotModel()->getLinkModelNames();
+        diff_scene.allowed_collision_matrix.default_entry_names = link_names;
+        diff_scene.allowed_collision_matrix.default_entry_values.assign(link_names.size(), true);
+
+        planning_scene_interface_.applyPlanningScene(diff_scene);
+        RCLCPP_WARN(node_->get_logger(), "Collision checking DISABLED: MoveIt will plan without collision avoidance.");
+    }
+
     // --- Helper for group selection ---
     std::shared_ptr<MoveGroupInterface> getGroup(const std::string &group_name) {
         if (group_name == "left_arm") return left_arm_;
@@ -990,7 +1012,8 @@ private:
     // Define Groups (LEFT ONLY)
     std::shared_ptr<MoveGroupInterface> left_arm_;
     std::shared_ptr<MoveGroupInterface> left_gripper_;
-    
+    PlanningSceneInterface planning_scene_interface_;
+
     std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 

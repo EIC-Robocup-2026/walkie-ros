@@ -273,6 +273,17 @@ public:
             rclcpp::ServicesQoS(),
             callback_group_);
 
+        // ToggleAllCollisionChecking: blanket enable/disable of ALL collision
+        // checking during planning (self-collision between every robot link,
+        // vs world objects, vs octomap). data=false -> plan straight through
+        // everything; data=true -> restore normal checking. Off by default —
+        // this is a blunt debugging/demo switch, not something to leave on.
+        toggle_all_collision_service_ = node_->create_service<std_srvs::srv::SetBool>(
+            "toggle_all_collision_checking",
+            std::bind(&Commander::handle_toggle_all_collision, this, _1, _2),
+            rclcpp::ServicesQoS(),
+            callback_group_);
+
         // 5. Grasp attach/detach
         // When the gripper closes past grasp_close_threshold we attach a box to
         // the hand (touch_links = the fingers) so MoveIt: (a) ignores ONLY
@@ -767,6 +778,75 @@ public:
             ? "Octomap ENABLED (planning uses the octomap)"
             : "Octomap DISABLED (planning ignores the octomap)";
         RCLCPP_INFO(node_->get_logger(), "%s", response->message.c_str());
+    }
+
+    // ========== ToggleAllCollisionChecking Service ==========
+    // Blanket version of the gripper/octomap toggles above: flips the
+    // *default* ACM entry for EVERY link in the robot model, plus the
+    // octomap. A one-sided default entry is enough for MoveIt's ACM to
+    // allow a pair (see AllowedCollisionMatrix::getAllowedCollision), so
+    // marking every robot link "always allowed" disables self-collision AND
+    // robot-vs-world checks together, without needing to know world object
+    // ids ahead of time. data=true -> normal checking; data=false -> plan
+    // through everything.
+    void handle_toggle_all_collision(
+        const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+        std::shared_ptr<std_srvs::srv::SetBool::Response> response)
+    {
+        const bool check_collisions = request->data;
+        const bool allowed = !check_collisions;
+
+        if (!get_planning_scene_client_->service_is_ready() ||
+            !apply_planning_scene_client_->service_is_ready()) {
+            response->success = false;
+            response->message = "Planning scene services not available (is move_group up?)";
+            return;
+        }
+
+        // 1. Read the current ACM.
+        auto get_req = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
+        get_req->components.components =
+            moveit_msgs::msg::PlanningSceneComponents::ALLOWED_COLLISION_MATRIX;
+        auto get_future = get_planning_scene_client_->async_send_request(get_req);
+        if (get_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+            response->success = false;
+            response->message = "Timed out reading planning scene";
+            return;
+        }
+        auto acm = get_future.get()->scene.allowed_collision_matrix;
+
+        // 2. Flip the default entry for every robot link, plus the octomap.
+        auto link_names = left_arm_->getRobotModel()->getLinkModelNames();
+        link_names.push_back("<octomap>");
+        for (const auto & name : link_names) {
+            auto it = std::find(acm.default_entry_names.begin(),
+                                acm.default_entry_names.end(), name);
+            if (it != acm.default_entry_names.end()) {
+                acm.default_entry_values[
+                    std::distance(acm.default_entry_names.begin(), it)] = allowed;
+            } else {
+                acm.default_entry_names.push_back(name);
+                acm.default_entry_values.push_back(allowed);
+            }
+        }
+
+        // 3. Write it back as a diff.
+        auto apply_req = std::make_shared<moveit_msgs::srv::ApplyPlanningScene::Request>();
+        apply_req->scene.is_diff = true;
+        apply_req->scene.allowed_collision_matrix = acm;
+        auto apply_future = apply_planning_scene_client_->async_send_request(apply_req);
+        if (apply_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready ||
+            !apply_future.get()->success) {
+            response->success = false;
+            response->message = "Failed to apply ACM update";
+            return;
+        }
+
+        response->success = true;
+        response->message = check_collisions
+            ? "Collision checking ENABLED (normal planning)"
+            : "Collision checking DISABLED (planning ignores all collisions)";
+        RCLCPP_WARN(node_->get_logger(), "%s", response->message.c_str());
     }
 
     // ========== ToggleGripperCollision Service ==========
@@ -2157,6 +2237,7 @@ private:
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr execute_stored_plan_service_;
     // Select whether planning uses the octomap (ACM toggle).
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr toggle_octomap_collision_service_;
+    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr toggle_all_collision_service_;
     rclcpp::Client<moveit_msgs::srv::GetPlanningScene>::SharedPtr get_planning_scene_client_;
     rclcpp::Client<moveit_msgs::srv::ApplyPlanningScene>::SharedPtr apply_planning_scene_client_;
 
