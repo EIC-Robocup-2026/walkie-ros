@@ -366,14 +366,16 @@ public:
         // 4c. Explicit table collision box (B). The table can't be trusted to the
         // octomap during a grasp (occluded + masked by the attached box), so add
         // it as an explicit CollisionObject the gripper/object plan around. The
-        // box spans the floor (frame z=0) up to table_pose z (the live height).
+        // box's top face sits at table_pose's top_z; table_size's z is the box's
+        // own height, set independently (doesn't have to reach the floor).
         // Disabled by default — configure for your table:
         //   ros2 param set /bimanual_commander table_enable true
         //   ros2 param set /bimanual_commander table_pose "[0.6, 0.0, 0.75, 0.0]"
+        //   ros2 param set /bimanual_commander table_size "[0.60, 1.20, 0.75]"
         node_->declare_parameter<bool>("table_enable", false);
         node_->declare_parameter<std::string>("table_frame", "base_footprint");
         node_->declare_parameter<std::vector<double>>("table_pose", {0.65, 0.0, 0.75, 0.0});  // x,y,top_z,yaw
-        node_->declare_parameter<std::vector<double>>("table_size", {0.60, 1.20});            // footprint x,y
+        node_->declare_parameter<std::vector<double>>("table_size", {0.60, 1.20, 0.75});      // x,y,z (box height, independent of top_z)
 
         // (A) Allow ONLY the gripper links vs the octomap, so grasping inside
         // sensed voxels no longer fails to plan — WITHOUT blinding the fingers to
@@ -985,26 +987,31 @@ public:
 
     // ========== (B) Explicit table collision box ==========
     // (Re)build the table from the table_* params as an explicit CollisionObject.
-    // The box spans the floor (frame z=0) up to the table top (table_pose z), so
-    // changing that one value retunes the height. Read fresh; serves startup +
-    // live changes; removes a stale table when disabled.
+    // table_pose's top_z places the box's TOP face (the table surface); table_size's
+    // z is the box's own height/thickness, set independently, so the box spans
+    // [top_z - size_z, top_z] instead of always reaching down to the floor.
+    // Read fresh; serves startup + live changes; removes a stale table when disabled.
     void buildAndApplyTable()
     {
         const bool enable       = node_->get_parameter("table_enable").as_bool();
         const std::string frame = node_->get_parameter("table_frame").as_string();
         const auto pose = node_->get_parameter("table_pose").as_double_array();  // x,y,top_z,yaw
-        const auto size = node_->get_parameter("table_size").as_double_array();  // footprint x,y
+        const auto size = node_->get_parameter("table_size").as_double_array();  // x,y,z
 
         std::vector<moveit_msgs::msg::CollisionObject> ops;
         bool added = false;
         if (enable) {
-            if (pose.size() != 4 || size.size() != 2) {
+            if (pose.size() != 4 || size.size() != 3) {
                 RCLCPP_WARN(node_->get_logger(),
                     "table_enable=true but table_pose needs 4 [x,y,top_z,yaw] and "
-                    "table_size needs 2 [x,y]; skipping table");
+                    "table_size needs 3 [x,y,z]; skipping table");
             } else if (pose[2] <= 0.0) {
                 RCLCPP_WARN(node_->get_logger(),
                     "table top height (table_pose z=%.3f) must be > 0; skipping table", pose[2]);
+            } else if (size[0] <= 0.0 || size[1] <= 0.0 || size[2] <= 0.0) {
+                RCLCPP_WARN(node_->get_logger(),
+                    "table_size must be > 0 on every axis [%.3f %.3f %.3f]; skipping table",
+                    size[0], size[1], size[2]);
             } else {
                 const double top = pose[2], yaw = pose[3];
                 moveit_msgs::msg::CollisionObject obj;
@@ -1013,11 +1020,11 @@ public:
                 obj.operation       = moveit_msgs::msg::CollisionObject::ADD;
                 shape_msgs::msg::SolidPrimitive box;
                 box.type       = shape_msgs::msg::SolidPrimitive::BOX;
-                box.dimensions = {size[0], size[1], top};   // full box, floor -> top
+                box.dimensions = {size[0], size[1], size[2]};
                 geometry_msgs::msg::Pose p;
                 p.position.x    = pose[0];
                 p.position.y    = pose[1];
-                p.position.z    = top * 0.5;
+                p.position.z    = top - size[2] * 0.5;   // box top face sits at table_pose's top_z
                 p.orientation.z = std::sin(yaw * 0.5);
                 p.orientation.w = std::cos(yaw * 0.5);
                 obj.primitives.push_back(box);

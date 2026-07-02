@@ -233,7 +233,7 @@ class InteractiveCommander(Node):
         # Press Enter for "home". Any SRDF named state works (passed straight
         # to setNamedTarget); pre-place / tray are defined only for some
         # groups (an unknown state aborts cleanly).
-        pose = prompt("pose (home/standby/hands_up/pre-place/tray)", "home")
+        pose = prompt("pose (home/standby/hands_up/pre-place/tray/basket/basket_hold)", "home")
         goal = GoToHome.Goal()
         goal.group_name = group
         goal.pose_name  = pose
