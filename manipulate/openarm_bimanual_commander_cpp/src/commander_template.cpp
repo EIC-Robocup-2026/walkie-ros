@@ -114,6 +114,8 @@ public:
         // to converge. Both are ROS params so you can switch/retune live.
         std::string planner_id = node_->declare_parameter<std::string>("planner_id", "RRTConnect");
         double arm_planning_time = node_->declare_parameter<double>("arm_planning_time", 5.0);
+        plan_only_ = node_->declare_parameter<bool>("plan_only", false);
+        node_->declare_parameter<std::string>("execute_plan_group", "");
 
         // Grippers keep the default planner (RRTstar isn't configured for the
         // gripper groups) and the short 1 s budget.
@@ -253,6 +255,12 @@ public:
             rclcpp::ServicesQoS(),
             callback_group_);
 
+        execute_stored_plan_service_ = node_->create_service<std_srvs::srv::Trigger>(
+            "execute_stored_plan",
+            std::bind(&Commander::handle_execute_stored_plan, this, _1, _2),
+            rclcpp::ServicesQoS(),
+            callback_group_);
+
         // ToggleOctomapCollision: select whether planning USES the octomap.
         // data=true  -> use it (collision checked, normal);
         // data=false -> ignore it (planning plans through sensed voxels).
@@ -262,6 +270,17 @@ public:
         toggle_octomap_collision_service_ = node_->create_service<std_srvs::srv::SetBool>(
             "toggle_octomap_collision",
             std::bind(&Commander::handle_toggle_octomap_collision, this, _1, _2),
+            rclcpp::ServicesQoS(),
+            callback_group_);
+
+        // ToggleAllCollisionChecking: blanket enable/disable of ALL collision
+        // checking during planning (self-collision between every robot link,
+        // vs world objects, vs octomap). data=false -> plan straight through
+        // everything; data=true -> restore normal checking. Off by default —
+        // this is a blunt debugging/demo switch, not something to leave on.
+        toggle_all_collision_service_ = node_->create_service<std_srvs::srv::SetBool>(
+            "toggle_all_collision_checking",
+            std::bind(&Commander::handle_toggle_all_collision, this, _1, _2),
             rclcpp::ServicesQoS(),
             callback_group_);
 
@@ -347,14 +366,16 @@ public:
         // 4c. Explicit table collision box (B). The table can't be trusted to the
         // octomap during a grasp (occluded + masked by the attached box), so add
         // it as an explicit CollisionObject the gripper/object plan around. The
-        // box spans the floor (frame z=0) up to table_pose z (the live height).
+        // box's top face sits at table_pose's top_z; table_size's z is the box's
+        // own height, set independently (doesn't have to reach the floor).
         // Disabled by default — configure for your table:
         //   ros2 param set /bimanual_commander table_enable true
         //   ros2 param set /bimanual_commander table_pose "[0.6, 0.0, 0.75, 0.0]"
+        //   ros2 param set /bimanual_commander table_size "[0.60, 1.20, 0.75]"
         node_->declare_parameter<bool>("table_enable", false);
         node_->declare_parameter<std::string>("table_frame", "base_footprint");
         node_->declare_parameter<std::vector<double>>("table_pose", {0.65, 0.0, 0.75, 0.0});  // x,y,top_z,yaw
-        node_->declare_parameter<std::vector<double>>("table_size", {0.60, 1.20});            // footprint x,y
+        node_->declare_parameter<std::vector<double>>("table_size", {0.60, 1.20, 0.75});      // x,y,z (box height, independent of top_z)
 
         // (A) Allow ONLY the gripper links vs the octomap, so grasping inside
         // sensed voxels no longer fails to plan — WITHOUT blinding the fingers to
@@ -620,6 +641,50 @@ public:
         pending_grasp_removal_.clear();
     }
 
+    // ========== ExecuteStoredPlan Service ==========
+    // Execute the plan stored by the last plan_only action for a given group.
+    // Set 'execute_plan_group' param to the target group before calling.
+    // The stored plan is consumed (removed) after successful execution.
+    void handle_execute_stored_plan(
+        const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
+        std::shared_ptr<std_srvs::srv::Trigger::Response> response)
+    {
+        (void)request;
+        const std::string group_name =
+            node_->get_parameter("execute_plan_group").as_string();
+        if (group_name.empty()) {
+            response->success = false;
+            response->message = "Set 'execute_plan_group' param to the target group name first";
+            return;
+        }
+        auto it = stored_plans_.find(group_name);
+        if (it == stored_plans_.end()) {
+            response->success = false;
+            response->message = "No stored plan for group '" + group_name +
+                                 "' — send a goal with plan_only=true first";
+            return;
+        }
+        auto group = getGroup(group_name);
+        if (!group) {
+            response->success = false;
+            response->message = "Invalid group: " + group_name;
+            return;
+        }
+        auto err = group->execute(it->second);
+        if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+            flushPendingGraspRemovals();
+            stored_plans_.erase(it);
+            response->success = true;
+            response->message = "Executed stored plan for " + group_name;
+            RCLCPP_INFO(node_->get_logger(), "Executed stored plan for %s", group_name.c_str());
+        } else {
+            response->success = false;
+            response->message = "Execution failed for " + group_name +
+                                 " (plan still stored — call again to retry)";
+            RCLCPP_ERROR(node_->get_logger(), "Execute stored plan failed for %s", group_name.c_str());
+        }
+    }
+
     // ========== ClearCollisionObjects Service ==========
     // Detach anything attached to a gripper, then remove every world collision
     // object from the planning scene. Leaves the octomap and robot state alone.
@@ -715,6 +780,75 @@ public:
             ? "Octomap ENABLED (planning uses the octomap)"
             : "Octomap DISABLED (planning ignores the octomap)";
         RCLCPP_INFO(node_->get_logger(), "%s", response->message.c_str());
+    }
+
+    // ========== ToggleAllCollisionChecking Service ==========
+    // Blanket version of the gripper/octomap toggles above: flips the
+    // *default* ACM entry for EVERY link in the robot model, plus the
+    // octomap. A one-sided default entry is enough for MoveIt's ACM to
+    // allow a pair (see AllowedCollisionMatrix::getAllowedCollision), so
+    // marking every robot link "always allowed" disables self-collision AND
+    // robot-vs-world checks together, without needing to know world object
+    // ids ahead of time. data=true -> normal checking; data=false -> plan
+    // through everything.
+    void handle_toggle_all_collision(
+        const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
+        std::shared_ptr<std_srvs::srv::SetBool::Response> response)
+    {
+        const bool check_collisions = request->data;
+        const bool allowed = !check_collisions;
+
+        if (!get_planning_scene_client_->service_is_ready() ||
+            !apply_planning_scene_client_->service_is_ready()) {
+            response->success = false;
+            response->message = "Planning scene services not available (is move_group up?)";
+            return;
+        }
+
+        // 1. Read the current ACM.
+        auto get_req = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
+        get_req->components.components =
+            moveit_msgs::msg::PlanningSceneComponents::ALLOWED_COLLISION_MATRIX;
+        auto get_future = get_planning_scene_client_->async_send_request(get_req);
+        if (get_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+            response->success = false;
+            response->message = "Timed out reading planning scene";
+            return;
+        }
+        auto acm = get_future.get()->scene.allowed_collision_matrix;
+
+        // 2. Flip the default entry for every robot link, plus the octomap.
+        auto link_names = left_arm_->getRobotModel()->getLinkModelNames();
+        link_names.push_back("<octomap>");
+        for (const auto & name : link_names) {
+            auto it = std::find(acm.default_entry_names.begin(),
+                                acm.default_entry_names.end(), name);
+            if (it != acm.default_entry_names.end()) {
+                acm.default_entry_values[
+                    std::distance(acm.default_entry_names.begin(), it)] = allowed;
+            } else {
+                acm.default_entry_names.push_back(name);
+                acm.default_entry_values.push_back(allowed);
+            }
+        }
+
+        // 3. Write it back as a diff.
+        auto apply_req = std::make_shared<moveit_msgs::srv::ApplyPlanningScene::Request>();
+        apply_req->scene.is_diff = true;
+        apply_req->scene.allowed_collision_matrix = acm;
+        auto apply_future = apply_planning_scene_client_->async_send_request(apply_req);
+        if (apply_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready ||
+            !apply_future.get()->success) {
+            response->success = false;
+            response->message = "Failed to apply ACM update";
+            return;
+        }
+
+        response->success = true;
+        response->message = check_collisions
+            ? "Collision checking ENABLED (normal planning)"
+            : "Collision checking DISABLED (planning ignores all collisions)";
+        RCLCPP_WARN(node_->get_logger(), "%s", response->message.c_str());
     }
 
     // ========== ToggleGripperCollision Service ==========
@@ -853,26 +987,31 @@ public:
 
     // ========== (B) Explicit table collision box ==========
     // (Re)build the table from the table_* params as an explicit CollisionObject.
-    // The box spans the floor (frame z=0) up to the table top (table_pose z), so
-    // changing that one value retunes the height. Read fresh; serves startup +
-    // live changes; removes a stale table when disabled.
+    // table_pose's top_z places the box's TOP face (the table surface); table_size's
+    // z is the box's own height/thickness, set independently, so the box spans
+    // [top_z - size_z, top_z] instead of always reaching down to the floor.
+    // Read fresh; serves startup + live changes; removes a stale table when disabled.
     void buildAndApplyTable()
     {
         const bool enable       = node_->get_parameter("table_enable").as_bool();
         const std::string frame = node_->get_parameter("table_frame").as_string();
         const auto pose = node_->get_parameter("table_pose").as_double_array();  // x,y,top_z,yaw
-        const auto size = node_->get_parameter("table_size").as_double_array();  // footprint x,y
+        const auto size = node_->get_parameter("table_size").as_double_array();  // x,y,z
 
         std::vector<moveit_msgs::msg::CollisionObject> ops;
         bool added = false;
         if (enable) {
-            if (pose.size() != 4 || size.size() != 2) {
+            if (pose.size() != 4 || size.size() != 3) {
                 RCLCPP_WARN(node_->get_logger(),
                     "table_enable=true but table_pose needs 4 [x,y,top_z,yaw] and "
-                    "table_size needs 2 [x,y]; skipping table");
+                    "table_size needs 3 [x,y,z]; skipping table");
             } else if (pose[2] <= 0.0) {
                 RCLCPP_WARN(node_->get_logger(),
                     "table top height (table_pose z=%.3f) must be > 0; skipping table", pose[2]);
+            } else if (size[0] <= 0.0 || size[1] <= 0.0 || size[2] <= 0.0) {
+                RCLCPP_WARN(node_->get_logger(),
+                    "table_size must be > 0 on every axis [%.3f %.3f %.3f]; skipping table",
+                    size[0], size[1], size[2]);
             } else {
                 const double top = pose[2], yaw = pose[3];
                 moveit_msgs::msg::CollisionObject obj;
@@ -881,11 +1020,11 @@ public:
                 obj.operation       = moveit_msgs::msg::CollisionObject::ADD;
                 shape_msgs::msg::SolidPrimitive box;
                 box.type       = shape_msgs::msg::SolidPrimitive::BOX;
-                box.dimensions = {size[0], size[1], top};   // full box, floor -> top
+                box.dimensions = {size[0], size[1], size[2]};
                 geometry_msgs::msg::Pose p;
                 p.position.x    = pose[0];
                 p.position.y    = pose[1];
-                p.position.z    = top * 0.5;
+                p.position.z    = top - size[2] * 0.5;   // box top face sits at table_pose's top_z
                 p.orientation.z = std::sin(yaw * 0.5);
                 p.orientation.w = std::cos(yaw * 0.5);
                 obj.primitives.push_back(box);
@@ -1486,14 +1625,20 @@ public:
         }
 
         if (plan_success) {
-            auto err = group->execute(plan);
-            if (err == moveit::core::MoveItErrorCode::SUCCESS) {
-                flushPendingGraspRemovals();   // motion succeeded -> delete released grasp box(es)
-                result->success = true; result->status = "Success";
+            if (plan_only_) {
+                stored_plans_[goal->group_name] = plan;
+                result->success = true; result->status = "Plan Only";
                 goal_handle->succeed(result);
             } else {
-                result->success = false; result->status = "Execution Failed";
-                goal_handle->abort(result);
+                auto err = group->execute(plan);
+                if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+                    flushPendingGraspRemovals();
+                    result->success = true; result->status = "Success";
+                    goal_handle->succeed(result);
+                } else {
+                    result->success = false; result->status = "Execution Failed";
+                    goal_handle->abort(result);
+                }
             }
         } else {
             result->success = false; result->status = "Planning Failed";
@@ -1625,6 +1770,19 @@ public:
             goal_handle->canceled(result); return;
         }
 
+        if (plan_success && plan_only_) {
+            if (using_cartesian_result) {
+                MoveGroupInterface::Plan stored;
+                stored.trajectory = cartesian_traj;
+                stored_plans_[goal->group_name] = stored;
+            } else {
+                stored_plans_[goal->group_name] = plan;
+            }
+            result->success = true; result->status = "Plan Only";
+            goal_handle->succeed(result);
+            return;
+        }
+
         moveit::core::MoveItErrorCode err = moveit::core::MoveItErrorCode::FAILURE;
         if (plan_success) {
             err = using_cartesian_result ? group->execute(cartesian_traj) : group->execute(plan);
@@ -1732,14 +1890,20 @@ public:
         }
 
         if (plan_success) {
-            auto err = group->execute(plan);
-            if (err == moveit::core::MoveItErrorCode::SUCCESS) {
-                flushPendingGraspRemovals();   // motion succeeded -> delete released grasp box(es)
-                result->success = true; result->status = "Success";
+            if (plan_only_) {
+                stored_plans_[goal->group_name] = plan;
+                result->success = true; result->status = "Plan Only";
                 goal_handle->succeed(result);
             } else {
-                result->success = false; result->status = "Execution Failed";
-                goal_handle->abort(result);
+                auto err = group->execute(plan);
+                if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+                    flushPendingGraspRemovals();
+                    result->success = true; result->status = "Success";
+                    goal_handle->succeed(result);
+                } else {
+                    result->success = false; result->status = "Execution Failed";
+                    goal_handle->abort(result);
+                }
             }
         } else {
             result->success = false; result->status = "Planning Failed";
@@ -1926,14 +2090,20 @@ public:
         }
 
         if (plan_success) {
-            auto err = group->execute(plan);
-            if (err == moveit::core::MoveItErrorCode::SUCCESS) {
-                flushPendingGraspRemovals();   // motion succeeded -> delete released grasp box(es)
+            if (plan_only_) {
+                stored_plans_[goal->group_name] = plan;
                 result->success = true;
                 goal_handle->succeed(result);
             } else {
-                result->success = false;
-                goal_handle->abort(result);
+                auto err = group->execute(plan);
+                if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+                    flushPendingGraspRemovals();
+                    result->success = true;
+                    goal_handle->succeed(result);
+                } else {
+                    result->success = false;
+                    goal_handle->abort(result);
+                }
             }
         } else {
             RCLCPP_ERROR(node_->get_logger(), "Failed to plan path to '%s' for %s",
@@ -2011,16 +2181,22 @@ public:
         }
 
         if (plan_success) {
-            auto err = group->execute(plan);
-            if (err == moveit::core::MoveItErrorCode::SUCCESS) {
-                flushPendingGraspRemovals();   // motion succeeded -> delete released grasp box(es)
-                result->success = true; result->status = "Success";
+            if (plan_only_) {
+                stored_plans_[goal->group_name] = plan;
+                result->success = true; result->status = "Plan Only";
                 goal_handle->succeed(result);
-                RCLCPP_INFO(node_->get_logger(), "SetJointPosition succeeded for %s",
-                            goal->group_name.c_str());
             } else {
-                result->success = false; result->status = "Execution Failed";
-                goal_handle->abort(result);
+                auto err = group->execute(plan);
+                if (err == moveit::core::MoveItErrorCode::SUCCESS) {
+                    flushPendingGraspRemovals();
+                    result->success = true; result->status = "Success";
+                    goal_handle->succeed(result);
+                    RCLCPP_INFO(node_->get_logger(), "SetJointPosition succeeded for %s",
+                                goal->group_name.c_str());
+                } else {
+                    result->success = false; result->status = "Execution Failed";
+                    goal_handle->abort(result);
+                }
             }
         } else {
             result->success = false; result->status = "Planning Failed";
@@ -2064,8 +2240,11 @@ private:
     rclcpp::Service<ToggleGripperCollision>::SharedPtr toggle_gripper_collision_service_;
     // Detach + remove all collision objects from the planning scene.
     rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr clear_collision_objects_service_;
+    // Execute the plan stored by the last plan_only action.
+    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr execute_stored_plan_service_;
     // Select whether planning uses the octomap (ACM toggle).
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr toggle_octomap_collision_service_;
+    rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr toggle_all_collision_service_;
     rclcpp::Client<moveit_msgs::srv::GetPlanningScene>::SharedPtr get_planning_scene_client_;
     rclcpp::Client<moveit_msgs::srv::ApplyPlanningScene>::SharedPtr apply_planning_scene_client_;
 
@@ -2115,6 +2294,9 @@ private:
     // Finger collision padding: inflate the finger links' collision geometry by
     // finger_padding_ (m) so planning keeps clearance from the (octomap-sensed)
     // table. Applied once via a deferred one-shot timer after move_group is up.
+    bool plan_only_;
+    std::map<std::string, MoveGroupInterface::Plan> stored_plans_;
+
     bool finger_padding_enable_;
     double finger_padding_;
     std::vector<std::string> finger_pad_links_;

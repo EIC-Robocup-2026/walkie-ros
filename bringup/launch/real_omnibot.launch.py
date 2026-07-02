@@ -42,6 +42,7 @@ def generate_launch_description():
     use_zed = LaunchConfiguration("use_zed", default="true")
     use_unitree_lidar = LaunchConfiguration("use_unitree_lidar", default="true")
     use_arm = LaunchConfiguration("use_arm", default="true")
+    use_rviz = LaunchConfiguration("use_rviz", default="true")
     use_fake_arm_hardware = LaunchConfiguration("use_fake_arm_hardware", default="false")
     left_can_interface = LaunchConfiguration("left_can_interface", default="can1")
     right_can_interface = LaunchConfiguration("right_can_interface", default="can0")
@@ -75,6 +76,11 @@ def generate_launch_description():
         default_value="false",
         description="Lock the right arm joint2 as a fixed URDF joint at its nominal "
                     "(zero) position, dropping it from MoveIt's IK/planning DOF",
+    )
+    declare_use_rviz = DeclareLaunchArgument(
+        "use_rviz",
+        default_value="true",
+        description="Launch RViz2 as part of bringup",
     )
     declare_use_unitree_lidar = DeclareLaunchArgument(
         "use_unitree_lidar",
@@ -581,7 +587,8 @@ def generate_launch_description():
             name='rviz2',
             output='screen',
             arguments=['-d', rviz_config_path],
-            parameters=[{'use_sim_time': use_sim_time}]
+            parameters=[{'use_sim_time': use_sim_time}],
+            condition=IfCondition(use_rviz),
         )
 
     # Relay lift_homing_node's SW-trajectory joint state into /joint_states so
@@ -629,6 +636,7 @@ def generate_launch_description():
     ld = LaunchDescription()
     # Add launch arguments
     ld.add_action(declare_use_zed)
+    ld.add_action(declare_use_rviz)
     ld.add_action(declare_use_arm)
     ld.add_action(declare_use_fake_arm_hardware)
     ld.add_action(declare_left_can_interface)
