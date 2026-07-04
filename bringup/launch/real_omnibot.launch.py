@@ -60,6 +60,11 @@ def generate_launch_description():
     declare_use_arm = DeclareLaunchArgument(
         "use_arm", default_value="true", description="Whether to bring up the OpenArm"
     )
+    declare_use_rviz = DeclareLaunchArgument(
+        "use_rviz",
+        default_value="true",
+        description="Launch RViz2 as part of bringup",
+    )
     declare_use_fake_arm_hardware = DeclareLaunchArgument(
         "use_fake_arm_hardware",
         default_value="false",
@@ -507,7 +512,24 @@ def generate_launch_description():
         }.items(),
     )
 
-    # ZED Camera Launch
+    # ZED Camera Launch.
+    #
+    # The head ZED intermittently goes "solid green": a USB re-enumeration leaves
+    # zed_node holding a stale device handle, so grab() keeps returning frames
+    # (the ZED's own camera_timeout/reconnect never fires) but they're a uniform
+    # green BGRA with all-NaN depth, until the node is restarted. When
+    # `use_zed_watchdog` is true (default) the camera is owned by a supervisor
+    # node that detects that signature and restarts the ZED; set it false to
+    # launch the ZED directly (original behaviour).
+    use_zed_watchdog = LaunchConfiguration("use_zed_watchdog", default="true")
+    declare_use_zed_watchdog = DeclareLaunchArgument(
+        "use_zed_watchdog",
+        default_value="true",
+        description="Run the ZED under the green-fault watchdog/supervisor "
+        "instead of launching it directly.",
+    )
+
+    # Direct ZED launch -- used only when the watchdog is disabled.
     zed_camera_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution(
@@ -523,7 +545,48 @@ def generate_launch_description():
             "use_sim_time": use_sim_time,
             "ros_params_override_path": custom_zed_params_path,
         }.items(),
-        condition=IfCondition(use_zed),
+        condition=IfCondition(
+            PythonExpression(
+                ["'", use_zed, "' == 'true' and '", use_zed_watchdog, "' != 'true'"]
+            )
+        ),
+    )
+
+    # Watchdog-owned ZED -- same args as the direct launch, but the supervisor
+    # owns the `ros2 launch` child (the ZED 5.x wrapper is composable-only, so
+    # launch `respawn` can't reload it) and restarts it on the green-frame fault.
+    zed_watchdog_node = Node(
+        package="robot_bringup",
+        executable="zed_watchdog.py",
+        name="zed_watchdog",
+        output="screen",
+        parameters=[
+            {
+                "zed_launch_package": "zed_wrapper",
+                "zed_launch_file": "zed_camera.launch.py",
+                "zed_launch_arguments": [
+                    "camera_model:=zed2i",
+                    "camera_name:=zed_head",
+                    "base_frame:=zed_head_camera_link",
+                    "publish_urdf:=false",
+                    "publish_tf:=false",
+                    ["use_sim_time:=", use_sim_time],
+                    ["ros_params_override_path:=", custom_zed_params_path],
+                ],
+                # NEURAL_PLUS depth model reload after a restart is slow; keep the
+                # post-restart detection mute longer than that to avoid a loop.
+                "cooldown_seconds": 30.0,
+                # On the persistent-fault path (device fell off the USB bus), force
+                # a USB port re-enumeration before relaunching. Needs the udev rule
+                # in bringup/udev/99-zed-usb-reset.rules for non-root device access.
+                "usb_reset_enabled": True,
+            }
+        ],
+        condition=IfCondition(
+            PythonExpression(
+                ["'", use_zed, "' == 'true' and '", use_zed_watchdog, "' == 'true'"]
+            )
+        ),
     )
 
     # Self-filter the ZED 2i registered cloud using the robot's URDF collision
@@ -636,6 +699,7 @@ def generate_launch_description():
     ld = LaunchDescription()
     # Add launch arguments
     ld.add_action(declare_use_zed)
+    ld.add_action(declare_use_zed_watchdog)
     ld.add_action(declare_use_rviz)
     ld.add_action(declare_use_arm)
     ld.add_action(declare_use_fake_arm_hardware)
@@ -664,6 +728,7 @@ def generate_launch_description():
     ld.add_action(realsense_camera_node)
     ld.add_action(realsense_self_filter)
     ld.add_action(zed_camera_launch)
+    ld.add_action(zed_watchdog_node)
     ld.add_action(zed_self_filter)
     ld.add_action(rosbridge_launch)
     ld.add_action(foxgloveBridge_cmd)

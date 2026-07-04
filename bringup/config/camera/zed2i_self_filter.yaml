@@ -76,17 +76,17 @@
       # Per-link overrides. Backlash accumulates down the arm, so distal links
       # (wrist/hand/fingers) need more padding than the shoulder. Tune to taste:
       # too much erases nearby environment, too little leaves a shell on the arm.
-      openarm_left_link5:          { padding: 0.05 }
-      openarm_left_link6:          { padding: 0.06 }
-      openarm_left_link7:          { padding: 0.06 }
-      openarm_left_hand:           { padding: 0.06 }
+      openarm_left_link5:          { padding: 0.08 }
+      openarm_left_link6:          { padding: 0.08 }
+      openarm_left_link7:          { padding: 0.08 }
+      openarm_left_hand:           { padding: 0.08 }
       openarm_left_left_finger:    { padding: 0.18 }
       openarm_left_right_finger:   { padding: 0.18 }
-      openarm_left_wristcam_bracket: { padding: 0.06 }
-      openarm_right_link5:         { padding: 0.05 }
-      openarm_right_link6:         { padding: 0.06 }
-      openarm_right_link7:         { padding: 0.06 }
-      openarm_right_hand:          { padding: 0.06 }
+      openarm_left_wristcam_bracket: { padding: 0.08 }
+      openarm_right_link5:         { padding: 0.08 }
+      openarm_right_link6:         { padding: 0.08 }
+      openarm_right_link7:         { padding: 0.08 }
+      openarm_right_hand:          { padding: 0.08 }
       openarm_right_left_finger:   { padding: 0.18 }
       openarm_right_right_finger:  { padding: 0.18 }
-      openarm_right_wristcam_bracket: { padding: 0.06 }
+      openarm_right_wristcam_bracket: { padding: 0.08 }

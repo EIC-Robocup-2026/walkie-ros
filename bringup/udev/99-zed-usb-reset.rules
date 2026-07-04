@@ -1,0 +1,13 @@
+# Allow non-root USB port reset (USBDEVFS_RESET) of the Stereolabs ZED so the
+# zed_watchdog node can recover a camera that has fallen off the USB bus
+# (the 2026-06-28 failure mode: device gone, Camera::open keeps failing).
+#
+# Vendor 2b03 = STEREOLABS. Matches the ZED 2i camera (f880) and its HID
+# interface (f881) -- the watchdog filters by vendor id (usb_reset_vendor_id),
+# so both must be group-writable for the reset ioctl to succeed.
+#
+# Install:
+#   sudo cp bringup/udev/99-zed-usb-reset.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+# Then replug the ZED (or reboot) so the new MODE applies to the live device node.
+SUBSYSTEM=="usb", ATTR{idVendor}=="2b03", MODE="0666"

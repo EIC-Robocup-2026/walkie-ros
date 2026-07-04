@@ -61,7 +61,7 @@ def generate_launch_description():
                               description="Hard ceiling for sustainable lift speed (cm/s). Caps the SW trajectory so the RViz visualization (which mirrors traj_current_pos_m) cannot outrun what the motor can physically follow."),
         DeclareLaunchArgument("lift_m_per_rad", default_value="-0.00012406",
                               description="Signed m/rad (motor-side). Calibrated: commanded 5 cm, got 4 cm → 0.8× of 1 rev = 1 cm."),
-        DeclareLaunchArgument("lift_min_cm", default_value="0.0",
+        DeclareLaunchArgument("lift_min_cm", default_value="8.0",
                               description="URDF prismatic lower limit (cm). Bottom of travel."),
         DeclareLaunchArgument("lift_max_cm", default_value="74.35",
                               description="URDF prismatic upper limit (cm). Hard-stop home is here."),
