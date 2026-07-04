@@ -15,6 +15,9 @@ find_package(rclcpp_action REQUIRED)
 find_package(control_msgs REQUIRED)
 find_package(moveit_core REQUIRED)
 find_package(visualization_msgs REQUIRED)
+find_package(moveit_ros_warehouse REQUIRED)
+find_package(warehouse_ros REQUIRED)
+find_package(tf2 REQUIRED)
 
 add_executable(commander src/commander_template.cpp)
 ament_target_dependencies(commander
@@ -51,7 +54,20 @@ ament_target_dependencies(pick_and_place_isaac2
   visualization_msgs
 )
 
-install(TARGETS commander pick_and_place_isaac pick_and_place_isaac2
+# CLI tool to author + save a named OrientationConstraint into the MoveIt
+# warehouse (the half RViz's MotionPlanning panel is missing). Uses the
+# warehouse_ros plugin loader; the sqlite backend is loaded at runtime.
+add_executable(save_named_constraint src/save_named_constraint.cpp)
+ament_target_dependencies(save_named_constraint
+  rclcpp
+  moveit_ros_warehouse
+  warehouse_ros
+  moveit_msgs
+  tf2
+  tf2_geometry_msgs
+)
+
+install(TARGETS commander pick_and_place_isaac pick_and_place_isaac2 save_named_constraint
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch
