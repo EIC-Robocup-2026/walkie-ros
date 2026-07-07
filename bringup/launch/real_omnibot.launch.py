@@ -263,6 +263,23 @@ def generate_launch_description():
         )
     )
 
+    # R2D2-style beeps when someone presses the Dynamixel head (detected via
+    # position error / Present Load change on head_servo_joint).
+    use_head_beep = LaunchConfiguration("use_head_beep", default="true")
+    declare_use_head_beep = DeclareLaunchArgument(
+        "use_head_beep",
+        default_value="true",
+        description="Chirp like R2D2 when the head servo is touched/pressed.",
+    )
+
+    head_touch_beep_node = Node(
+        package="robot_bringup",
+        executable="head_touch_beep_node.py",
+        name="head_touch_beep",
+        output="screen",
+        condition=IfCondition(use_head_beep),
+    )
+
     arm_trajectory_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -707,6 +724,7 @@ def generate_launch_description():
     ld.add_action(declare_right_can_interface)
     ld.add_action(declare_right_joint2_fixed)
     ld.add_action(declare_use_unitree_lidar)
+    ld.add_action(declare_use_head_beep)
     ld.add_action(declare_unitree_cloud_frame)
     ld.add_action(declare_unitree_imu_frame)
     ld.add_action(robot_state_publisher_cmd)
@@ -721,6 +739,7 @@ def generate_launch_description():
     ld.add_action(dual_lidar_launch)
     ld.add_action(delayed_servo_controller_spawner)
     ld.add_action(delayed_head_servo_init)
+    ld.add_action(head_touch_beep_node)
     ld.add_action(current_pose_publisher)
     ld.add_action(unitree_lidar_node)
     # ld.add_action(unitree_pointcloud_filter)

@@ -17,6 +17,8 @@ install(PROGRAMS
   scripts/lift_homing_node.py
   scripts/lift_homing_mock_node.py
   scripts/zed_watchdog.py
+  scripts/openarm_joint_state_reader.py
+  scripts/head_touch_beep_node.py
   DESTINATION lib/${PROJECT_NAME})
 
 # find dependencies
