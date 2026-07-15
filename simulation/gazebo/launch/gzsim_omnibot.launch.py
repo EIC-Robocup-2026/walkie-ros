@@ -12,7 +12,7 @@ from launch.actions import (
 from launch.conditions import IfCondition
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 
@@ -23,7 +23,8 @@ def generate_launch_description():
     description_package_name = "walkie_description"
 
     default_world = os.path.join(
-        get_package_share_directory(package_name), "worlds", "aws_small_house.world"
+        # get_package_share_directory(package_name), "worlds", "aws_small_house.world"
+        get_package_share_directory(package_name), "worlds", "turtlebot3_world_gz.world"
     )
 
     default_robot = os.path.join(
@@ -42,6 +43,7 @@ def generate_launch_description():
     dual_lidar = LaunchConfiguration("dual_lidar", default="False")
     rviz_config_file = LaunchConfiguration("rviz_config_file")
     use_rviz = LaunchConfiguration("use_rviz")
+    headless = LaunchConfiguration("headless", default="True")
 
     declare_rviz_config_file_cmd = DeclareLaunchArgument(
         "rviz_config_file",
@@ -53,6 +55,12 @@ def generate_launch_description():
         "use_rviz", default_value="True", description="Whether to start RVIZ"
     )
 
+    declare_headless_cmd = DeclareLaunchArgument(
+        "headless",
+        default_value="False",
+        description="Run Gazebo without its GUI (server only)",
+    )
+
     gzmodel_cmd = SetEnvironmentVariable(
         name="GZ_SIM_RESOURCE_PATH",
         value=os.path.join(get_package_share_directory(package_name), "models")
@@ -62,6 +70,10 @@ def generate_launch_description():
 
     gz_system_plugin_cmd = SetEnvironmentVariable(
         name="GZ_SIM_SYSTEM_PLUGIN_PATH", value="/opt/ros/jazzy/lib/"
+    )
+
+    headless_gz_flag = PythonExpression(
+        ["'-s ' if '", headless, "'.lower() == 'true' else ''"]
     )
 
     # Include the Gazebo launch file, provided by the ros_gz_sim package
@@ -76,7 +88,7 @@ def generate_launch_description():
             ]
         ),
         launch_arguments={
-            "gz_args": ["-r -v4 ", world_file],
+            "gz_args": ["-r -v4 ", headless_gz_flag, world_file],
             "on_exit_shutdown": "true",
         }.items(),
     )
@@ -263,6 +275,7 @@ def generate_launch_description():
     ld.add_action(foxgloveBridge_cmd)
     ld.add_action(declare_use_rviz_cmd)
     ld.add_action(declare_rviz_config_file_cmd)
+    ld.add_action(declare_headless_cmd)
     ld.add_action(rviz_cmd)
     ld.add_action(walkie_tf_server)
     ld.add_action(cloud_to_map)
