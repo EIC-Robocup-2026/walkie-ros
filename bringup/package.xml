@@ -23,6 +23,7 @@
   <exec_depend>twist_mux</exec_depend>
   <exec_depend>twist_stamper</exec_depend>
   <exec_depend>foxglove_bridge</exec_depend>
+  <exec_depend>walkie_description</exec_depend>
   <export>
     <build_type>ament_cmake</build_type>
   </export>

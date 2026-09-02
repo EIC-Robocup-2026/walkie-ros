@@ -24,6 +24,7 @@
   <exec_depend>twist_stamper</exec_depend>
   <exec_depend>foxglove_bridge</exec_depend>
   <exec_depend>rosbridge_suite</exec_depend>
+  <exec_depend>walkie_description</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
