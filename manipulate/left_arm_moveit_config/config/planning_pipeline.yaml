@@ -1,8 +1,0 @@
-# Multiple planning pipelines configuration
-
-planning_pipelines:
-  - ompl
-  - stomp
-
-# Default pipeline
-default_planning_pipeline: ompl
