@@ -59,7 +59,7 @@ def generate_launch_description():
     robot_state_publisher_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
-                get_package_share_directory(package_name),
+                get_package_share_directory(description_package_name),
                 "launch",
                 "robot_state_publisher.launch.py",
             )

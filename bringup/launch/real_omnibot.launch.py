@@ -143,7 +143,7 @@ def generate_launch_description():
     robot_state_publisher_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
-                get_package_share_directory(package_name),
+                get_package_share_directory(description_package_name),
                 "launch",
                 "robot_state_publisher.launch.py",
             )
@@ -153,6 +153,11 @@ def generate_launch_description():
             "robot_model": robot_model,
             "ros2_control": ros2_control,
             "use_zed": use_zed,
+            "use_arm": use_arm,
+            "use_fake_arm_hardware": use_fake_arm_hardware,
+            "left_can_interface": left_can_interface,
+            "right_can_interface": right_can_interface,
+            "right_joint2_fixed": right_joint2_fixed,
         }.items(),
     )
 
