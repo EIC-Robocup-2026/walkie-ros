@@ -1,0 +1,116 @@
+[workspace]
+name = "walkie-ros"
+version = "0.1.0"
+description = "Walkie ROS 2 robot stack"
+authors = ["Sutthikan Panla <sutigran2557@gmail.com>"]
+channels = ["robostack-jazzy", "conda-forge"]
+platforms = ["linux-64"]
+
+[activation]
+env = { PROJECT_ROOT = "${PIXI_PROJECT_ROOT}" }
+scripts = ["scripts/setup_env.sh"]
+
+[tasks]
+# CMAKE_POLICY_VERSION_MINIMUM: vendored SDKs (e.g. unitree_lidar_sdk) declare
+# cmake_minimum_required < 3.5, which CMake >= 4 rejects; the flag lets them
+# configure without editing vendor files.
+# --parallel-workers 1 + MAKEFLAGS -j: nav2/MoveIt compile units are memory-heavy
+# (~1-2 GB each); total concurrent compilers = workers x -j, keep it <= ~6.
+build-ros2 = "colcon build --symlink-install --parallel-workers 1 --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_MODULE_PATH=$CONDA_PREFIX/lib/cmake/OpenVDB"
+# openvdb_vendor/spatio_temporal_voxel_layer: conda's OpenVDB ships a Find module
+# (no OpenVDBConfig.cmake), so these two need CMAKE_MODULE_PATH pointed at it;
+# building them with this task makes openvdb_vendor SATISFIED (skips vendored
+# OpenVDB compile, which is incompatible with modern oneTBB).
+build-openvdb-chain = { cmd = "colcon build --symlink-install --packages-select openvdb_vendor spatio_temporal_voxel_layer --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DCMAKE_MODULE_PATH=$CONDA_PREFIX/lib/cmake/OpenVDB" }
+test-ros2 = "colcon test && colcon test-result --verbose"
+
+[dependencies]
+# ROS 2 Jazzy Core & Desktop
+ros-jazzy-desktop = "*"
+ros-jazzy-ros-base = "*"
+ros-jazzy-ament-cmake-vendor-package = ">=2.5.6,<3"
+ros-jazzy-ros-testing = ">=0.6.1,<0.7"
+ros-jazzy-test-msgs = ">=2.0.4,<3"
+
+# Navigation & Localization
+# NOTE: nav2 itself is built from source (navigation/navigation2/), NOT from conda.
+# Do not re-add ros-jazzy-navigation2 — it would shadow the source build.
+ros-jazzy-slam-toolbox = "*"
+ros-jazzy-robot-localization = "*"
+ros-jazzy-behaviortree-cpp = "*"
+
+# rosdep-equivalents required by the from-source nav2 tree and other in-tree packages
+ros-jazzy-backward-ros = "*"                        # dwb_core/dwb_critics/costmap_queue
+ros-jazzy-ament-cmake-google-benchmark = "*"        # nav2_costmap_2d test/benchmark
+ros-jazzy-moveit-ros-perception = "*"               # openarm_bimanual_moveit_config
+ros-jazzy-realsense2-description = "*"              # walkie_description
+ceres-solver = "*"                                  # libceres-dev: nav2_constrained_smoother
+nanoflann = "*"                                     # libnanoflann-dev: nav2_route
+
+# ros2_control & Actuation
+ros-jazzy-ros2-control = "*"
+ros-jazzy-ros2-controllers = "*"
+ros-jazzy-controller-manager = "*"
+ros-jazzy-hardware-interface = "*"
+ros-jazzy-joint-state-broadcaster = "*"
+ros-jazzy-joint-state-publisher = "*"
+ros-jazzy-joint-state-publisher-gui = "*"
+
+# MoveIt Manipulation
+ros-jazzy-moveit = "*"
+ros-jazzy-moveit-ros-planning-interface = "*"
+ros-jazzy-moveit-ros-move-group = "*"
+ros-jazzy-moveit-configs-utils = "*"
+ros-jazzy-moveit-setup-assistant = "*"
+
+# Point Clouds, Sensors & Perception
+ros-jazzy-pcl-ros = "*"
+ros-jazzy-pcl-conversions = "*"
+ros-jazzy-perception-pcl = "*"
+ros-jazzy-point-cloud-transport = "*"
+ros-jazzy-point-cloud-transport-plugins = "*"
+ros-jazzy-laser-geometry = "*"
+ros-jazzy-vision-msgs = "*"
+ros-jazzy-cv-bridge = "*"
+ros-jazzy-image-transport = "*"
+openvdb = "*"
+
+# Simulation & Teleoperation
+ros-jazzy-ros-gz = "*"
+ros-jazzy-ros-gz-bridge = "*"
+ros-jazzy-ros-gz-sim = "*"
+ros-jazzy-ros-gz-interfaces = "*"
+ros-jazzy-gz-ros2-control = "*"
+ros-jazzy-joy-linux = "*"
+ros-jazzy-teleop-twist-keyboard = "*"
+ros-jazzy-twist-mux = "*"
+
+# Middleware & Web
+ros-jazzy-rmw-zenoh-cpp = "*"
+ros-jazzy-foxglove-bridge = "*"
+ros-jazzy-rosbridge-suite = "*"
+
+# Python & Transforms
+ros-jazzy-tf-transformations = "*"
+transforms3d = "*"
+python-can = "*"
+pyserial = "*"
+pyyaml = "*"
+setuptools = "<=69.5.1"
+
+# Build Toolchain
+# gcc 13 = Ubuntu 24.04's native compiler, matching a native ROS 2 Jazzy setup.
+# GCC >= 14 rejects code in vendored SDKs (old rapidjson in lakibeam1, implicit
+# usleep in urg_library), so pin the toolchain instead of patching vendor code.
+gcc_linux-64 = "13.*"
+gxx_linux-64 = "13.*"
+colcon-common-extensions = "*"
+vcstool = "*"
+pkg-config = "*"
+cmake = "*"
+ninja = "*"
+make = "*"
+uv = ">=0.5"
+
+# Non-ROS libraries required by in-tree packages (rosdep-equivalents)
+graphicsmagick = "*"                                # nav2_map_server FindGRAPHICSMAGICKCPP

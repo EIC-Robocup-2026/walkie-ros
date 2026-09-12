@@ -1,0 +1,11 @@
+repositories:
+  hardware/lidar/laser_proc:
+    type: git
+    url: https://github.com/ros-perception/laser_proc.git
+    version: 4acb5601383d1fb25690377a683603ba35a4973c
+  # ros-jazzy-twist-stamper is not built on the robostack-jazzy conda channel,
+  # so it is vendored from source (released in Jazzy upstream at 0.0.5).
+  tools/twist_stamper:
+    type: git
+    url: https://github.com/joshnewans/twist_stamper.git
+    version: 0.0.5
