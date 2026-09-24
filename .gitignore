@@ -214,3 +214,7 @@ install/
 .claude/
 hardware/lidar/laser_proc/
 hardware/lidar/unilidar_sdk2/unitree_lidar_sdk/bin/
+
+# pixi environments
+.pixi/*
+!.pixi/config.toml
