@@ -1,0 +1,284 @@
+#!/usr/bin/env python3
+"""
+O3DE Omnibot Bringup Launch Script for Walkie Robot.
+Bridges O3DE simulation with Nav2 and MoveIt using topic_based_ros2_control.
+Subscribes/publishes to:
+  - Velocity: /cmd_vel (geometry_msgs/msg/TwistStamped)
+  - Odometry: /odom, /omni_wheel_drive_controller/odom
+  - 2D Lidar: /scan (sensor_msgs/msg/LaserScan)
+  - 3D Lidar: /unilidar/cloud/filtered (sensor_msgs/msg/PointCloud2)
+  - Cameras: /zed_head/..., /bottom_depth/...
+  - Joint Commands: /isaac_joint_commands (sensor_msgs/msg/JointState)
+  - Joint States: /joint_states, /isaac_joint_states
+"""
+
+import os
+import tempfile
+import yaml
+
+from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    TimerAction,
+)
+from launch.launch_description_sources import (
+    AnyLaunchDescriptionSource,
+    PythonLaunchDescriptionSource,
+)
+from launch.substitutions import Command, LaunchConfiguration, PythonExpression
+from launch_ros.actions import Node
+
+
+def generate_launch_description():
+    package_name = "robot_bringup"
+    description_package_name = "walkie_description"
+
+    default_robot = os.path.join(
+        get_package_share_directory(description_package_name),
+        "robots",
+        "gz_walkie.urdf.xacro",
+    )
+
+    # Launch configuration variables
+    use_sim_time = LaunchConfiguration("use_sim_time", default="false")
+    robot_model = LaunchConfiguration("robot_model", default=default_robot)
+    ros2_control = LaunchConfiguration("ros2_control", default="topic_base")
+    use_zed = LaunchConfiguration("use_zed", default="true")
+    right_joint2_fixed = LaunchConfiguration("right_joint2_fixed", default="false")
+
+    declare_use_sim_time = DeclareLaunchArgument(
+        "use_sim_time", default_value="false", description="Use simulation clock if true"
+    )
+    declare_use_zed = DeclareLaunchArgument(
+        "use_zed", default_value="true", description="Whether to use ZED camera"
+    )
+    declare_right_joint2_fixed = DeclareLaunchArgument(
+        "right_joint2_fixed",
+        default_value="false",
+        description="Lock the right arm joint2 as a fixed URDF joint at its nominal "
+                    "(zero) position, dropping it from MoveIt's IK/planning DOF",
+    )
+
+    robot_description_content = Command(
+        [
+            "xacro ",
+            default_robot,
+            " ros2_control:=",
+            ros2_control,
+            " use_zed:=",
+            use_zed,
+            " right_joint2_fixed:=",
+            right_joint2_fixed,
+        ]
+    )
+
+    twist_mux_params = os.path.join(
+        get_package_share_directory(package_name),
+        "config",
+        "twist_mux",
+        "twist_mux.yml",
+    )
+    twist_mux = Node(
+        package="twist_mux",
+        executable="twist_mux",
+        parameters=[twist_mux_params],
+        remappings=[("/cmd_vel_out", "/cmd_vel")],
+    )
+
+    twist_stamped_frame_id = "base_footprint"
+    twist_stamper_node = Node(
+        package="twist_stamper",
+        executable="twist_stamper",
+        name="twist_stamper",
+        output="screen",
+        remappings=[
+            ("/cmd_vel_in", "/cmd_vel"),
+            ("/cmd_vel_out", "/omni_wheel_drive_controller/cmd_vel"),
+        ],
+        parameters=[
+            {"frame_id": twist_stamped_frame_id},
+        ],
+    )
+
+    robot_state_publisher_cmd = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory(package_name),
+                "launch",
+                "robot_state_publisher.launch.py",
+            )
+        ),
+        launch_arguments={
+            "use_sim_time": use_sim_time,
+            "robot_model": robot_model,
+            "ros2_control": ros2_control,
+            "use_zed": use_zed,
+        }.items(),
+    )
+
+    controllers_config = os.path.join(
+        get_package_share_directory(description_package_name),
+        "config",
+        "ros2_controller",
+        "isaac_controllers.yaml",
+    )
+
+    with open(controllers_config) as _cf:
+        _controllers_no_joint2 = yaml.safe_load(_cf)
+    for _ctrl_name in (
+        "arm_controller",
+        "right_arm_controller",
+        "right_forward_position_controller",
+        "right_forward_velocity_controller",
+        "right_joint_trajectory_controller",
+    ):
+        _joints = _controllers_no_joint2.get(_ctrl_name, {}).get(
+            "ros__parameters", {}
+        ).get("joints", [])
+        if "openarm_right_joint2" in _joints:
+            _joints.remove("openarm_right_joint2")
+    _fd, controllers_config_no_joint2 = tempfile.mkstemp(suffix=".yaml")
+    with os.fdopen(_fd, "w") as _cf:
+        yaml.safe_dump(_controllers_no_joint2, _cf)
+
+    controllers_config_selected = PythonExpression([
+        "'", controllers_config_no_joint2, "' if '", right_joint2_fixed,
+        "' == 'true' else '", controllers_config, "'",
+    ])
+
+    controller_manager_spawner = Node(
+        package="controller_manager",
+        executable="ros2_control_node",
+        parameters=[
+            {"robot_description": robot_description_content},
+            {"use_sim_time": use_sim_time},
+            controllers_config_selected,
+        ],
+    )
+
+    OFFSET_DELAY = 0.0
+    JOINT_BROAD_DELAY = 2.0 + OFFSET_DELAY
+    OMNI_DELAY = 4.0 + OFFSET_DELAY
+    LEFT_ARM_DELAY = 6.0 + OFFSET_DELAY
+    RIGHT_ARM_DELAY = 8.0 + OFFSET_DELAY
+
+    joint_broad_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["joint_broad", "--switch-timeout", "30.0"],
+    )
+
+    omni_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["omni_wheel_drive_controller", "--switch-timeout", "30.0"],
+    )
+
+    left_arm_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["left_joint_trajectory_controller", "--switch-timeout", "30.0"],
+    )
+
+    right_arm_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["right_joint_trajectory_controller", "--switch-timeout", "30.0"],
+    )
+
+    left_gripper_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["left_gripper_controller", "--switch-timeout", "30.0"],
+    )
+
+    right_gripper_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["right_gripper_controller", "--switch-timeout", "30.0"],
+    )
+
+    lift_controller_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["lift_controller", "--switch-timeout", "30.0"],
+    )
+
+    delayed_joint_broad_spawner = TimerAction(
+        period=JOINT_BROAD_DELAY,
+        actions=[joint_broad_spawner],
+    )
+    delayed_omni_controller_spawner = TimerAction(
+        period=OMNI_DELAY,
+        actions=[omni_controller_spawner],
+    )
+    delayed_left_arm_controller_spawner = TimerAction(
+        period=LEFT_ARM_DELAY,
+        actions=[left_arm_controller_spawner],
+    )
+    delayed_right_arm_controller_spawner = TimerAction(
+        period=RIGHT_ARM_DELAY,
+        actions=[right_arm_controller_spawner],
+    )
+    delayed_left_gripper_controller_spawner = TimerAction(
+        period=LEFT_ARM_DELAY,
+        actions=[left_gripper_controller_spawner],
+    )
+    delayed_right_gripper_controller_spawner = TimerAction(
+        period=RIGHT_ARM_DELAY,
+        actions=[right_gripper_controller_spawner],
+    )
+    delayed_lift_controller_spawner = TimerAction(
+        period=LEFT_ARM_DELAY,
+        actions=[lift_controller_spawner],
+    )
+
+    current_pose_publisher = Node(
+        package="robot_navigation",
+        executable="current_pose_publisher.py",
+        name="current_pose_publisher",
+        output="screen",
+        parameters=[
+            {"source_frame": "map"},
+            {"target_frame": "base_link"},
+            {"publish_rate": 10.0},
+            {"topic_name": "current_pose"},
+        ],
+    )
+
+    pkg_rosbridge_server = get_package_share_directory("rosbridge_server")
+    rosbridge_launch = IncludeLaunchDescription(
+        AnyLaunchDescriptionSource(
+            os.path.join(
+                pkg_rosbridge_server, "launch", "rosbridge_websocket_launch.xml"
+            )
+        ),
+        launch_arguments={
+            "delay_between_messages": "0.0",
+        }.items(),
+    )
+
+    ld = LaunchDescription()
+    ld.add_action(declare_use_sim_time)
+    ld.add_action(declare_use_zed)
+    ld.add_action(declare_right_joint2_fixed)
+    ld.add_action(robot_state_publisher_cmd)
+
+    ld.add_action(twist_mux)
+    ld.add_action(twist_stamper_node)
+
+    ld.add_action(controller_manager_spawner)
+    ld.add_action(delayed_joint_broad_spawner)
+    ld.add_action(delayed_omni_controller_spawner)
+    ld.add_action(delayed_left_arm_controller_spawner)
+    ld.add_action(delayed_left_gripper_controller_spawner)
+    ld.add_action(delayed_right_arm_controller_spawner)
+    ld.add_action(delayed_right_gripper_controller_spawner)
+    ld.add_action(delayed_lift_controller_spawner)
+
+    ld.add_action(current_pose_publisher)
+    ld.add_action(rosbridge_launch)
+
+    return ld
