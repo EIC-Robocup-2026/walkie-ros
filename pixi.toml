@@ -7,7 +7,9 @@ platforms = ["linux-64"]
 # Base ROS dependencies
 ros-jazzy-ros-base = "*"
 pkg-config = "*"
-compilers = "*"
+compilers = ">=1,<2"
+gcc_linux-64 = ">=13,<14"
+gxx_linux-64 = ">=13,<14"
 make = "*"
 ninja = "*"
 ros-jazzy-ros2cli = "*"
@@ -15,6 +17,7 @@ ros-jazzy-ros2cli = "*"
 # Build tools
 colcon-common-extensions = "*"
 cmake = "<4"
+kernel-headers_linux-64 = ">=5.14"
 
 # Workspace dependencies
 assimp = "*"
@@ -176,7 +179,9 @@ xorg-libx11 = "*"
 xorg-libxext = "*"
 zlib = "*"
 zstd = "*"
+vcstool = "*"
 openvdb = ">=13.0.0,<14"
+ros-jazzy-rmw-zenoh-cpp = ">=0.2.10,<0.3"
 
 # The following packages were not found:
 # ros-jazzy-laser-proc = "*"
@@ -192,7 +197,10 @@ openvdb = ">=13.0.0,<14"
 # qt6-scxml-dev = "*"
 
 [tasks]
-build = {cmd = "colcon build --symlink-install", description = "Build the ROS workspace"}
+setup = {cmd = "ln -sf libpthread.so.0 $CONDA_PREFIX/x86_64-conda-linux-gnu/sysroot/usr/lib/libpthread.so", description = "Fix missing libpthread.so symlink in conda sysroot"}
+import = {cmd = "vcs import < walkie_external.repos", description = "Clone/update external repos defined in walkie_external.repos"}
+build = {cmd = "colcon build --symlink-install --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX", depends-on = ["setup", "import"], description = "Build the ROS workspace"}
+build-pkg = {cmd = "colcon build --symlink-install --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX --packages-select", depends-on = ["setup"], description = "Build a specific package, e.g: pixi run build-pkg -- openvdb_vendor"}
 test = {cmd = "colcon test", description = "Run tests for the workspace"}
 clean = {cmd = "rm -rf build install log", description = "Clean build artifacts (build, install, log directories)"}
 
