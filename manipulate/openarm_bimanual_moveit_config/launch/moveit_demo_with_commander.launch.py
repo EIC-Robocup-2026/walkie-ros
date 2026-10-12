@@ -44,7 +44,36 @@ _HW_MAPPINGS = {
         "openarm_use_fake_hardware": "false",
         "add_world_link": "false",
     },
+    # MuJoCo owns ros2_control through mujoco_ros2_control, as Gazebo does
+    # through gz_ros2_control.
+    "mujoco": {
+        "ros2_control": "mujoco",
+        "openarm_ros2_control": "false",
+        "add_world_link": "false",
+    },
 }
+
+
+def _sim_controller_spawners():
+    """Spawners for a controller manager that runs inside the simulator.
+
+    No --controller-manager-timeout is passed, so each spawner waits until the
+    simulator's controller manager is available. Controller names follow
+    walkie_description/config/ros2_controller/sim_controllers.yaml, which
+    declares the joint state broadcaster as joint_broad.
+    """
+    return [
+        Node(package="controller_manager", executable="spawner",
+             arguments=["joint_broad"]),
+        Node(package="controller_manager", executable="spawner",
+             arguments=["left_joint_trajectory_controller",
+                        "right_joint_trajectory_controller"]),
+        Node(package="controller_manager", executable="spawner",
+             arguments=["left_gripper_controller",
+                        "right_gripper_controller"]),
+        Node(package="controller_manager", executable="spawner",
+             arguments=["lift_controller"]),
+    ]
 
 
 def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
@@ -62,7 +91,7 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
         xacro_path, mappings=mappings
     ).toprettyxml(indent="  ")
 
-    use_sim_time = hardware_type in ("gazebo", "isaac")
+    use_sim_time = hardware_type in ("gazebo", "isaac", "mujoco")
 
     moveit_config = (
         MoveItConfigsBuilder("openarm", package_name="openarm_bimanual_moveit_config")
@@ -152,21 +181,25 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc):
         gz_spawners = RegisterEventHandler(
             event_handler=OnProcessExit(
                 target_action=spawn,
-                on_exit=[
-                    Node(package="controller_manager", executable="spawner",
-                         arguments=["joint_state_broadcaster"]),
-                    Node(package="controller_manager", executable="spawner",
-                         arguments=["left_joint_trajectory_controller",
-                                    "right_joint_trajectory_controller"]),
-                    Node(package="controller_manager", executable="spawner",
-                         arguments=["left_gripper_controller",
-                                    "right_gripper_controller"]),
-                    Node(package="controller_manager", executable="spawner",
-                         arguments=["lift_controller"]),
-                ],
+                on_exit=_sim_controller_spawners(),
             )
         )
         return [rsp, gazebo, bridge, spawn, gz_spawners, move_group,
+                TimerAction(period=15.0, actions=[commander]), rviz]
+
+    # ── MuJoCo path ───────────────────────────────────────────────────────
+    if hardware_type == "mujoco":
+        # As with Gazebo, the simulator owns ros2_control: mujoco_ros2_control
+        # ships its own ros2_control_node, so none is started here. That node
+        # is launched separately (not wired into this package yet) and reads
+        # robot_description from the topic published by rsp; the spawners wait
+        # until its controller manager is available.
+        move_group = Node(
+            package="moveit_ros_move_group", executable="move_group",
+            output="screen",
+            parameters=[moveit_params],
+        )
+        return [rsp, *_sim_controller_spawners(), move_group,
                 TimerAction(period=15.0, actions=[commander]), rviz]
 
     # ── mock_components: fake object TFs + pick_and_place node ───────────
@@ -280,7 +313,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "hardware_type",
             default_value="mock_components",
-            description="Hardware backend: mock_components | gazebo | isaac | real_robot",
+            description="Hardware backend: mock_components | gazebo | isaac | "
+                        "real_robot | mujoco. mujoco expects the MuJoCo "
+                        "simulator (mujoco_ros2_control) to be started separately.",
         ),
         DeclareLaunchArgument(
             "controllers_file",
