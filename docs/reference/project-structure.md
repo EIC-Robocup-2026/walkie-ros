@@ -73,7 +73,7 @@ the pixi environment. See [Real Robot](../guides/real-robot.md).
 | `hardware/lidar/dual_laser_merger/` | `dual_laser_merger` | ament_cmake | Merges the front and back scans into one scan |
 | `hardware/lidar/robot_self_filter/` | `robot_self_filter` | ament_cmake | Removes the robot body from point clouds |
 | `hardware/lidar/unilidar_sdk2/unitree_lidar_ros2/src/unitree_lidar_ros2/` | `unitree_lidar_ros2` | ament_cmake | Unitree lidar driver (GPLv3) |
-| `hardware/lidar/unilidar_sdk2/unitree_lidar_sdk/` | `unitree_lidar_sdk` | cmake (no `package.xml`) | Unitree SDK example programs, linked against the prebuilt `libunilidar_sdk2.a`. See [Known issues](#known-issues). |
+| `hardware/lidar/unilidar_sdk2/unitree_lidar_sdk/` | `unitree_lidar_sdk` | cmake (no `package.xml`) | Unitree SDK example programs (`set_ip_address`, `set_to_udp_mode`, `set_to_serial_mode`, `example_lidar_udp`, `example_lidar_serial`), linked against the prebuilt `libunilidar_sdk2.a`. The build writes them to `bin/` in the source folder, which Git ignores. |
 | `hardware/lidar/laser_proc/` | `laser_proc` | ament_cmake | Not in git. Imported by `pixi run import`. `urg_node2` depends on it. |
 | `hardware/camera/realsense/config/` | none | none | One RealSense JSON preset. No package. |
 
@@ -265,5 +265,4 @@ overwritten the next time someone runs `pixi run import`.
 | Issue | Effect | Workaround |
 | --- | --- | --- |
 | `.tmuxp.yaml` and `scripts/tmux_walkie.sh` use the fixed path `~/robocup2026/walkie-ws` and plain `ros2 ...` commands without `pixi run` | On another machine the panes start in a folder that does not exist, and the typed `ros2` commands fail outside a pixi shell | Change the path, and add `pixi run` to the commands, before you use them |
-| The `unitree_lidar_sdk` `CMakeLists.txt` writes its programs to `bin/` in the source folder, where the same files are committed | After a build, `git status` shows the five files in `hardware/lidar/unilidar_sdk2/unitree_lidar_sdk/bin/` as modified | Do not commit them. Run `git checkout -- hardware/lidar/unilidar_sdk2/unitree_lidar_sdk/bin` to discard the change. |
 | `hardware/lidar/urg_node2/.gitmodules` names `urg_library` as a submodule, but `urg_library/` is plain files | None for the build. The file is left over from upstream. | Ignore it |
