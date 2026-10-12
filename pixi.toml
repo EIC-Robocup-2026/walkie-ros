@@ -212,3 +212,17 @@ mjcf-view = {cmd = "python -c \"import mujoco, mujoco.viewer; m = mujoco.MjModel
 
 [activation]
 scripts = ["install/setup.bash"]
+
+# Documentation site (MkDocs Material). The docs environment excludes the default
+# feature, so it installs without ROS: pixi run docs / pixi run docs-build.
+[feature.docs.dependencies]
+mkdocs-material = ">=9.7,<10"
+# MkDocs 2 is incompatible with the Material theme.
+mkdocs = ">=1.6,<2"
+
+[feature.docs.tasks]
+docs = {cmd = "mkdocs serve", description = "Preview the documentation site at http://127.0.0.1:8000"}
+docs-build = {cmd = "mkdocs build --strict", description = "Build the documentation site into site/, failing on any warning"}
+
+[environments]
+docs = {features = ["docs"], no-default-feature = true}

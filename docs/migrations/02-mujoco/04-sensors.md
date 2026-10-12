@@ -1,0 +1,273 @@
+# 2.4 Sensors
+
+The MuJoCo model carries the same sensors as the Gazebo model: two 2D lidars, one IMU
+and two cameras. This page explains how each one is built, how it maps to the real
+hardware, and what is still missing before the sensors publish ROS topics.
+
+**Goal:** give the MuJoCo model sensors that match the URDF frames exactly, so that
+any ROS code that works on the real robot or in Gazebo sees the same frames in MuJoCo.
+
+## Overview
+
+The generator, `description/scripts/build_mjcf.py`, does not hard-code the lidar and
+camera values. It reads them from the Gazebo `<sensor>` elements in the expanded URDF.
+The IMU is placed on the URDF link `top_imu_link` directly. The URDF stays the single
+source for frames, ranges and resolutions; the MJCF model follows it.
+
+| Sensor | MJCF elements | ROS frame | Real device | Gazebo sensor used |
+| --- | --- | --- | --- | --- |
+| Front lidar | 241 `rangefinder` sensors `front_lidar-0` to `front_lidar-240` | `front_lidar_link` | Hokuyo URG (`urg_node2`) | `front_lidar` |
+| Back lidar | 241 `rangefinder` sensors `back_lidar-0` to `back_lidar-240` | `back_lidar_link` | Lakibeam (`lakibeam1`) | `back_lidar` |
+| IMU | site `top_imu`, sensors `top_imu_quat`, `top_imu_gyro`, `top_imu_accel` | `top_imu_link` | not covered here | none |
+| Head camera | camera `head_camera` | `zed_head_left_camera_frame_optical` | ZED 2i (`zed_wrapper`) | `head_rgbd_sensor` |
+| Bottom camera | camera `bottom_camera` | `bottom_color_optical_frame` | RealSense D415 (`realsense2_camera`) | `bottom_depth_sensor` |
+
+The header comment of `description/mujoco/walkie.xml` lists the lidar, camera and IMU
+values of the current model. Read it first when you need a number.
+
+## Lidars
+
+### Why a rangefinder fan
+
+MuJoCo has no 2D lidar sensor. It has a `rangefinder`: one ray along the +Z axis of a
+site, which reports the distance to the first geom it hits, or -1 when it hits nothing.
+The generator builds each lidar as a fan of rangefinders, one site and one sensor per
+beam. Each site is rotated by +90 degrees about Y, so the site +Z axis points along the
+beam direction (+X of the beam frame).
+
+### Beam layout
+
+| Property | Value | Where it comes from |
+| --- | --- | --- |
+| Beams per lidar | 241 | The even spacing closest to `LIDAR_RESOLUTION_DEG = 1.0` |
+| Angular range | -2.09333333 to 2.09333333 rad (about ±120 degrees) | URDF `min_angle` and `max_angle` |
+| Angle increment | 0.017444444416 rad (about 0.9995 degrees) | Range divided by 240 intervals |
+| Range | 0.18 m to 10 m | URDF `<range>` `min` and `max` |
+| Update interval | 0.025 s (40 Hz) | URDF `update_rate` 40 |
+| Sensor names | `<lidar>-<index>`, for example `front_lidar-0` | Naming scheme of `RangefinderLidarPlugin` |
+| Site names | `<lidar>_ray_<index>`, for example `front_lidar_ray_000` | Generator |
+| Body | `base_link` | `LIDAR_RAY_BODY` |
+| Site group | 5 (hidden in the viewer by default) | `LIDAR_SITE_GROUP` |
+
+Beam 0 points at `min_angle` and the last beam at `max_angle`, so
+`min_angle + (count - 1) * increment == max_angle`. A `sensor_msgs/LaserScan` consumer
+expects exactly that.
+
+The increment in the header is rounded **down** to 12 digits
+(`LIDAR_INCREMENT_DIGITS`). A publisher that computes the beam count as
+`int((max_angle - min_angle) / increment) + 1` then gets 241 and not 240. Rounding to
+the nearest value could push the quotient below 240 and lose the last beam.
+
+The Gazebo lidar in `description/urdf/walkie/lidar/lidar.gz.xacro` uses 360 samples over
+the same 240 degrees (about 0.67 degrees per sample) and adds Gaussian noise with a
+standard deviation of 0.01 m. The MuJoCo lidar uses 1 degree spacing and adds no noise.
+Each beam is a separate sensor and a separate ray cast, so the beam count is the main
+cost of the lidar emulation.
+
+### Why the beam sites sit on base_link
+
+A MuJoCo rangefinder ignores the geoms of the body that owns its site. `base_link` owns
+the collision geometry of the base shell around both scanners. Placing the sites on
+`base_link`, at the pose of `front_lidar_link` and `back_lidar_link`, means the beams
+cannot hit the robot's own base. If the sites sat on the lidar link bodies, every beam
+that passes the base shell would report a hit on the robot itself.
+
+| Lidar | Site position in `base_link` | Height above the floor at `home` |
+| --- | --- | --- |
+| `front_lidar` | (0, -0.235, 0.28232) | 0.307 m |
+| `back_lidar` | (0, 0.235, 0.28232) | 0.307 m |
+
+`base_link` is rotated by +90 degrees about Z relative to `base_footprint`. The front
+lidar is therefore 0.235 m ahead of the robot center and the back lidar 0.235 m behind
+it.
+
+### Cost: interval and nsample
+
+Every rangefinder has `interval="0.025 0"` and `nsample="1"`:
+
+```xml
+<rangefinder site="front_lidar_ray_000" name="front_lidar-0" nsample="1" interval="0.025 0"/>
+```
+
+With `interval`, MuJoCo evaluates the sensor once per scan period (0.025 s) instead of
+every physics step (0.002 s). That is about 12.5 times fewer ray casts. MuJoCo only
+honours `interval` for sensors with a history buffer, which is why `nsample` is 1.
+
+### Beams in camera images
+
+MuJoCo draws every rangefinder beam that hits something, in the viewer and in camera
+images. The generator sets the rangefinder colour to fully transparent
+(`RANGEFINDER_RGBA`, alpha 0), so the beams stay out of colour images. Depth images
+still contain the beams unless the renderer disables the `mjVIS_RANGEFINDER` flag.
+
+### Mapping to the real lidars
+
+| | Front | Back |
+| --- | --- | --- |
+| Real device | Hokuyo URG, driver `urg_node2` | Lakibeam, driver `lakibeam1` |
+| Real frame | `front_lidar_link` | `back_lidar_link` |
+| Real topic | `/front_lidar` | `/back_lidar` |
+| Real angular range | `angle_min` / `angle_max` ±2.0933 rad | `scan_range_start` 60 to `scan_range_stop` 300 (240 degrees) |
+| Real scan rate | not set in the config | `scanfreq` 30 |
+| MuJoCo angular range | ±2.09333333 rad | ±2.09333333 rad |
+| MuJoCo rate | 40 Hz | 40 Hz |
+
+The real values are in `bringup/config/lidar/dual_lidar_config.yml`. On the real robot,
+`bringup/launch/dual_lidar_hokuyo_lakibeam.launch.py` runs `dual_laser_merger`, which
+merges `/front_lidar` and `/back_lidar` into one scan in the frame `merged_lidar_link`
+and remaps the output to `/scan`. Nav2 reads `/scan`.
+
+### What /scan will need
+
+Nothing publishes the MuJoCo lidars on ROS topics yet. Two parts are missing:
+
+1. **A LaserScan publisher per lidar**, publishing `/front_lidar` and `/back_lidar`.
+2. **The merger.** Run `dual_laser_merger` with the same parameters as on the real
+   robot, so `/scan` is built the same way in both cases.
+
+The generator names the sensors for `RangefinderLidarPlugin` from
+`mujoco_ros2_control_plugins` 0.1.2. The parameter names below come from the upstream
+demo file `mujoco_ros2_control_demos/config/mujoco_ros2_control_plugins.yaml`. They sit
+under `mujoco_plugins.<instance name>` in a parameter file of the `ros2_control_node`.
+
+| Parameter | Upstream demo value | Walkie value (from the `walkie.xml` header) |
+| --- | --- | --- |
+| `type` | `mujoco_ros2_control_plugins/RangefinderLidarPlugin` | same |
+| `lidar_publish_rate` | 5.0 | 40 |
+| `lidar.frame_name` | `lidar_sensor_frame` | see the open questions below |
+| `lidar.angle_increment` | 0.025 | 0.017444444416 |
+| `lidar.min_angle` | -0.3 | -2.09333333 |
+| `lidar.max_angle` | 0.3 | 2.09333333 |
+| `lidar.range_min` | 0.05 | 0.18 |
+| `lidar.range_max` | 10.0 | 10 |
+| `lidar.laserscan_topic` | `/scan` | `/front_lidar` and `/back_lidar` |
+
+MuJoCo does not clip readings to the range. A beam that hits nothing reads -1, and a
+beam can read more than 10 m. The publisher must treat both as "no return".
+
+!!! warning "RangefinderLidarPlugin is deprecated upstream"
+    In `mujoco_ros2_control_plugins` 0.1.2 the plugin description reads
+    "[Deprecated] Wraps MuJoCo rangefinder sensors as ROS 2 LaserScan publishers." The
+    upstream demo config adds: "This is included for test purposes only. We do not
+    recommend users use this plugin." The 0.1.2 core library also logs a deprecation
+    message when rangefinder lidars come from the ros2_control xacro config.
+
+    The alternative is `Mujoco3dLidarPlugin`. It republishes the data of every MuJoCo
+    simulation extension registered as `mujoco.plugin.lidar`. It has not been tried
+    with Walkie. Choosing between the two is an open decision.
+
+Open questions:
+
+- How `RangefinderLidarPlugin` finds the sensors of one lidar: whether it uses
+  `frame_name` as the name prefix (`front_lidar`) or another parameter. The URDF frame is
+  `front_lidar_link`, but the sensor prefix is `front_lidar`.
+- Whether two instances of the plugin (front and back) can run in one
+  `ros2_control_node`.
+
+## IMU
+
+| Item | Value |
+| --- | --- |
+| MJCF site | `top_imu`, on the body `top_imu_link` |
+| Mount | `top_imu_link` is fixed to `base_link` at (0, 0, 0.17); 0.195 m above the floor at `home` |
+| MJCF sensors | `top_imu_quat` (`framequat`), `top_imu_gyro` (`gyro`), `top_imu_accel` (`accelerometer`) |
+| ros2_control | `<sensor name="top_imu">` with `mujoco_type` = `imu` and `mujoco_sensor_name` = `top_imu` |
+| State interfaces | `orientation.x/y/z/w`, `angular_velocity.x/y/z`, `linear_acceleration.x/y/z` |
+| Broadcaster | `imu_sensor_broadcaster`, with `sensor_name: top_imu` and `frame_id: top_imu_link` |
+| Gazebo equivalent | `imu_sensor` (type `imu`) on `top_imu_link` at 50 Hz, bridged to the ROS topic `imu` |
+
+The `mujoco_sensor_name` value is a prefix for the three MJCF sensors `top_imu_quat`,
+`top_imu_gyro` and `top_imu_accel`. The test `test_ros2_control_contract` checks that
+all three exist.
+
+The accelerometer reports specific force, like a real IMU. At rest it reads about
++9.81 m/s² on Z, not zero. The MuJoCo IMU adds no noise.
+
+`imu_sensor_broadcaster` publishes on `~/imu`, which resolves to
+`/imu_sensor_broadcaster/imu`. Gazebo publishes on `/imu`. The launch file must remap
+the topic so that code written for Gazebo finds it.
+
+## Cameras
+
+| | `head_camera` | `bottom_camera` |
+| --- | --- | --- |
+| Real camera | ZED 2i (`zed_wrapper`, `camera_model` `zed2i`) | RealSense D415 (`realsense2_camera`, `camera_name` `bottom`) |
+| MJCF body | `zed_head_left_camera_frame_optical` | `bottom_color_optical_frame` |
+| Gazebo sensor used | `head_rgbd_sensor` | `bottom_depth_sensor` |
+| Resolution | 640 x 360 | 1280 x 720 |
+| Horizontal field of view | 1.9199 rad (110 degrees) | 1.211258501 rad (69.4 degrees) |
+| MJCF `fovy` | 77.5544 degrees | 42.5612 degrees |
+| Position at `home` | 1.142 m above the floor | 0.212 m above the floor |
+| View direction at `home` | 9.0 degrees below horizontal | 50.0 degrees **above** horizontal |
+
+!!! warning
+    The bottom camera may point the wrong way. See [Known issues](#known-issues).
+
+Each camera sits on the body of its URDF optical frame, with `quat="0 1 0 0"`, a
+rotation of 180 degrees about X. The reason: a MuJoCo camera looks along -Z with +Y up,
+while a ROS optical frame looks along +Z with +Y down. The rotation maps one onto the
+other, so the camera image and the URDF frame agree.
+
+MuJoCo takes the vertical field of view (`fovy`), while Gazebo gives the horizontal one.
+The generator converts with `fovy = 2 * atan(tan(hfov / 2) * height / width)`.
+
+The head camera follows the head: its frame hangs from `head_servo_joint` on the lift,
+so it moves with the lift and the servo. The 9 degree downward tilt at `home` comes from
+the 0.157 rad roll of the servo mount in `description/robots/gz_walkie.urdf.xacro`.
+
+The bottom camera uses the resolution of the Gazebo depth sensor (1280 x 720). The
+Gazebo colour sensor of the same D415 is 1920 x 1080 with the same horizontal field of
+view.
+
+Two settings outside the cameras matter for rendering:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| `<visual><global offwidth offheight>` in `walkie.xml` | 1280 x 720 | MuJoCo renders cameras into an offscreen buffer of this size. It must be at least as large as the largest camera. |
+| `<statistic extent>` and `<visual><map znear>` in `scene.xml` | 2.2 and 0.025 | The near clipping plane is `znear * extent` = 5.5 cm. Below about 3 cm, the head camera renders the inside of the ZED housing it sits in. |
+
+### What camera topics will need
+
+Nothing publishes the MuJoCo cameras yet. `mujoco_ros2_control_plugins` 0.1.2 has a
+`CameraPlugin`. Its upstream demo config sets `camera_publish_rate` and, per camera,
+`policy`, `frame_name`, `info_topic`, `image_topic` and `depth_topic`. It has not been
+configured for Walkie.
+
+## Sensor checks in test_mjcf.py
+
+| Test | What it checks | Tolerance |
+| --- | --- | --- |
+| `test_imu_at_rest` | After 0.5 s at rest: the `top_imu` site is on `top_imu_link`; acceleration is (0, 0, 9.81); angular velocity is zero; `top_imu_quat` is a `framequat` sensor and matches the site orientation | 0.05 m/s², 0.01 rad/s, 1e-6 on the quaternion dot product |
+| `test_lidar_beam_layout[front_lidar]`, `[back_lidar]` | Beam count; first and last beam at `min_angle` and `max_angle`; spacing about 1 degree; the `walkie.xml` header gives back the same count through `int((max - min) / increment) + 1`; every beam starts at the `<lidar>_link` site and points in the right direction; `interval` is 1 / `update_rate`; history size is 1 | 1e-12 rad on the end angles, 1 % on the spacing, 1e-9 m on origins, 1e-5 on directions |
+| `test_lidar_sees_nothing_in_empty_scene[front_lidar]`, `[back_lidar]` | In the empty `scene.xml`, after 0.5 s, no beam reads between 0 and `range_max`: no hits on the robot and none on the floor | none (exact) |
+| `test_lidar_ranges_to_wall` | A FURN box wall (half size 0.05 x 3.0 x 0.5 m) whose face is 1.0 m in front of the robot. Each beam reads the analytic ray-box distance, or a miss. The front lidar has more than 100 hits; the back lidar has some hits with its outer beams, but fewer than the front | 0.02 m |
+| `test_cameras_at_optical_frames` | Each camera is on its optical frame body, at the same position, with -Z of the camera along +Z of the frame and +Y flipped; the horizontal field of view computed back from `fovy` equals the Gazebo value | 1e-9 on pose, 1e-4 rad on the field of view |
+| `test_ros2_control_contract` (IMU part) | For each ros2_control `<sensor>` with `mujoco_type` `imu`, the sensors `<prefix>_quat`, `<prefix>_gyro` and `<prefix>_accel` exist | none (exact) |
+
+[2.6 Tests](06-tests.md) describes the rest of the test suite.
+
+## Commits
+
+| Repository | Commit | Change |
+| --- | --- | --- |
+| `description` submodule | `301c439` | MJCF generator, including lidars, cameras and the IMU |
+| `description` submodule | `851618c` | ros2_control `mujoco` branch with the `top_imu` sensor, and `imu_sensor_broadcaster` in `mujoco_controllers.yaml` |
+| `description` submodule | `2b15ba1` | `test_mjcf.py`, including the sensor tests |
+
+## Still open
+
+| Item | Status |
+| --- | --- |
+| Lidar publishing | Choose between the deprecated `RangefinderLidarPlugin` and `Mujoco3dLidarPlugin`, then configure two lidars and `dual_laser_merger` |
+| Camera publishing | Configure `CameraPlugin` for `head_camera` and `bottom_camera` |
+| IMU topic | Remap `imu_sensor_broadcaster` `~/imu` to `/imu` in the launch file |
+
+The launch file that will hold all of this is described in
+[2.5 ros2_control](05-ros2-control.md). The collision classes that decide what the arms
+touch (but not what the lidars see) are in [2.3 Collisions](03-collisions.md).
+
+## Known issues
+
+| Issue | Effect | Workaround |
+| --- | --- | --- |
+| The D415 mount in `description/robots/gz_walkie.urdf.xacro` has `rpy="0 -0.872664626  -${M_PI/2}"`. The pitch of -0.8727 rad (-50 degrees) tilts the camera up. | The bottom camera looks along (0.643, 0, 0.766) in the robot frame at `home`, 50 degrees above horizontal. The MJCF camera matches the URDF frame (`test_cameras_at_optical_frames`), so every mode, including the real robot, has this pose in TF. The real mount has not been checked. | If the real camera looks down at the floor, flip the sign of the pitch in the URDF, then run `pixi run mjcf`. |
