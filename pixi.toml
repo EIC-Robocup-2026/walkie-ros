@@ -37,7 +37,8 @@ nanoflann = "*"
 nlohmann_json = "*"
 numpy = "*"
 pcl = "*"
-pytest = "*"
+# pytest 9 rejects the pytest11 plugins of Jazzy launch_testing / launch_testing_ros.
+pytest = ">=8,<9"
 pyyaml = "*"
 pyzmq = "*"
 ros-jazzy-action-msgs = "*"
@@ -182,6 +183,7 @@ zstd = "*"
 vcstool = "*"
 openvdb = ">=13.0.0,<14"
 ros-jazzy-rmw-zenoh-cpp = ">=0.2.10,<0.3"
+mujoco = ">=3.14"
 
 # The following packages were not found:
 # ros-jazzy-laser-proc = "*"
@@ -203,6 +205,8 @@ build = {cmd = "colcon build --symlink-install --cmake-args -DCMAKE_PREFIX_PATH=
 build-pkg = {cmd = "colcon build --symlink-install --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX --packages-select", depends-on = ["setup"], description = "Build a specific package, e.g: pixi run build-pkg -- openvdb_vendor"}
 test = {cmd = "colcon test", description = "Run tests for the workspace"}
 clean = {cmd = "rm -rf build install log", description = "Clean build artifacts (build, install, log directories)"}
+mjcf = {cmd = "python description/scripts/build_mjcf.py", description = "Regenerate the MuJoCo model description/mujoco/walkie.xml from the robot xacro (no build needed)"}
+mjcf-view = {cmd = "python -c \"import mujoco, mujoco.viewer; m = mujoco.MjModel.from_xml_path('description/mujoco/scene.xml'); d = mujoco.MjData(m); mujoco.mj_resetDataKeyframe(m, d, m.key('home').id); mujoco.viewer.launch(m, d)\"", description = "Open the MuJoCo scene (robot on a floor) in the interactive viewer, starting from the home keyframe"}
 
 # Scripts to source on environment activation, found after first colcon build.
 
