@@ -4,6 +4,12 @@ channels = ["https://prefix.dev/robostack-jazzy", "https://prefix.dev/conda-forg
 platforms = ["linux-64"]
 
 [dependencies]
+# RoboStack build set _25. Every build set rebuilds all ROS packages, so the
+# mutex is pinned: adding or updating a package must not silently move the
+# environment to another set. Changing it requires `pixi run clean && pixi run build`.
+# See docs/migrations/04-robostack-build-25.md.
+ros2-distro-mutex = "0.19.*"
+
 # Base ROS dependencies
 ros-jazzy-ros-base = "*"
 pkg-config = "*"
@@ -182,11 +188,17 @@ zlib = "*"
 zstd = "*"
 vcstool = "*"
 openvdb = ">=13.0.0,<14"
-ros-jazzy-rmw-zenoh-cpp = ">=0.2.10,<0.3"
-mujoco = ">=3.14"
+ros-jazzy-rmw-zenoh-cpp = ">=0.2.11,<0.3"
+# Must match the libmujoco that ros-jazzy-mujoco-vendor is built against (3.15.0 in _25).
+mujoco = "3.15.*"
+ros-jazzy-mujoco-ros2-control = ">=0.1.2"
+# `ros2 control view_controller_chains` imports graphviz; RoboStack does not map python3-graphviz.
+python-graphviz = "*"
+
+# Available since build set _25, but still built from source (walkie_external.repos):
+# ros-jazzy-laser-proc = "*"
 
 # The following packages were not found:
-# ros-jazzy-laser-proc = "*"
 # libblosc-dev = "*"
 # liblzma-dev = "*"
 # libopenexr-dev = "*"
