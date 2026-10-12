@@ -215,6 +215,9 @@ install/
 hardware/lidar/laser_proc/
 hardware/lidar/unilidar_sdk2/unitree_lidar_sdk/bin/
 
+# Cloned by `pixi run import` from walkie_external.repos
+tools/twist_stamper/
+
 # pixi environments
 .pixi/*
 !.pixi/config.toml
