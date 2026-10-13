@@ -1,104 +1,34 @@
 # walkie-ros
 
-<img width="2048" height="1365" alt="FB_IMG_1783438479888" src="https://github.com/user-attachments/assets/4141053d-d985-4ba4-ae8d-bf04ddfef6bd" />
+<img width="2048" height="1365" alt="Walkie at RoboCup@Home 2026, Incheon" src="https://github.com/user-attachments/assets/4141053d-d985-4ba4-ae8d-bf04ddfef6bd" />
 
-## Description
-This repository contains the ROS 2 software stack for Walkie robot. It provides a comprehensive suite of packages to support both real-world robot operation and simulation.
+ROS 2 Jazzy software stack for the Walkie robot (EIC RoboCup 2026): robot description, ros2_control hardware drivers, Gazebo and MuJoCo simulation, Nav2 navigation, MoveIt manipulation for the bimanual OpenArm, perception, and the bringup that ties them together. The workspace is managed with [pixi](https://pixi.sh) and [RoboStack](https://robostack.github.io); no system ROS installation is needed.
 
-The project includes:
-- **Robot Description**: URDF and Xacro definitions for the robot's kinematics and visualization.
-- **Hardware Interfaces**: Drivers for Cubemars actuators, Lidar sensors (Hokuyo, Lakibeam), and other peripherals.
-- **Simulation**: Gazebo environments and configurations for testing the robot in a virtual world.
-- **Navigation**: Integration with the Nav2 stack for autonomous navigation, localization, and SLAM.
-- **Bringup**: Launch files to easily start the robot's hardware and software subsystems.
+## Documentation
 
-## Project Structure
-```text
-walkie-ros
-├── bringup
-├── description (sub repo)
-├── hardware
-│   ├── actuator
-│   └── lidar
-├── navigation (sub repo)
-│   └── nav2
-├── scripts
-├── simulation
-│   └── gazebo
-├── tools
-│   └── joy_interface
-└── readme.md
-```
+**https://eic-robocup-2026.github.io/walkie-ros/**
 
-- **bringup**: Launch files and config for launching necessary software stacks.
-- **description**: Robot URDF and mesh files.
-- **hardware**: Contains all hardware drivers and software/packages specific to hardware.
-- **navigation**: Contains Nav2 config and launch files, and future custom navigation packages.
-- **scripts**: Utility scripts for quick execution of common tasks (e.g., launching simulations).
-- **simulation**: Gazebo launch, world, and model files.
-- **tools**: Custom packages / tools for development/deployment.
+The site is built from the [`docs/`](docs/index.md) folder, which you can also read directly on GitHub. To preview it locally:
 
-# Getting Started
-
-## 0. Prerequisites
-Ensure you have the following software installed:
-- **Ubuntu 24.04** (Native, VM, or WSL2)
-- **ROS 2 Jazzy**
-- **Git**
-- **Git LFS**
-
-## 1. Set up a ROS 2 Workspace
-Create a workspace directory structure.
-```text
-ros2_ws
-├── build/    # Build artifacts (generated)
-├── install/  # Install artifacts (generated)
-├── log/      # Build logs (generated)
-└── src/      # Source code directory
-    ├── walkie-ros  # This repository
-    └── ...         # Other packages
-```
-Create the directory:
 ```bash
-mkdir -p ~/ros2_ws/src
+pixi run docs    # serves http://127.0.0.1:8000
 ```
 
-## 2. Clone the Repository
-Clone this repository into your workspace `src` folder. Be sure to include submodules.
+| Start here | |
+|---|---|
+| [Getting Started](docs/getting-started.md) | Prerequisites, clone, install, build, and the first simulation run |
+| [Guides](docs/guides/index.md) | Simulation, navigation, manipulation, perception, the real robot, tests, Docker |
+| [Migration Log](docs/migrations/index.md) | Why the workspace looks the way it does: the move to pixi, the MuJoCo model, the docs site, the RoboStack build set |
+| [Troubleshooting](docs/troubleshooting.md) | Known errors and their fixes |
+
+## Quick start
+
+Requires Linux x86_64, [pixi](https://pixi.sh/latest/#installation), Git LFS, and SSH access to the EIC-Robocup-2026 organization. See [Getting Started](docs/getting-started.md) for details.
+
 ```bash
-cd ~/ros2_ws/src/
 git clone --recurse-submodules git@github.com:EIC-Robocup-2026/walkie-ros.git
+cd walkie-ros
+git submodule foreach --recursive git lfs pull
+pixi install
+pixi run build
 ```
-
-## 3. Install Dependencies
-Install the necessary ROS 2 dependencies using `rosdep`.
-```bash
-cd ~/ros2_ws
-rosdep install --from-paths src --ignore-src -y
-```
-
-## 4. Build and Run
-Build the packages and source the workspace.
-```bash
-colcon build --symlink-install
-source install/setup.bash
-```
-
-### Run Navigation Simulation (Quick Start)
-You can launch the full Gazebo simulation with the Nav2 stack using the provided script:
-```bash
-./src/walkie-ros/scripts/sim_nav_gazebo.sh
-```
-
-### Manual Launch
-
-#### Run Navigation + Gazebo Simulation
-```bash
-ros2 launch robot_bringup nav_sim_omnibot.launch.py
-```
-
-#### Run Gazebo Simulation
-```bash
-ros2 launch robot_simulation gzsim_omnibot.launch.py
-```
-

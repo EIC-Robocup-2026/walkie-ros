@@ -17,6 +17,13 @@ project(openarm_bimanual_moveit_config)
 
 find_package(ament_cmake REQUIRED)
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_pytest REQUIRED)
+  # Checks that every link/joint named in the SRDF exists in the walkie URDF.
+  ament_add_pytest_test(test_srdf_urdf_contract test/test_srdf_urdf_contract.py
+    TIMEOUT 120)
+endif()
+
 ament_package()
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/launch")
