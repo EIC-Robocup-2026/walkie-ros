@@ -132,7 +132,7 @@ the wheel controller. See [Real Robot](real-robot.md).
 | --- | --- |
 | Localize on a saved map | `pixi run ros2 launch robot_navigation localization_Nav2_real.launch.py` |
 | Build a new map | `pixi run ros2 launch robot_navigation mapping_Nav2_real.launch.py` |
-| Save the map while mapping | `pixi run ros2 run nav2_map_server map_saver_cli -f <map_dir>/map` |
+| Save the map while mapping | `pixi run save_map <map_name>` |
 
 - Localization defaults to the Arena map (`27_01072026_Arena`) with its keepout
   zones. To use another map, see [Choose a map](#choosing-a-map-on-the-real-robot).

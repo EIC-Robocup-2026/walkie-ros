@@ -221,12 +221,19 @@ test = {cmd = "colcon test", description = "Run tests for the workspace"}
 clean = {cmd = "rm -rf build install log", description = "Clean build artifacts (build, install, log directories)"}
 mjcf = {cmd = "python description/scripts/build_mjcf.py", description = "Regenerate the MuJoCo model description/mujoco/walkie.xml from the robot xacro (no build needed)"}
 mjcf-view = {cmd = "python -c \"import mujoco, mujoco.viewer; m = mujoco.MjModel.from_xml_path('description/mujoco/scene.xml'); d = mujoco.MjData(m); mujoco.mj_resetDataKeyframe(m, d, m.key('home').id); mujoco.viewer.launch(m, d)\"", description = "Open the MuJoCo scene (robot on a floor) in the interactive viewer, starting from the home keyframe"}
+slam = {cmd = "ros2 launch robot_navigation slam_toolbox.launch.py", description = "Run SLAM Toolbox online sync mapping"}
+teleop-key = {cmd = "ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=cmd_vel_key -p stamped:=true -p frame_id:=base_footprint", description = "Keyboard teleop for Walkie omni base (TwistStamped to cmd_vel_key, Shift for strafe)"}
 
 [tasks.build-setup]
 args = [{ arg = "workers", default = "1" }]
 cmd = "colcon build --symlink-install --parallel-workers {{ workers }} --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX"
 depends-on = ["setup"]
 description = "Build workspace for initial setup (default: 1 worker; e.g. pixi run build-setup 3)"
+
+[tasks.save-map]
+args = [{ arg = "map_name" }]
+cmd = 'mkdir -p "navigation/walkie-navigation/map/{{ map_name }}" && ros2 run nav2_map_server map_saver_cli -t /map -f "navigation/walkie-navigation/map/{{ map_name }}/map"'
+description = "Alias for save_map"
 
 [activation]
 scripts = ["install/setup.bash"]
