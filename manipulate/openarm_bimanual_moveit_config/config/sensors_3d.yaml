@@ -16,7 +16,7 @@ head_cloud:
   sensor_plugin: occupancy_map_monitor/PointCloudOctomapUpdater
   point_cloud_topic: /zed_head/zed_node/point_cloud/cloud_registered/filtered
   max_range: 1.5
-  point_subsample: 1
+  point_subsample: 4
   padding_offset: 0.02
   padding_scale: 1.0
   max_update_rate: 5.0

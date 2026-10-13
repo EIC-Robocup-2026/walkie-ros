@@ -38,6 +38,8 @@ def _launch_setup(context, *args, **kwargs):
     launch_nav_rviz = "true" if (rviz_enabled and mode == "nav") else "false"
     launch_moveit_rviz = "true" if (rviz_enabled and mode == "moveit") else "false"
 
+    pointclouds_enabled = context.perform_substitution(LaunchConfiguration("use_pointclouds"))
+
     actions = []
 
     # 1. O3DE Omnibot Bringup (RSP, twist_mux, twist_stamper, ros2_control spawners, rosbridge, RViz2)
@@ -49,6 +51,7 @@ def _launch_setup(context, *args, **kwargs):
             "use_sim_time": sim_time,
             "use_rviz": launch_nav_rviz,
             "right_joint2_fixed": j2_fixed,
+            "use_pointclouds": pointclouds_enabled,
         }.items(),
     )
     actions.append(o3de_omnibot_launch)
@@ -137,6 +140,11 @@ def generate_launch_description():
             "right_joint2_fixed",
             default_value="false",
             description="Lock the right arm joint2 as fixed",
+        ),
+        DeclareLaunchArgument(
+            "use_pointclouds",
+            default_value="false",
+            description="Whether to generate and self-filter 3D point clouds from RGB-D cameras (CPU intensive)",
         ),
         DeclareLaunchArgument(
             "map",

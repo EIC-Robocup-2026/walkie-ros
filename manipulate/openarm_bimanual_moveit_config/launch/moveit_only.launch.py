@@ -171,7 +171,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "octomap_resolution",
-            default_value="0.008",
+            default_value="0.025",
             description="Octomap voxel size in metres.",
         ),
         DeclareLaunchArgument(

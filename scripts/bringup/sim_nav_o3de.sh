@@ -60,6 +60,7 @@ USE_NAV="true"
 USE_MOVEIT="true"
 USE_RVIZ="true"
 RVIZ_MODE="nav"
+USE_POINTCLOUDS="false"
 MAP_ARG=""
 
 while [[ $# -gt 0 ]]; do
@@ -82,6 +83,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --nav-rviz)
             RVIZ_MODE="nav"
+            shift
+            ;;
+        --pointclouds)
+            USE_POINTCLOUDS="true"
+            shift
+            ;;
+        --no-pointclouds)
+            USE_POINTCLOUDS="false"
             shift
             ;;
         --base-only|--bringup-only)
@@ -109,6 +118,7 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --moveit-rviz   Launch RViz2 configured with MoveIt MotionPlanning (interactive arm control)"
             echo "  --nav-rviz      Launch RViz2 configured with Nav2 Navigation panel (default)"
+            echo "  --pointclouds   Enable 3D RGB-D point cloud processing & self-filtering (CPU intensive)"
             echo "  --map <path>    Specify custom map YAML file (defaults to AWS Small House map)"
             echo "  --bringup-only  Launch ONLY O3DE bridge & ros2_control (no Nav2, MoveIt, or RViz)"
             echo "  --base-only     Alias for --bringup-only"
@@ -128,12 +138,13 @@ done
 
 echo "=========================================================="
 echo " Starting O3DE Walkie ROS 2 Integration"
-echo "   Nav2:      $USE_NAV"
-echo "   MoveIt:    $USE_MOVEIT"
-echo "   RViz2:     $USE_RVIZ (mode: $RVIZ_MODE)"
-echo "   Foxglove:  ws://localhost:8765"
+echo "   Nav2:        $USE_NAV"
+echo "   MoveIt:      $USE_MOVEIT"
+echo "   PointClouds: $USE_POINTCLOUDS"
+echo "   RViz2:       $USE_RVIZ (mode: $RVIZ_MODE)"
+echo "   Foxglove:    ws://localhost:8765"
 if [ -n "$MAP_ARG" ]; then
-    echo "   Map:       $MAP_ARG"
+    echo "   Map:         $MAP_ARG"
 fi
 echo "=========================================================="
 
@@ -146,5 +157,7 @@ ros2 launch robot_bringup nav_sim_o3de.launch.py \
     use_nav:="$USE_NAV" \
     use_moveit:="$USE_MOVEIT" \
     use_rviz:="$USE_RVIZ" \
+    use_pointclouds:="$USE_POINTCLOUDS" \
     rviz_mode:="$RVIZ_MODE" \
     "${EXTRA_ARGS[@]}"
+
