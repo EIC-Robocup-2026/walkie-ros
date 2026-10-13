@@ -29,6 +29,15 @@ Add dependencies with `pixi add ros-jazzy-<name>` and commit `pixi.toml` and `pi
 export RMW_IMPLEMENTATION=rmw_zenoh_cpp            # every shell that runs nodes
 pixi run ros2 run rmw_zenoh_cpp rmw_zenohd          # one Zenoh router per machine
 
+# O3DE simulation + Nav2 + MoveIt (one command, handles sourcing, zenoh router, bringup, Nav2, MoveIt)
+./scripts/bringup/sim_nav_o3de.sh
+
+# O3DE bringup only (robot_state_publisher, topic_based_ros2_control, twist_mux)
+ros2 launch robot_bringup o3de_omnibot.launch.py
+
+# Gazebo simulation + Nav2 (one command, handles sourcing and zenoh router)
+./scripts/sim_nav_gazebo.sh
+
 pixi run ros2 launch robot_simulation gzsim_omnibot.launch.py     # Gazebo
 pixi run ros2 launch robot_bringup nav_sim_omnibot.launch.py      # Gazebo + Nav2
 pixi run ros2 launch robot_bringup mujoco_omnibot.launch.py       # MuJoCo + controllers + RViz [headless:=true]

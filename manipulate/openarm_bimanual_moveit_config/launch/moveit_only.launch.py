@@ -37,8 +37,12 @@ _HW_MAPPINGS = {
         "add_world_link": "false",
     },
     "isaac": {
-        "ros2_control": "isaac",
-        "add_world_link": "true",
+        "ros2_control": "topic_base",
+        "add_world_link": "false",
+    },
+    "o3de": {
+        "ros2_control": "topic_base",
+        "add_world_link": "false",
     },
     "real_robot": {
         "ros2_control": "real_robot",
@@ -73,7 +77,7 @@ def _make_nodes(context: LaunchContext, hardware_type_lc,
 
     pkg_moveit = get_package_share_directory("openarm_bimanual_moveit_config")
 
-    use_sim_time = hardware_type in ("gazebo", "isaac", "mujoco")
+    use_sim_time = hardware_type in ("gazebo", "isaac", "mujoco", "o3de")
 
     moveit_config = (
         MoveItConfigsBuilder("openarm", package_name="openarm_bimanual_moveit_config")
@@ -118,15 +122,14 @@ def _make_nodes(context: LaunchContext, hardware_type_lc,
         else:
             moveit_params[_k] = _v
 
-    # MoveItConfigsBuilder does not auto-load move_group.yaml, so merge it here.
-    # Provides start_state_max_bounds_error and trajectory_execution tolerances.
-    with open(os.path.join(pkg_moveit, "config", "move_group.yaml")) as _f:
-        _mg = yaml.safe_load(_f)
-    for _k, _v in _mg.items():
-        if isinstance(_v, dict) and isinstance(moveit_params.get(_k), dict):
-            moveit_params[_k].update(_v)
-        else:
-            moveit_params[_k] = _v
+    # Fall back to KDLKinematicsPlugin if trac_ik is not installed
+    kinematics_cfg = moveit_params.get("robot_description_kinematics", {})
+    try:
+        get_package_share_directory("trac_ik_kinematics_plugin")
+    except Exception:
+        for group, params in kinematics_cfg.items():
+            if isinstance(params, dict) and "trac_ik" in params.get("kinematics_solver", ""):
+                params["kinematics_solver"] = "kdl_kinematics_plugin/KDLKinematicsPlugin"
 
     move_group = Node(
         package="moveit_ros_move_group",
@@ -140,7 +143,7 @@ def _make_nodes(context: LaunchContext, hardware_type_lc,
         executable="rviz2",
         arguments=["-d", os.path.join(pkg_moveit, "config", "moveit.rviz")],
         parameters=[moveit_params],
-        output="log",
+        output="screen",
         condition=IfCondition(use_rviz),
     )
 
@@ -153,7 +156,7 @@ def generate_launch_description():
             "hardware_type",
             default_value="mock_components",
             description="Hardware backend: mock_components | gazebo | isaac | "
-                        "real_robot | mujoco",
+                        "o3de | real_robot | mujoco",
         ),
         DeclareLaunchArgument(
             "point_cloud_topic",

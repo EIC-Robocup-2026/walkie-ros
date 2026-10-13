@@ -161,8 +161,8 @@ joint_limits:
     max_acceleration: 1.0
     max_deceleration: -1.5
   lift_joint:
-    min_position: 0.0
-    max_position: 0.7435
+    min_position: -0.7435
+    max_position: 0.0
     has_velocity_limits: true
     max_velocity: 0.03   # 3 cm/s — matches hardware_max_cm_s in lift_homing_node.py
     has_acceleration_limits: true

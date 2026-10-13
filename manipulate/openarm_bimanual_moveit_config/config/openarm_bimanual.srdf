@@ -323,7 +323,7 @@
     <!-- WHOLE BODY GROUP STATES (Includes Lift Joint)  -->
     <!-- ============================================== -->
     <group_state name="home" group="left_arm_lift">
-        <joint name="lift_joint" value="0.7435"/>
+        <joint name="lift_joint" value="0"/>
         <joint name="openarm_left_joint1" value="0.2618"/>
         <joint name="openarm_left_joint2" value="0"/>
         <joint name="openarm_left_joint3" value="0"/>
@@ -334,7 +334,7 @@
     </group_state>
 
     <group_state name="home" group="right_arm_lift">
-        <joint name="lift_joint" value="0.7435"/>
+        <joint name="lift_joint" value="0"/>
         <joint name="openarm_right_joint1" value="-0.2618"/>
         <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="0"/>
@@ -345,7 +345,7 @@
     </group_state>
 
     <group_state name="home" group="both_arms_lift">
-        <joint name="lift_joint" value="0.7435"/>
+        <joint name="lift_joint" value="0"/>
         <joint name="openarm_left_joint1" value="0.2618"/>
         <joint name="openarm_left_joint2" value="0"/>
         <joint name="openarm_left_joint3" value="0"/>
@@ -363,7 +363,7 @@
     </group_state>
 
     <group_state name="hands_up" group="left_arm_lift">
-        <joint name="lift_joint" value="0.7435"/> <!-- Adjust this lift height as needed -->
+        <joint name="lift_joint" value="0"/> <!-- Adjust this lift height as needed -->
         <joint name="openarm_left_joint1" value="0.6458"/>
         <joint name="openarm_left_joint2" value="0"/>
         <joint name="openarm_left_joint3" value="0"/>
@@ -374,7 +374,7 @@
     </group_state>
 
     <group_state name="hands_up" group="right_arm_lift">
-        <joint name="lift_joint" value="0.7435"/> <!-- Adjust this lift height as needed -->
+        <joint name="lift_joint" value="0"/> <!-- Adjust this lift height as needed -->
         <joint name="openarm_right_joint1" value="-0.6458"/>
         <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="0"/>
@@ -385,7 +385,7 @@
     </group_state>
 
     <group_state name="hands_up" group="both_arms_lift">
-        <joint name="lift_joint" value="0.7435"/> <!-- Adjust this lift height as needed -->
+        <joint name="lift_joint" value="0"/> <!-- Adjust this lift height as needed -->
         <joint name="openarm_left_joint1" value="0.6458"/>
         <joint name="openarm_left_joint2" value="0"/>
         <joint name="openarm_left_joint3" value="0"/>
@@ -403,7 +403,7 @@
     </group_state>
 
     <group_state name="standby" group="left_arm_lift">
-        <joint name="lift_joint" value="0.7435"/>
+        <joint name="lift_joint" value="0"/>
         <joint name="openarm_left_joint1" value="0.6458"/>
         <joint name="openarm_left_joint2" value="0"/>
         <joint name="openarm_left_joint3" value="0"/>
@@ -414,7 +414,7 @@
     </group_state>
 
     <group_state name="standby" group="right_arm_lift">
-        <joint name="lift_joint" value="0.7435"/>
+        <joint name="lift_joint" value="0"/>
         <joint name="openarm_right_joint1" value="-0.6458"/>
         <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="0"/>
@@ -425,7 +425,7 @@
     </group_state>
 
     <group_state name="standby" group="both_arms_lift">
-        <joint name="lift_joint" value="0.7435"/>
+        <joint name="lift_joint" value="0"/>
         <joint name="openarm_left_joint1" value="0.6458"/>
         <joint name="openarm_left_joint2" value="0"/>
         <joint name="openarm_left_joint3" value="0"/>
@@ -442,9 +442,9 @@
         <joint name="openarm_right_joint7" value="1.5708"/>
     </group_state>
 
-    <!-- pre-place: same arm pose as left_arm pre-place, lift raised to 0.735 m. -->
+    <!-- pre-place: same arm pose as left_arm pre-place, lift at top (0.0 m). -->
     <group_state name="pre-place" group="left_arm_lift">
-        <joint name="lift_joint" value="0.735"/>
+        <joint name="lift_joint" value="0"/>
         <joint name="openarm_left_joint1" value="0.6458"/>
         <joint name="openarm_left_joint2" value="0"/>
         <joint name="openarm_left_joint3" value="0"/>
@@ -454,9 +454,9 @@
         <joint name="openarm_left_joint7" value="-1.5708"/>
     </group_state>
 
-    <!-- pre-place: left arm = pre-place pose, right arm = standby pose, lift 0.735 m. -->
+    <!-- pre-place: left arm = pre-place pose, right arm = standby pose, lift at top (0.0 m). -->
     <group_state name="pre-place" group="both_arms_lift">
-        <joint name="lift_joint" value="0.735"/>
+        <joint name="lift_joint" value="0"/>
         <joint name="openarm_left_joint1" value="0.6458"/>
         <joint name="openarm_left_joint2" value="0"/>
         <joint name="openarm_left_joint3" value="0"/>
@@ -473,9 +473,9 @@
         <joint name="openarm_right_joint7" value="1.5708"/>
     </group_state>
 
-    <!-- tray: same arm pose as both_arms tray, lift raised to 0.7435 m. -->
+    <!-- tray: same arm pose as both_arms tray, lift at top (0.0 m). -->
     <group_state name="tray" group="both_arms_lift">
-        <joint name="lift_joint" value="0.7435"/>
+        <joint name="lift_joint" value="0"/>
         <joint name="openarm_left_joint1" value="0.5934"/>
         <joint name="openarm_left_joint2" value="-0.4712"/>
         <joint name="openarm_left_joint3" value="0.1396"/>
@@ -492,9 +492,9 @@
         <joint name="openarm_right_joint7" value="-1.5882"/>
     </group_state>
 
-    <!-- basket: same left-arm pose as both_arms basket, lift lowered to 0.303 m. -->
+    <!-- basket: same left-arm pose as both_arms basket, lift lowered to -0.4405 m. -->
     <group_state name="basket" group="left_arm_lift">
-        <joint name="lift_joint" value="0.303"/>
+        <joint name="lift_joint" value="-0.4405"/>
         <joint name="openarm_left_joint1" value="-0.6807"/>
         <joint name="openarm_left_joint2" value="0.1745"/>
         <joint name="openarm_left_joint3" value="0.5061"/>
@@ -504,9 +504,9 @@
         <joint name="openarm_left_joint7" value="0.6981"/>
     </group_state>
 
-    <!-- basket: same right-arm pose as both_arms basket, lift lowered to 0.303 m. -->
+    <!-- basket: same right-arm pose as both_arms basket, lift lowered to -0.4405 m. -->
     <group_state name="basket" group="right_arm_lift">
-        <joint name="lift_joint" value="0.303"/>
+        <joint name="lift_joint" value="-0.4405"/>
         <joint name="openarm_right_joint1" value="0.6109"/>
         <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="-0.2618"/>
@@ -517,9 +517,9 @@
     </group_state>
 
     <!-- basket: same arm pose as both_arms basket (left = left_arm basket,
-         right = standby's right arm), lift lowered to 0.303 m. -->
+         right = standby's right arm), lift lowered to -0.4405 m. -->
     <group_state name="basket" group="both_arms_lift">
-        <joint name="lift_joint" value="0.303"/>
+        <joint name="lift_joint" value="-0.4405"/>
         <joint name="openarm_left_joint1" value="-0.6807"/>
         <joint name="openarm_left_joint2" value="0.1745"/>
         <joint name="openarm_left_joint3" value="0.5061"/>
@@ -536,10 +536,9 @@
         <joint name="openarm_right_joint7" value="1.5708"/>
     </group_state>
 
-    <!-- basket_hold: same left-arm pose as both_arms basket_hold; lift requested
-         at 0.744 m, clamped to the lift_joint max_position limit of 0.7435 m. -->
+    <!-- basket_hold: same left-arm pose as both_arms basket_hold; lift at top (0.0 m). -->
     <group_state name="basket_hold" group="left_arm_lift">
-        <joint name="lift_joint" value="0.7435"/>
+        <joint name="lift_joint" value="0"/>
         <joint name="openarm_left_joint1" value="-0.6807"/>
         <joint name="openarm_left_joint2" value="0.1745"/>
         <joint name="openarm_left_joint3" value="0.5061"/>
@@ -549,10 +548,9 @@
         <joint name="openarm_left_joint7" value="0.6981"/>
     </group_state>
 
-    <!-- basket_hold: same right-arm pose as both_arms basket_hold; lift requested
-         at 0.744 m, clamped to the lift_joint max_position limit of 0.7435 m. -->
+    <!-- basket_hold: same right-arm pose as both_arms basket_hold; lift at top (0.0 m). -->
     <group_state name="basket_hold" group="right_arm_lift">
-        <joint name="lift_joint" value="0.7435"/>
+        <joint name="lift_joint" value="0"/>
         <joint name="openarm_right_joint1" value="-0.2793"/>
         <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
         <joint name="openarm_right_joint3" value="-0.0873"/>
@@ -562,10 +560,9 @@
         <joint name="openarm_right_joint7" value="-0.8378"/>
     </group_state>
 
-    <!-- basket_hold: same arm pose as both_arms basket_hold; lift requested at
-         0.744 m, clamped to the lift_joint max_position limit of 0.7435 m. -->
+    <!-- basket_hold: same arm pose as both_arms basket_hold; lift at top (0.0 m). -->
     <group_state name="basket_hold" group="both_arms_lift">
-        <joint name="lift_joint" value="0.7435"/>
+        <joint name="lift_joint" value="0"/>
         <joint name="openarm_left_joint1" value="-0.6807"/>
         <joint name="openarm_left_joint2" value="0.1745"/>
         <joint name="openarm_left_joint3" value="0.5061"/>

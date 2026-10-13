@@ -23,12 +23,15 @@ from launch.actions import (
     IncludeLaunchDescription,
     TimerAction,
 )
+from launch.conditions import IfCondition
 from launch.launch_description_sources import (
     AnyLaunchDescriptionSource,
     PythonLaunchDescriptionSource,
 )
-from launch.substitutions import Command, LaunchConfiguration, PythonExpression
-from launch_ros.actions import Node
+from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution, PythonExpression
+from launch_ros.actions import ComposableNodeContainer, Node
+from launch_ros.descriptions import ComposableNode
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -42,23 +45,33 @@ def generate_launch_description():
     )
 
     # Launch configuration variables
-    use_sim_time = LaunchConfiguration("use_sim_time", default="false")
+    use_sim_time = LaunchConfiguration("use_sim_time", default="true")
     robot_model = LaunchConfiguration("robot_model", default=default_robot)
     ros2_control = LaunchConfiguration("ros2_control", default="topic_base")
     use_zed = LaunchConfiguration("use_zed", default="true")
+    use_pointclouds = LaunchConfiguration("use_pointclouds", default="true")
     right_joint2_fixed = LaunchConfiguration("right_joint2_fixed", default="false")
+    use_rviz = LaunchConfiguration("use_rviz", default="true")
 
     declare_use_sim_time = DeclareLaunchArgument(
-        "use_sim_time", default_value="false", description="Use simulation clock if true"
+        "use_sim_time", default_value="true", description="Use simulation clock if true"
     )
     declare_use_zed = DeclareLaunchArgument(
         "use_zed", default_value="true", description="Whether to use ZED camera"
+    )
+    declare_use_pointclouds = DeclareLaunchArgument(
+        "use_pointclouds",
+        default_value="true",
+        description="Whether to generate 3D point clouds from RGB-D cameras (head & bottom)",
     )
     declare_right_joint2_fixed = DeclareLaunchArgument(
         "right_joint2_fixed",
         default_value="false",
         description="Lock the right arm joint2 as a fixed URDF joint at its nominal "
                     "(zero) position, dropping it from MoveIt's IK/planning DOF",
+    )
+    declare_use_rviz = DeclareLaunchArgument(
+        "use_rviz", default_value="true", description="Whether to launch RViz2"
     )
 
     robot_description_content = Command(
@@ -105,7 +118,7 @@ def generate_launch_description():
     robot_state_publisher_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
-                get_package_share_directory(package_name),
+                get_package_share_directory(description_package_name),
                 "launch",
                 "robot_state_publisher.launch.py",
             )
@@ -115,6 +128,9 @@ def generate_launch_description():
             "robot_model": robot_model,
             "ros2_control": ros2_control,
             "use_zed": use_zed,
+            "use_arm": "true",
+            "use_fake_arm_hardware": "true",
+            "right_joint2_fixed": right_joint2_fixed,
         }.items(),
     )
 
@@ -122,7 +138,7 @@ def generate_launch_description():
         get_package_share_directory(description_package_name),
         "config",
         "ros2_controller",
-        "isaac_controllers.yaml",
+        "sim_controllers.yaml",
     )
 
     with open(controllers_config) as _cf:
@@ -152,7 +168,7 @@ def generate_launch_description():
         package="controller_manager",
         executable="ros2_control_node",
         parameters=[
-            {"robot_description": robot_description_content},
+            {"robot_description": ParameterValue(robot_description_content, value_type=str)},
             {"use_sim_time": use_sim_time},
             controllers_config_selected,
         ],
@@ -260,9 +276,125 @@ def generate_launch_description():
         }.items(),
     )
 
+    rviz_config_path = PathJoinSubstitution([
+        get_package_share_directory(package_name), "config", "rviz", "default.rviz"
+    ])
+    rviz2 = Node(
+        package="rviz2",
+        executable="rviz2",
+        name="rviz2",
+        output="screen",
+        arguments=["-d", rviz_config_path],
+        parameters=[{"use_sim_time": use_sim_time}],
+        condition=IfCondition(use_rviz),
+    )
+
+    # RGB-D Camera Point Cloud Processing (Head ZED + Bottom Realsense)
+    # Uses depth_image_proc::PointCloudXyzrgbNode in a shared component container
+    # for high-efficiency point cloud generation from synchronized color + depth images.
+    rgbd_pc_container = ComposableNodeContainer(
+        name="camera_pointcloud_container",
+        namespace="",
+        package="rclcpp_components",
+        executable="component_container",
+        composable_node_descriptions=[
+            ComposableNode(
+                package="depth_image_proc",
+                plugin="depth_image_proc::PointCloudXyzrgbNode",
+                name="point_cloud_xyzrgb_node_head",
+                remappings=[
+                    ("rgb/camera_info", "/zed_head/zed_node/rgb/camera_info"),
+                    ("/zed_head/zed_node/rgb/color/rect/camera_info", "/zed_head/zed_node/rgb/camera_info"),
+                    ("rgb/image_rect_color", "/zed_head/zed_node/rgb/color/rect/image"),
+                    ("depth_registered/image_rect", "/zed_head/zed_node/depth/depth_registered"),
+                    ("points", "/zed_head/zed_node/point_cloud/cloud_registered"),
+                ],
+                parameters=[
+                    {"use_sim_time": use_sim_time},
+                    {"exact_sync": False},
+                ],
+            ),
+            ComposableNode(
+                package="depth_image_proc",
+                plugin="depth_image_proc::PointCloudXyzrgbNode",
+                name="point_cloud_xyzrgb_node_bottom",
+                remappings=[
+                    ("rgb/camera_info", "/bottom_depth/color/camera_info"),
+                    ("rgb/image_rect_color", "/bottom_depth/color/image_raw"),
+                    ("depth_registered/image_rect", "/bottom_depth/image_raw"),
+                    ("points", "/bottom_depth/pointcloud"),
+                ],
+                parameters=[
+                    {"use_sim_time": use_sim_time},
+                    {"exact_sync": False},
+                ],
+            ),
+        ],
+        output="screen",
+        condition=IfCondition(use_pointclouds),
+    )
+
+    # Self-filter the ZED 2i registered cloud using the robot's URDF collision geometry.
+    # Feeds MoveIt octomap at /zed_head/zed_node/point_cloud/cloud_registered/filtered.
+    zed_self_filter_config = os.path.join(
+        get_package_share_directory(package_name),
+        "config",
+        "camera",
+        "zed2i_self_filter.yaml",
+    )
+    zed_self_filter = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("robot_self_filter"),
+                "launch",
+                "self_filter.launch.py",
+            )
+        ),
+        launch_arguments={
+            "robot_description": robot_description_content,
+            "filter_config": zed_self_filter_config,
+            "in_pointcloud_topic": "/zed_head/zed_node/point_cloud/cloud_registered",
+            "out_pointcloud_topic": "/zed_head/zed_node/point_cloud/cloud_registered/filtered",
+            "lidar_sensor_type": "1",
+            "use_sim_time": use_sim_time,
+        }.items(),
+        condition=IfCondition(
+            PythonExpression(["'", use_pointclouds, "' == 'true' and '", use_zed, "' == 'true'"])
+        ),
+    )
+
+    # Self-filter the bottom camera cloud using the robot's URDF collision geometry.
+    # Feeds RViz display at /camera/camera/depth/color/points/filtered.
+    realsense_self_filter_config = os.path.join(
+        get_package_share_directory(package_name),
+        "config",
+        "camera",
+        "d415_bottom_self_filter.yaml",
+    )
+    realsense_self_filter = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("robot_self_filter"),
+                "launch",
+                "self_filter.launch.py",
+            )
+        ),
+        launch_arguments={
+            "robot_description": robot_description_content,
+            "filter_config": realsense_self_filter_config,
+            "in_pointcloud_topic": "/bottom_depth/pointcloud",
+            "out_pointcloud_topic": "/camera/camera/depth/color/points/filtered",
+            "lidar_sensor_type": "1",
+            "use_sim_time": use_sim_time,
+        }.items(),
+        condition=IfCondition(use_pointclouds),
+    )
+
     ld = LaunchDescription()
     ld.add_action(declare_use_sim_time)
     ld.add_action(declare_use_zed)
+    ld.add_action(declare_use_pointclouds)
+    ld.add_action(declare_use_rviz)
     ld.add_action(declare_right_joint2_fixed)
     ld.add_action(robot_state_publisher_cmd)
 
@@ -278,7 +410,12 @@ def generate_launch_description():
     ld.add_action(delayed_right_gripper_controller_spawner)
     ld.add_action(delayed_lift_controller_spawner)
 
+    ld.add_action(rgbd_pc_container)
+    ld.add_action(zed_self_filter)
+    ld.add_action(realsense_self_filter)
+
     ld.add_action(current_pose_publisher)
     ld.add_action(rosbridge_launch)
+    ld.add_action(rviz2)
 
     return ld
