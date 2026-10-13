@@ -11,11 +11,10 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node
-from nav2_common.launch import RewrittenYaml
+from launch_ros.actions import Node, SetRemap
 
 
 def generate_launch_description():
@@ -87,38 +86,36 @@ def generate_launch_description():
         parameters=[{"use_sim_time": True}],
     )
 
-    # The Nav2 fork loads MPPI motion models as plugins: "motion_model: Omni" also
-    # needs FollowPath.Omni.plugin, which the robot_navigation parameter files do
-    # not set yet. RewrittenYaml adds it to a temporary copy of the file.
-    nav2_params = RewrittenYaml(
-        source_file=params_file,
-        param_rewrites={
-            "controller_server.ros__parameters.FollowPath.Omni.plugin": "mppi::OmniMotionModel",
-        },
-        convert_types=True,
-    )
-
+    # Nav2 nodes publish "cmd_vel"; remap it to cmd_vel_controller so commands
+    # pass velocity_smoother and collision_monitor before reaching twist_mux on
+    # cmd_vel_nav. SetRemap rules come before nav2_bringup's own
+    # cmd_vel -> cmd_vel_nav remaps, and the first matching rule wins.
     # serve_static_map defaults to use_localization, so it is set explicitly.
-    # use_composition is off because the Nav2 fork starts nav2_container with
+    # use_composition is off because nav2_bringup starts nav2_container with
     # "component_container --isolated", a flag the Jazzy component_container
     # ignores. All servers would then share one executor thread, and if
     # lifecycle_manager_nav2 is loaded before the other servers, its blocking
     # startup stops the container from loading them.
-    nav2_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(pkg_nav2_bringup, "launch", "bringup_launch.py")
-        ),
-        launch_arguments={
-            "use_sim_time": "True",
-            "map": map_yaml,
-            "params_file": nav2_params,
-            "use_localization": "False",
-            "serve_static_map": "True",
-            "use_keepout_zones": "False",
-            "use_speed_zones": "False",
-            "autostart": "True",
-            "use_composition": "False",
-        }.items(),
+    nav2_launch = GroupAction(
+        actions=[
+            SetRemap(src="cmd_vel", dst="cmd_vel_controller"),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(pkg_nav2_bringup, "launch", "bringup_launch.py")
+                ),
+                launch_arguments={
+                    "use_sim_time": "True",
+                    "map": map_yaml,
+                    "params_file": params_file,
+                    "use_localization": "False",
+                    "serve_static_map": "True",
+                    "use_keepout_zones": "False",
+                    "use_speed_zones": "False",
+                    "autostart": "True",
+                    "use_composition": "False",
+                }.items(),
+            ),
+        ]
     )
 
     ld = LaunchDescription()
