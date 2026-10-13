@@ -33,6 +33,7 @@ def _launch_setup(context, *args, **kwargs):
     rviz_enabled = context.perform_substitution(LaunchConfiguration("use_rviz")).lower() == "true"
     mode = context.perform_substitution(LaunchConfiguration("rviz_mode")).lower()
     j2_fixed = context.perform_substitution(LaunchConfiguration("right_joint2_fixed"))
+    map_yaml = context.perform_substitution(LaunchConfiguration("map"))
 
     launch_nav_rviz = "true" if (rviz_enabled and mode == "nav") else "false"
     launch_moveit_rviz = "true" if (rviz_enabled and mode == "moveit") else "false"
@@ -65,6 +66,7 @@ def _launch_setup(context, *args, **kwargs):
                     ),
                     launch_arguments={
                         "use_sim_time": sim_time,
+                        "map": map_yaml,
                     }.items(),
                 )
             ],
@@ -96,6 +98,14 @@ def _launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
+    pkg_robot_navigation = get_package_share_directory("robot_navigation")
+    default_aws_map = os.path.join(
+        pkg_robot_navigation,
+        "map",
+        "08_23102025_SimWalkie_awssmallhouse_slam_toolbox",
+        "map.yaml",
+    )
+
     declared_arguments = [
         DeclareLaunchArgument(
             "use_sim_time",
@@ -126,6 +136,11 @@ def generate_launch_description():
             "right_joint2_fixed",
             default_value="false",
             description="Lock the right arm joint2 as fixed",
+        ),
+        DeclareLaunchArgument(
+            "map",
+            default_value=default_aws_map,
+            description="Full path to the map YAML file for simulation",
         ),
     ]
 

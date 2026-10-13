@@ -60,42 +60,56 @@ USE_NAV="true"
 USE_MOVEIT="true"
 USE_RVIZ="true"
 RVIZ_MODE="nav"
+MAP_ARG=""
 
-for arg in "$@"; do
-    case $arg in
+while [[ $# -gt 0 ]]; do
+    case $1 in
         --no-nav)
             USE_NAV="false"
+            shift
             ;;
         --no-moveit)
             USE_MOVEIT="false"
+            shift
             ;;
         --no-rviz)
             USE_RVIZ="false"
+            shift
             ;;
         --moveit-rviz)
             RVIZ_MODE="moveit"
+            shift
             ;;
         --nav-rviz)
             RVIZ_MODE="nav"
+            shift
             ;;
         --base-only|--bringup-only)
             USE_NAV="false"
             USE_MOVEIT="false"
             USE_RVIZ="false"
+            shift
             ;;
         --nav-only)
             USE_MOVEIT="false"
             RVIZ_MODE="nav"
+            shift
             ;;
         --moveit-only)
             USE_NAV="false"
             RVIZ_MODE="moveit"
+            shift
+            ;;
+        --map|-m)
+            MAP_ARG="$2"
+            shift 2
             ;;
         --help|-h)
             echo "Usage: $0 [options]"
             echo "Options:"
             echo "  --moveit-rviz   Launch RViz2 configured with MoveIt MotionPlanning (interactive arm control)"
             echo "  --nav-rviz      Launch RViz2 configured with Nav2 Navigation panel (default)"
+            echo "  --map <path>    Specify custom map YAML file (defaults to AWS Small House map)"
             echo "  --bringup-only  Launch ONLY O3DE bridge & ros2_control (no Nav2, MoveIt, or RViz)"
             echo "  --base-only     Alias for --bringup-only"
             echo "  --nav-only      Launch O3DE bridge with Nav2 (no MoveIt)"
@@ -105,6 +119,10 @@ for arg in "$@"; do
             echo "  --no-rviz       Disable RViz2 GUI"
             exit 0
             ;;
+        *)
+            echo "Unknown option: $1"
+            shift
+            ;;
     esac
 done
 
@@ -113,10 +131,19 @@ echo " Starting O3DE Walkie ROS 2 Integration"
 echo "   Nav2:      $USE_NAV"
 echo "   MoveIt:    $USE_MOVEIT"
 echo "   RViz2:     $USE_RVIZ (mode: $RVIZ_MODE)"
+if [ -n "$MAP_ARG" ]; then
+    echo "   Map:       $MAP_ARG"
+fi
 echo "=========================================================="
+
+EXTRA_ARGS=()
+if [ -n "$MAP_ARG" ]; then
+    EXTRA_ARGS+=("map:=$MAP_ARG")
+fi
 
 ros2 launch robot_bringup nav_sim_o3de.launch.py \
     use_nav:="$USE_NAV" \
     use_moveit:="$USE_MOVEIT" \
     use_rviz:="$USE_RVIZ" \
-    rviz_mode:="$RVIZ_MODE"
+    rviz_mode:="$RVIZ_MODE" \
+    "${EXTRA_ARGS[@]}"
