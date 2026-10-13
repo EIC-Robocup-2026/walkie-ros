@@ -77,7 +77,8 @@ done
 
 echo "=========================================================="
 echo " Starting O3DE Walkie Base Bringup (Simulation Interface Only)"
-echo "   RViz2: $USE_RVIZ"
+echo "   RViz2:     $USE_RVIZ"
+echo "   Foxglove:  ws://localhost:8765"
 echo "=========================================================="
 
 ros2 launch robot_bringup o3de_omnibot.launch.py use_rviz:="$USE_RVIZ"

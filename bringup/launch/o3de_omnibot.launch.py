@@ -281,6 +281,18 @@ def generate_launch_description():
         }.items(),
     )
 
+    foxglove_bridge = Node(
+        package="foxglove_bridge",
+        executable="foxglove_bridge",
+        name="foxglove_bridge",
+        output="screen",
+        parameters=[
+            {"use_sim_time": use_sim_time},
+            {"send_buffer_limit": 50000000},  # 50 MB
+            {"address": "0.0.0.0"},
+        ],
+    )
+
     rviz_config_path = PathJoinSubstitution([
         get_package_share_directory(package_name), "config", "rviz", "default.rviz"
     ])
@@ -422,6 +434,7 @@ def generate_launch_description():
 
     ld.add_action(current_pose_publisher)
     ld.add_action(rosbridge_launch)
+    ld.add_action(foxglove_bridge)
     ld.add_action(rviz2)
 
     return ld

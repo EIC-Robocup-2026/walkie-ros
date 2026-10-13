@@ -255,6 +255,18 @@ def generate_launch_description():
         }.items(),
     )
 
+    foxglove_bridge = Node(
+        package="foxglove_bridge",
+        executable="foxglove_bridge",
+        name="foxglove_bridge",
+        output="screen",
+        parameters=[
+            {"use_sim_time": True},
+            {"send_buffer_limit": 50000000},  # 50 MB
+            {"address": "0.0.0.0"},
+        ],
+    )
+
     ld = LaunchDescription()
     # Add launch arguments
     ld.add_action(declare_use_zed)
@@ -275,5 +287,6 @@ def generate_launch_description():
 
     ld.add_action(current_pose_publisher)
     ld.add_action(rosbridge_launch)
+    ld.add_action(foxglove_bridge)
 
     return ld

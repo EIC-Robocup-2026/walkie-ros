@@ -131,6 +131,7 @@ echo " Starting O3DE Walkie ROS 2 Integration"
 echo "   Nav2:      $USE_NAV"
 echo "   MoveIt:    $USE_MOVEIT"
 echo "   RViz2:     $USE_RVIZ (mode: $RVIZ_MODE)"
+echo "   Foxglove:  ws://localhost:8765"
 if [ -n "$MAP_ARG" ]; then
     echo "   Map:       $MAP_ARG"
 fi
