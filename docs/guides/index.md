@@ -1,6 +1,6 @@
 # Guides
 
-Task-focused pages. Each guide assumes you have finished
+Pick the guide for your task. Each guide assumes you have finished
 [Getting Started](../getting-started.md): the environment is installed and the
 workspace is built.
 

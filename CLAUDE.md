@@ -53,7 +53,7 @@ pixi run docs          # serve http://127.0.0.1:8000 (separate `docs` environmen
 pixi run docs-build    # mkdocs build --strict; broken links and anchors fail
 ```
 
-New pages must be added to `nav` in `mkdocs.yml`. Admonition bodies are indented 4 spaces.
+New pages must be added to `nav` in `mkdocs.yml`. Admonition bodies are indented 4 spaces. Pages are answer-first: commands, required steps, and breaking warnings stay visible; background, internals, and long tables go in closed `??? info "Descriptive title"` blocks (see "Writing conventions" in `docs/migrations/03-documentation.md`). Keep linked headings outside collapsibles; when renaming one, keep its anchor with `{ #old-anchor }`.
 
 ## Architecture
 
