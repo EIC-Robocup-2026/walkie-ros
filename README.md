@@ -30,5 +30,5 @@ git clone --recurse-submodules git@github.com:EIC-Robocup-2026/walkie-ros.git
 cd walkie-ros
 git submodule foreach --recursive git lfs pull
 pixi install
-pixi run build
+pixi run build-setup                  # build packages sequentially (or: pixi run build)
 ```

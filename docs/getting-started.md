@@ -116,13 +116,17 @@ environment takes about 7 GB of disk space.
 ## 5. Build the workspace
 
 ```bash
-pixi run build
+pixi run build-setup
 ```
 
-This builds every package in the workspace with colcon. The first build takes
-a long time, because it includes 46 Nav2 packages from
-`navigation/navigation2/`. Later builds are much faster, because only changed
-files are compiled again.
+This builds every package in the workspace with colcon. On initial setup,
+`pixi run build-setup` compiles packages one by one (`--parallel-workers 1` by default)
+to prevent high parallel compilation memory usage from triggering out-of-memory crashes
+(the workspace includes 46 Nav2 packages from `navigation/navigation2/`).
+
+If your computer has enough RAM, you can specify more parallel workers (e.g.
+`pixi run build-setup 3`) or use `pixi run build` for default parallel compilation.
+Later builds are much faster, because only changed files are compiled again.
 
 After the build, `pixi run` and `pixi shell` source `install/setup.bash` for
 you, so ROS finds the workspace packages. Before the first build, pixi prints
@@ -132,14 +136,15 @@ this message. It is expected:
 WARN Could not find activation scripts: .../install/setup.bash
 ```
 
-??? info "What the build task runs, and where the output goes"
-    `build` is a pixi task. It runs two helper tasks first:
+??? info "What the build tasks run, and where the output goes"
+    `build-setup` and `build` are pixi tasks. They run two helper tasks first:
 
     | Task | What it does |
     | --- | --- |
     | `setup` | Adds a `libpthread.so` symlink that the conda compiler sysroot is missing. |
     | `import` | Runs `vcs import < walkie_external.repos`. This clones `hardware/lidar/laser_proc` and `tools/twist_stamper`, two source packages that are not installed from the pixi channels. |
-    | `build` | Runs `colcon build --symlink-install` against the pixi environment. |
+    | `build-setup` | Runs `colcon build --symlink-install --parallel-workers 1` (or custom workers, e.g. `pixi run build-setup 3`). |
+    | `build` | Runs `colcon build --symlink-install` against the pixi environment with default parallel workers. |
 
     `build/`, `install/`, and `log/` are created next to `pixi.toml` and are
     ignored by Git.

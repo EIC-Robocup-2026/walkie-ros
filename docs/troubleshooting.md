@@ -337,12 +337,35 @@ pixi run build-pkg laser_proc urg_node2
     workspace. `pixi run build` runs the import first. `pixi run build-pkg`
     does not, and it builds only the packages you name.
 
+### The build runs out of memory or crashes during initial setup
+
+Compiling all packages in parallel (especially the 46 Nav2 packages in
+`navigation/navigation2/`) consumes large amounts of RAM and can trigger the
+Linux Out-Of-Memory (OOM) killer, terminating the compiler.
+
+Build packages one by one instead:
+
+```bash
+pixi run build-setup
+```
+
+Or specify a worker count that fits your machine's memory:
+
+```bash
+pixi run build-setup 2
+```
+
+??? info "Why the first build needs more memory"
+    colcon processes multiple packages in parallel by default. During the initial
+    setup, heavy C++ packages compile simultaneously. `build-setup` sets
+    `--parallel-workers 1` by default so packages compile one at a time.
+
 ### A plain colcon build behaves differently
 
 A package builds with `pixi run build`, but not with `colcon build` typed in a
 `pixi shell`.
 
-Use `pixi run build` or `pixi run build-pkg <package>`. If you must run colcon
+Use `pixi run build-setup`, `pixi run build`, or `pixi run build-pkg <package>`. If you must run colcon
 yourself, run the same steps as the `build` task:
 
 ```bash

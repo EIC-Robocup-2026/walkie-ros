@@ -14,6 +14,7 @@ The workspace is managed by pixi + RoboStack Jazzy (`pixi.toml`, `pixi.lock`). T
 
 ```bash
 pixi install                          # create .pixi/envs/default from pixi.lock
+pixi run build-setup [workers]        # initial setup build (default: 1 worker; e.g. pixi run build-setup 3)
 pixi run build                        # setup + import (walkie_external.repos) + colcon build --symlink-install
 pixi run build-pkg <pkg> [<pkg>...]   # rebuild selected packages
 pixi run clean                        # remove build/ install/ log/
