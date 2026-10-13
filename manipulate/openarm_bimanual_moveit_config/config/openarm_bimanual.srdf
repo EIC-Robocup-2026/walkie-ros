@@ -873,6 +873,7 @@
     <disable_collisions link1="openarm_left_link4" link2="openarm_right_link5" reason="Never"/>
     <disable_collisions link1="openarm_left_link4" link2="openarm_right_link6" reason="Never"/>
     <disable_collisions link1="openarm_left_link5" link2="openarm_left_link6" reason="Adjacent"/>
+    <disable_collisions link1="openarm_left_link5" link2="openarm_left_link7" reason="Never"/>
     <disable_collisions link1="openarm_left_link5" link2="openarm_left_right_finger" reason="Never"/>
     <disable_collisions link1="openarm_left_link5" link2="openarm_right_link1" reason="Never"/>
     <disable_collisions link1="openarm_left_link5" link2="openarm_right_link2" reason="Never"/>
