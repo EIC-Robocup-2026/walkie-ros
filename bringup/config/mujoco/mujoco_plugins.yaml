@@ -1,0 +1,51 @@
+# Sensor plugins for mujoco_ros2_control (mujoco_ros2_control_plugins 0.1.2).
+# mujoco_omnibot.launch.py passes this file to mujoco_ros2_control's ros2_control_node.
+#
+# Camera and lidar names must match the MJCF (description/mujoco/walkie.xml), and every
+# frame_name must exist in the URDF expanded with ros2_control:=mujoco.
+# Plugin update() runs in the hardware write(), so publish rates are capped by the
+# controller manager update_rate (60 Hz in mujoco_controllers.yaml).
+/**:
+  ros__parameters:
+    mujoco_plugins:
+      mujoco_camera_plugin:
+        type: "mujoco_ros2_control_plugins/CameraPlugin"
+        camera_publish_rate: 5.0
+        # Real ZED topic names, so nodes written for the robot need no remaps.
+        # One MuJoCo camera renders both images, so the depth is registered to the color.
+        head_camera:
+          policy: streaming
+          frame_name: zed_head_left_camera_frame_optical
+          info_topic: /zed_head/zed_node/depth/camera_info
+          image_topic: /zed_head/zed_node/rgb/color/rect/image
+          depth_topic: /zed_head/zed_node/depth/depth_registered
+        bottom_camera:
+          policy: streaming
+          frame_name: bottom_color_optical_frame
+          info_topic: /bottom_camera/camera_info
+          image_topic: /bottom_camera/image_raw
+          depth_topic: /bottom_camera/depth/image_raw
+      # RangefinderLidarPlugin is deprecated upstream in favor of Mujoco3dLidarPlugin,
+      # which needs the mujoco_3d_lidar MuJoCo extension (not in the pixi environment).
+      # A beam with no hit reads -1.0. The plugin instance must keep this name.
+      rangefinder_lidar_plugin:
+        type: "mujoco_ros2_control_plugins/RangefinderLidarPlugin"
+        lidar_publish_rate: 40.0
+        # Same topics and frames as the real Hokuyo (front) and Lakibeam (rear);
+        # dual_laser_merger combines them into /scan.
+        front_lidar:
+          frame_name: front_lidar_link
+          angle_increment: 0.017444444416
+          min_angle: -2.09333333
+          max_angle: 2.09333333
+          range_min: 0.18
+          range_max: 10.0
+          laserscan_topic: /front_lidar
+        back_lidar:
+          frame_name: back_lidar_link
+          angle_increment: 0.017444444416
+          min_angle: -2.09333333
+          max_angle: 2.09333333
+          range_min: 0.18
+          range_max: 10.0
+          laserscan_topic: /back_lidar
