@@ -187,8 +187,9 @@ Two parts of `mkdocs.yml` matter when you write pages:
 ## Step 4: Publish with GitHub Actions
 
 `.github/workflows/docs.yml` builds the site and deploys it to GitHub Pages.
-It runs on a push to `main` that changes `docs/**`, `mkdocs.yml`, `pixi.toml`,
-`pixi.lock`, or the workflow itself. Other pushes do not rebuild the site.
+It runs on a push to `main` or `feat/Pixi` that changes `docs/**`, `mkdocs.yml`,
+`pixi.toml`, `pixi.lock`, or the workflow itself, and validates strict builds
+on pull requests targeting either branch. Other pushes do not rebuild the site.
 To run it by hand, use the **Run workflow** button on the Actions tab
 (`workflow_dispatch`).
 
@@ -196,7 +197,7 @@ To run it by hand, use the **Run workflow** button on the Actions tab
     | Job | Steps |
     | --- | --- |
     | `build` | Check out the repository; install pixi and the `docs` environment with `prefix-dev/setup-pixi`; run `pixi run -e docs docs-build`; upload `site/` as the Pages artifact |
-    | `deploy` | Publish the artifact with `actions/deploy-pages` to the `github-pages` environment |
+    | `deploy` | Publish the artifact with `actions/deploy-pages` to the `github-pages` environment (skipped on pull requests) |
 
     - **No submodules, no LFS.** The site needs only `docs/` and `mkdocs.yml`.
       `actions/checkout` skips submodules and LFS files by default, which keeps
@@ -223,11 +224,12 @@ this once:
 1. Open the repository on GitHub and go to **Settings → Pages**.
 2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
 
-!!! note "Only `main` can deploy by default"
-    With this source, GitHub creates the `github-pages` environment. By
-    default it accepts deployments only from the default branch, `main`. A
-    manual run on another branch builds the site, but its `deploy` job is
-    rejected.
+!!! note "Allowing deployments from `feat/Pixi`"
+    GitHub creates the `github-pages` environment with deployments restricted
+    to the default branch (`main`) by default. To publish documentation
+    updates from `feat/Pixi`, a repository admin must add `feat/Pixi` under
+    **Settings → Environments → github-pages → Deployment branches** (or select
+    "No restriction"). Without this rule, the `deploy` job is rejected.
 
 The site address is the `site_url` in `mkdocs.yml`,
 <https://eic-robocup-2026.github.io/walkie-ros/>.
