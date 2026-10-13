@@ -79,6 +79,7 @@ nav:
       - Middleware (Zenoh): guides/middleware.md
       - Gazebo Simulation: guides/simulation-gazebo.md
       - MuJoCo Simulation: guides/simulation-mujoco.md
+      - Isaac Sim Simulation: guides/simulation-isaac.md
       - Navigation: guides/navigation.md
       - Manipulation: guides/manipulation.md
       - Perception: guides/perception.md

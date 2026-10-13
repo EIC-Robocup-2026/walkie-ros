@@ -10,3 +10,6 @@
 [submodule "hardware/actuator/openarm/openarm_can"]
 	path = hardware/actuator/openarm/openarm_can
 	url = https://github.com/enactic/openarm_can.git
+[submodule "walkie-isaac"]
+	path = walkie-isaac
+	url = git@github.com:EIC-Robocup-2026/walkie-isaac.git

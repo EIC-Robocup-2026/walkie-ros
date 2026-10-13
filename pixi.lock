@@ -758,6 +758,7 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-slam-toolbox-2.8.5-hb0f4dca_21.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-std-msgs-5.3.8-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-std-srvs-5.3.8-hb0f4dca_25.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-teleop-twist-keyboard-2.4.1-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-test-msgs-2.0.4-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-tf-transformations-1.1.1-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-tf2-0.36.23-hb0f4dca_25.conda
@@ -1149,6 +1150,7 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-stomp-0.1.2-np2py312h5f48d04_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-tango-icons-vendor-0.3.1-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-tcb-span-1.3.2-np2py312h1bab3cf_25.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-teleop-twist-keyboard-2.4.1-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-test-msgs-2.0.4-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-tf-transformations-1.1.1-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-tf2-0.36.23-np2py312h1bab3cf_25.conda
@@ -12544,6 +12546,14 @@ packages:
   run_exports: {}
   size: 2012
   timestamp: 1791432916235
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-teleop-twist-keyboard-2.4.1-hb0f4dca_25.conda
+  sha256: 52f915d216f52385f83354582a88d250cd3fd37bd9df42358a34f89abcd8f324
+  md5: ce2957593bf58d0bf8ee0af13fadc72d
+  depends:
+  - ros2-teleop-twist-keyboard ==2.4.1
+  run_exports: {}
+  size: 2071
+  timestamp: 1791434458533
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-test-msgs-2.0.4-hb0f4dca_25.conda
   sha256: 0ce30aa2fa1deb7a78d13f39ff7db2c1c7aec750ba0fd8afa598bf455c485a0d
   md5: c030dde4423dcecec2ebf0729139b7ab
@@ -21665,6 +21675,26 @@ packages:
   run_exports: {}
   size: 28135
   timestamp: 1791428333780
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-teleop-twist-keyboard-2.4.1-np2py312h1bab3cf_25.conda
+  sha256: 402f8caf246db0182c5ddc27e8ed8fd2a1edac6ab74061a0b4d9906f225ba5b2
+  md5: afb0d73227e178da20c4f8f0c94e9c76
+  depends:
+  - python
+  - ros2-distro-mutex 0.19.* jazzy_*
+  - ros2-geometry-msgs
+  - ros2-rcl-interfaces
+  - ros2-rclpy
+  - ros2-ros-workspace
+  - libgcc >=15
+  - libstdcxx >=15
+  - __glibc >=2.28,<3.0.a0
+  - numpy >=1.25,<3
+  - python_abi 3.12.* *_cp312
+  - ros2-distro-mutex >=0.19.0,<0.20.0a0
+  license: BSD-2-Clause
+  run_exports: {}
+  size: 24425
+  timestamp: 1791434118994
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-test-msgs-2.0.4-np2py312h1bab3cf_25.conda
   sha256: 6b39f27df91ef33c1de891e774a4779a2b20f60b9064188fd57616b2766b920e
   md5: 17bb66262cba07da3adb89ef3fd5a16c

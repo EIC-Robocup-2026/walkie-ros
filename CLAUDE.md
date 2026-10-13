@@ -35,6 +35,10 @@ pixi run ros2 launch robot_bringup lift_homing.launch.py [mock:=true]
 
 pixi run mjcf          # regenerate description/mujoco/walkie.xml from the xacro
 pixi run mjcf-view     # open description/mujoco/scene.xml in the MuJoCo viewer
+
+pixi run sim           # Isaac Sim standalone launcher with automated ROS 2 bridge (/clock, /cmd_vel, /scan)
+pixi run teleop        # teleoperate base via /cmd_vel with use_sim_time:=true
+pixi run topics        # list active ROS 2 topics
 ```
 
 Real robot CAN interfaces are set up persistently by `scripts/setup_device/` (udev rules + systemd units): `can2` = CubeMars wheels and the lift motor, `can0`/`can1` = OpenArm (CAN FD). The lift node needs the uv venv in `bringup/` (`pixi run uv venv --python python3.12 --system-site-packages && pixi run uv sync`); `lift_homing.launch.py` adds it to `PYTHONPATH`.
