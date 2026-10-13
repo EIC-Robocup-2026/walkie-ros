@@ -148,20 +148,23 @@ Tasks are named commands defined in `pixi.toml`. Words after the task name
 are added to the end of the task's command:
 
 ```bash
+pixi run build-setup                                    # initial setup: build sequentially (1 worker)
+pixi run build-setup 3                                  # initial setup with 3 parallel workers
 pixi run build                                          # build the whole workspace
 pixi run build-pkg robot_bringup                        # rebuild selected packages
 pixi run build-pkg walkie_description robot_simulation
 pixi run test --packages-select walkie_description
 pixi run colcon test-result --verbose
 pixi task list                                          # all tasks with their descriptions
-pixi run -n build                                       # dry run: show what the task would run
+pixi run -n build-setup                                 # dry run: show what the task would run
 ```
 
-Use the `build` and `build-pkg` tasks instead of typing `colcon build`
+Use the `build-setup`, `build`, and `build-pkg` tasks instead of typing `colcon build`
 yourself, so the flags are always the same.
 
 | Task | What it does |
 | --- | --- |
+| `build-setup` | Runs `setup` and `import`, then builds the workspace sequentially (default: 1 worker; e.g. `pixi run build-setup 3`) |
 | `build` | Runs `setup` and `import`, then builds the whole workspace |
 | `build-pkg` | Runs `setup` (not `import`), then builds the named packages |
 | `test` | Runs the tests of every package |
@@ -178,6 +181,7 @@ yourself, so the flags are always the same.
     | --- | --- | --- |
     | `setup` | default | `ln -sf libpthread.so.0 $CONDA_PREFIX/x86_64-conda-linux-gnu/sysroot/usr/lib/libpthread.so` |
     | `import` | default | `vcs import < walkie_external.repos` |
+    | `build-setup` | default | `colcon build --symlink-install --parallel-workers {{ workers }} --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX` (default: 1) |
     | `build` | default | `colcon build --symlink-install --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX` |
     | `build-pkg` | default | The `build` command plus `--packages-select` |
     | `test` | default | `colcon test` |

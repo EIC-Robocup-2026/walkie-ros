@@ -220,8 +220,13 @@ clean = {cmd = "rm -rf build install log", description = "Clean build artifacts 
 mjcf = {cmd = "python description/scripts/build_mjcf.py", description = "Regenerate the MuJoCo model description/mujoco/walkie.xml from the robot xacro (no build needed)"}
 mjcf-view = {cmd = "python -c \"import mujoco, mujoco.viewer; m = mujoco.MjModel.from_xml_path('description/mujoco/scene.xml'); d = mujoco.MjData(m); mujoco.mj_resetDataKeyframe(m, d, m.key('home').id); mujoco.viewer.launch(m, d)\"", description = "Open the MuJoCo scene (robot on a floor) in the interactive viewer, starting from the home keyframe"}
 
-# Scripts to source on environment activation, found after first colcon build.
+[tasks.build-setup]
+args = [{ arg = "workers", default = "1" }]
+cmd = "colcon build --symlink-install --parallel-workers {{ workers }} --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX"
+depends-on = ["setup", "import"]
+description = "Build workspace for initial setup (default: 1 worker; e.g. pixi run build-setup 3)"
 
+# Scripts to source on environment activation, found after first colcon build.
 [activation]
 scripts = ["install/setup.bash"]
 
