@@ -232,7 +232,7 @@ description = "Build workspace for initial setup (default: 1 worker; e.g. pixi r
 
 [tasks.save-map]
 args = [{ arg = "map_name" }]
-cmd = 'mkdir -p "navigation/walkie-navigation/map/{{ map_name }}" && ros2 run nav2_map_server map_saver_cli -t /map -f "navigation/walkie-navigation/map/{{ map_name }}/map"'
+cmd = 'mkdir -p "$PIXI_PROJECT_ROOT/navigation/walkie-navigation/map/{{ map_name }}" && ros2 run nav2_map_server map_saver_cli -t /map -f "$PIXI_PROJECT_ROOT/navigation/walkie-navigation/map/{{ map_name }}/map"'
 description = "Alias for save_map"
 
 [activation]
