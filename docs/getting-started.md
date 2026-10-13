@@ -86,6 +86,18 @@ git submodule update --init --recursive
 git submodule foreach --recursive git lfs pull
 ```
 
+!!! warning "If the pull changed the ros2-distro-mutex pin"
+    A changed `ros2-distro-mutex` pin in `pixi.toml` means the environment
+    moved to another RoboStack build set. Install it and rebuild everything;
+    `pixi run build-pkg` is not enough:
+
+    ```bash
+    pixi install
+    pixi run clean && pixi run build
+    ```
+
+    See [What needs a rebuild](guides/pixi.md#what-needs-a-rebuild).
+
 ## 4. Install the environment
 
 ```bash
@@ -94,7 +106,7 @@ pixi install
 
 This installs the exact package versions listed in `pixi.lock` into
 `.pixi/envs/default/`. Expect a download of about 1.7 GB. The installed
-environment takes about 8 GB of disk space.
+environment takes about 7 GB of disk space.
 
 ??? info "Where pixi downloads from and what it stores"
     The packages come from the `robostack-jazzy` and `conda-forge` channels.

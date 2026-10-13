@@ -100,4 +100,5 @@ nav:
           - 2.5 ros2_control: migrations/02-mujoco/05-ros2-control.md
           - 2.6 Tests: migrations/02-mujoco/06-tests.md
       - 3. Add the Documentation Site: migrations/03-documentation.md
+      - 4. Move to RoboStack Build Set _25: migrations/04-robostack-build-25.md
   - Troubleshooting: troubleshooting.md

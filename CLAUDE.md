@@ -8,6 +8,8 @@ Full documentation lives in `docs/` (MkDocs, published at https://eic-robocup-20
 
 The workspace is managed by pixi + RoboStack Jazzy (`pixi.toml`, `pixi.lock`). The repository root is the colcon workspace. Never source `/opt/ros/*/setup.bash`: it shadows the pixi environment. Run ROS commands through `pixi run` (or inside `pixi shell`); activation sources `install/setup.bash`.
 
+`pixi.toml` pins `ros2-distro-mutex = "0.19.*"` (RoboStack build set `_25`) so that `pixi add`/`pixi update` cannot move every ROS package to another build set. Changing the pin requires `pixi install` and `pixi run clean && pixi run build` (`build-pkg` is not enough); see `docs/guides/pixi.md`. Do not `pip install` into the pixi env.
+
 ## Build
 
 ```bash
@@ -75,7 +77,7 @@ New pages must be added to `nav` in `mkdocs.yml`. Admonition bodies are indented
 
 **ros2_control**: All actuators go through ros2_control. The mode is the xacro arg `ros2_control` in `description/robots/gz_walkie.urdf.xacro` (`real_robot`, `mock`, `gazebo`, `topic_base`, `mujoco`); each mode pairs with a YAML in `description/config/ros2_controller/` (`real_controllers.yaml`, `sim_controllers.yaml`, `isaac_controllers.yaml`, `mujoco_controllers.yaml`). The joint state broadcaster is named `joint_broad`. Omni base: `omni_wheel_drive_controller`, `robot_radius` 0.185.
 
-**MuJoCo**: `description/scripts/build_mjcf.py` expands the xacro with `ros2_control:=mujoco` and applies an MjSpec overlay. Omni wheels are capsules with explicit `<pair>` contacts against a plane floor named `floor` (anisotropic friction only works capsule-vs-plane). Collisions are off per geom via contype/conaffinity classes; never use the global `contact="disable"` flag (it also disables the wheel pairs). The ros2_control runtime (`mujoco_ros2_control`) is not in the pixi lock yet. See `docs/migrations/02-mujoco/`.
+**MuJoCo**: `description/scripts/build_mjcf.py` expands the xacro with `ros2_control:=mujoco` and applies an MjSpec overlay. Omni wheels are capsules with explicit `<pair>` contacts against a plane floor named `floor` (anisotropic friction only works capsule-vs-plane). Collisions are off per geom via contype/conaffinity classes; never use the global `contact="disable"` flag (it also disables the wheel pairs). The ros2_control runtime, `mujoco_ros2_control` 0.1.2, is in the pixi lock (`mujoco = "3.15.*"` must match its `mujoco_vendor`); it runs as its own `ros2_control_node` (package `mujoco_ros2_control`), and no launch file exists yet. See `docs/migrations/02-mujoco/`.
 
 **Lift homing**: `bringup/scripts/lift_homing_node.py` homes against the upper hard stop (current spike), then shapes commands with a software trapezoidal trajectory. `lift_homing_mock_node.py` provides the topics without CAN but not the `follow_joint_trajectory` action.
 

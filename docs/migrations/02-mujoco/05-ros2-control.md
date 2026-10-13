@@ -6,10 +6,16 @@ ros2_control, without any MuJoCo-specific code in the controllers.
 This entry records how the URDF got a `mujoco` ros2_control mode, and what is still
 missing before MuJoCo runs with ROS.
 
-!!! warning "Not runnable yet"
-    No launch file starts the simulator yet, and `mujoco_ros2_control` is not in the
-    pixi environment. See [Packaging status](#packaging-status) and
+!!! warning "No launch file yet"
+    No launch file starts the simulator yet. See
     [The launch file still to write](#the-launch-file-still-to-write).
+
+!!! note "Update 2026-10-13"
+    Since the [move to RoboStack build set `_25`](../04-robostack-build-25.md),
+    `mujoco_ros2_control` 0.1.2 is in the pixi environment. A headless bringup started by
+    hand, with the `mujoco` branch and `mujoco_controllers.yaml`, worked.
+    [MuJoCo Simulation: Run with ROS 2](../../guides/simulation-mujoco.md#run-with-ros-2)
+    has the verified setup.
 
 ## In short
 
@@ -23,8 +29,8 @@ missing before MuJoCo runs with ROS.
 - MoveIt accepts `hardware_type:=mujoco`. The same commit fixed the Gazebo `joint_broad`
   spawner.
 - Done: the `mujoco` branch, the controller file (both tested) and the MoveIt changes.
-  Open: the launch file, and a re-lock to the RoboStack `_25` build set for
-  `mujoco_ros2_control` 0.1.2.
+  The re-lock to the RoboStack `_25` build set for `mujoco_ros2_control` 0.1.2 followed
+  in [entry 4](../04-robostack-build-25.md). Open: the launch file.
 
 ??? info "Commits of this step"
     | Repository | Commit | Change |
@@ -291,7 +297,7 @@ pixi run ros2 launch openarm_bimanual_moveit_config moveit_demo.launch.py hardwa
 !!! warning "The spawners wait forever today"
     MoveIt starts no `ros2_control_node` for `mujoco`, and its spawners have no
     `--controller-manager-timeout`. They wait for the simulator's controller manager,
-    which does not exist until the simulator launch is written.
+    which no launch file starts yet. MoveIt with MuJoCo has not been tested.
 
 The same commit fixed the Gazebo branch, which spawned `joint_state_broadcaster`
 instead of `joint_broad`. Gazebo and MuJoCo now share `_sim_controller_spawners()`,
@@ -313,11 +319,22 @@ which spawns `joint_broad`.
 
 ## Packaging status
 
-`mujoco_ros2_control` is not in the pixi environment. The `mujoco` expansion and all
-tests work without it. Running the simulation with ROS does not.
+!!! note "Update 2026-10-13: the plan below was carried out"
+    Commit `fe423e3` moved the default environment to build set `_25` and pinned it with
+    `ros2-distro-mutex = "0.19.*"` in `pixi.toml`. It added
+    `ros-jazzy-mujoco-ros2-control = ">=0.1.2"`, so the lock now holds
+    `mujoco_ros2_control` 0.1.2 with its plugins and messages packages, and
+    `mujoco_vendor` 0.1.0. `mujoco` is pinned to `3.15.*`, the libmujoco version that
+    `mujoco_vendor` 0.1.0 is built against. A trial build of the full workspace on `_25`
+    succeeded, and the description tests gave the same results as on `_21`. The rest of
+    this section describes the `_21` lock. See
+    [4. Move to RoboStack Build Set _25](../04-robostack-build-25.md).
+
+On the `_21` lock, `mujoco_ros2_control` was not in the pixi environment. The `mujoco`
+expansion and all tests work without it. Running the simulation with ROS did not.
 
 - **Blocker:** the xacro targets 0.1.2 (build `_25`), which needs
-  `ros2-distro-mutex 0.19.*`. The lock has the `_21` build set, and the mutex pins one
+  `ros2-distro-mutex 0.19.*`. The lock had the `_21` build set, and the mutex pins one
   build set per environment.
 - **Plan:** re-lock the whole environment to `_25`, then add
   `ros-jazzy-mujoco-ros2-control`. Every ROS package changes build, so rebuild and test
@@ -331,20 +348,20 @@ To see what RoboStack offers now:
 pixi search ros-jazzy-mujoco-ros2-control
 ```
 
-??? info "Versions in the lock and on robostack-jazzy"
+??? info "Versions in the `_21` lock and on robostack-jazzy"
     | Fact | Value |
     | --- | --- |
-    | MuJoCo in the lock | `mujoco` 3.15.0 from conda-forge (`pixi.toml` asks for `>=3.14`) |
+    | MuJoCo in the lock | `mujoco` 3.15.0 from conda-forge (`pixi.toml` asked for `>=3.14`) |
     | ROS build set in the lock | `ros2-distro-mutex` 0.16.0, build `jazzy_21`. Of the 669 RoboStack packages, 661 are `_21` builds and 8 are `_22` builds. |
     | `ros-jazzy-mujoco-ros2-control` on `robostack-jazzy` | 0.1.2 (build `_25`), 0.0.3 (build `_21`), 0.0.1 (build `_16`) |
     | 0.1.2 needs | `ros2-distro-mutex 0.19.*` |
     | 0.0.3 needs | `ros2-distro-mutex 0.16.*` |
 
     Almost every RoboStack package depends on `ros2-distro-mutex` (638 of the 669
-    RoboStack packages in the lock). The 0.1.2 package therefore cannot be added to the
-    current lock; adding it moves the whole ROS stack from `_21` to `_25`.
+    RoboStack packages in the lock). The 0.1.2 package therefore could not be added to the
+    `_21` lock; adding it moves the whole ROS stack from `_21` to `_25`.
 
-??? info "Why 0.1.2 and not 0.0.3, which fits the current lock"
+??? info "Why 0.1.2 and not 0.0.3, which matches the `_21` build set"
     The version matters because of the plugins:
 
     | Version | Plugins in `mujoco_ros2_control_plugins` |
@@ -355,6 +372,11 @@ pixi search ros-jazzy-mujoco-ros2-control
     The 0.0.3 core library does contain camera and lidar code and the hardware
     parameters the xacro uses. The xacro and the sensor naming target 0.1.2, though.
 
+    [4. Move to RoboStack Build Set _25](../04-robostack-build-25.md) records one more
+    reason: the `mujoco_vendor` 0.0.9 of 0.0.3 pins libmujoco 3.10.0. That conflicts with
+    `mujoco = ">=3.14"`, which `pixi.toml` asked for on `_21`, so that environment cannot
+    be solved.
+
 ??? info "Why a separate simulator environment was rejected"
     The simulator's `ros2_control_node` loads the controllers
     (`omni_wheel_drive_controller`, the trajectory controllers and the rest) as plugins
@@ -363,6 +385,23 @@ pixi search ros-jazzy-mujoco-ros2-control
     workspace would have to be built twice.
 
 ## The launch file still to write
+
+!!! note "Update 2026-10-13: checked in a manual bringup"
+    A headless bringup on build set `_25` started `robot_state_publisher`, the
+    `ros2_control_node` of `mujoco_ros2_control` and the spawners from the table below,
+    plus `head_servo_controller`. All nine spawned controllers became active. It did not
+    cover `twist_mux` or `dual_laser_merger`. It added these requirements:
+
+    - Expand the xacro with `mujoco_headless:=true` for a run without a display. The
+      default `false` opens the MuJoCo window.
+    - Build `walkie_description` before the first run. The plugin loads the model from
+      `install/`.
+    - The cameras and lidars publish on their configured topics only with a
+      `mujoco_plugins` parameter file. Its naming rules are in
+      [2.4 Sensors: What /scan will need](04-sensors.md#what-scan-will-need).
+
+    [MuJoCo Simulation: Run with ROS 2](../../guides/simulation-mujoco.md#run-with-ros-2)
+    has the working setup and parameter file.
 
 No launch file starts MuJoCo with ros2_control yet; the MoveIt comment says it is "not
 wired into this package yet". It needs:

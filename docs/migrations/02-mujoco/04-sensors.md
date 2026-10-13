@@ -16,8 +16,8 @@ any ROS code that works on the real robot or in Gazebo sees the same frames in M
 - The IMU is a site on `top_imu_link`, wired through ros2_control. Each camera sits on
   its URDF optical frame.
 - Result: all sensors exist in `walkie.xml` and `test_mjcf.py` checks them. Lidar and
-  camera publishing is not configured yet, and the IMU topic needs a remap
-  ([Still open](#still-open)).
+  camera publishing works with a plugin parameter file that is not in the repository
+  yet, and the IMU topic needs a remap ([Still open](#still-open)).
 
 ## Sensors at a glance
 
@@ -147,7 +147,7 @@ frame `merged_lidar_link` and remaps the output to `/scan`. Nav2 reads `/scan`.
 
 ### What /scan will need
 
-Nothing publishes the MuJoCo lidars on ROS topics yet. Two parts are missing:
+No launch file publishes the MuJoCo lidars on ROS topics yet. Two parts are missing:
 
 1. **A LaserScan publisher per lidar**, publishing `/front_lidar` and `/back_lidar`.
 2. **The merger.** Run `dual_laser_merger` with the same parameters as on the real
@@ -169,7 +169,8 @@ beam can read more than 10 m. The publisher must treat both as "no return".
     message when rangefinder lidars come from the ros2_control xacro config.
 
     `Mujoco3dLidarPlugin` republishes the data of every MuJoCo simulation extension
-    registered as `mujoco.plugin.lidar`.
+    registered as `mujoco.plugin.lidar`. The `mujoco_3d_lidar` package is available on
+    RoboStack build set `_25` but is not in `pixi.toml`.
 
 ??? info "RangefinderLidarPlugin parameters for Walkie, and open questions"
     The parameter names come from the upstream demo file
@@ -195,6 +196,28 @@ beam can read more than 10 m. The publisher must treat both as "no return".
       frame is `front_lidar_link`, but the sensor prefix is `front_lidar`.
     - Whether two instances of the plugin (front and back) can run in one
       `ros2_control_node`.
+
+!!! note "Update 2026-10-13: open questions answered"
+    A manual bringup with `mujoco_ros2_control_plugins` 0.1.2, after the
+    [move to RoboStack build set `_25`](../04-robostack-build-25.md), answered both open
+    questions of the box above:
+
+    - One plugin instance serves both lidars. Each lidar is a sub-key named after its
+      sensor prefix (`front_lidar`, `back_lidar`). Its `frame_name` is the URDF frame,
+      such as `front_lidar_link`, and the other per-lidar parameters sit next to it.
+    - The instance must be named exactly `rangefinder_lidar_plugin`. The plugin reads its
+      publish rate from the fixed key
+      `mujoco_plugins.rangefinder_lidar_plugin.lidar_publish_rate`.
+
+    With the Walkie values from the parameter table, `/front_lidar` and `/back_lidar` each
+    published 241 ranges. Without a parameter file the lidars publish nothing.
+    `dual_laser_merger` is not set up for MuJoCo yet.
+    [MuJoCo Simulation](../../guides/simulation-mujoco.md#the-mujoco_plugins-parameter-file)
+    has the working file.
+
+??? info "Measured lidar rate"
+    In the manual bringup, the lidars published at about 28 Hz instead of the configured
+    40 Hz. The cause has not been investigated.
 
 ## IMU
 
@@ -281,12 +304,22 @@ of view.
 
 ### What camera topics will need
 
-Nothing publishes the MuJoCo cameras yet. The `CameraPlugin` of
-`mujoco_ros2_control_plugins` 0.1.2 has not been configured for Walkie.
+No launch file publishes the MuJoCo cameras yet. The `CameraPlugin` of
+`mujoco_ros2_control_plugins` 0.1.2 is not configured in the repository.
 
 ??? info "CameraPlugin parameters in the upstream demo"
     The upstream demo config sets `camera_publish_rate` and, per camera, `policy`,
     `frame_name`, `info_topic`, `image_topic` and `depth_topic`.
+
+!!! note "Update 2026-10-13: cameras published in a manual bringup"
+    A manual bringup on build set `_25` ([the move to build set `_25`](../04-robostack-build-25.md))
+    configured one `CameraPlugin` instance with `head_camera` and `bottom_camera`. Their
+    `frame_name` values are the optical frames from the camera table. Both cameras
+    published color images at their model resolution and 32-bit float depth images.
+    Without a `CameraPlugin` entry, the cameras register themselves (deprecated) under
+    `/mujoco_camera_plugin/...`, with frame names that are not in the TF tree.
+    [MuJoCo Simulation](../../guides/simulation-mujoco.md#the-mujoco_plugins-parameter-file)
+    has the working file.
 
 ## Sensor checks in test_mjcf.py
 
@@ -320,6 +353,11 @@ Six tests cover the sensors: `test_imu_at_rest`, `test_lidar_beam_layout`,
 | Lidar publishing | Choose between the deprecated `RangefinderLidarPlugin` and `Mujoco3dLidarPlugin`, then configure two lidars and `dual_laser_merger` |
 | Camera publishing | Configure `CameraPlugin` for `head_camera` and `bottom_camera` |
 | IMU topic | Remap `imu_sensor_broadcaster` `~/imu` to `/imu` in the launch file |
+
+!!! note "Update 2026-10-13"
+    Lidar and camera publishing work with a plugin parameter file, see the updates above.
+    The file, the choice of lidar plugin, `dual_laser_merger` and the IMU remap still have
+    to go into a launch file.
 
 The launch file that will hold all of this is described in
 [2.5 ros2_control](05-ros2-control.md). The collision classes that decide what the arms

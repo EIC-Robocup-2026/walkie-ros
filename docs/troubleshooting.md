@@ -13,7 +13,7 @@ Problems with one simulator, launch file, or device are in the guides.
 | pixi, helper scripts, Python venvs | [Working with Pixi: Known issues](guides/pixi.md#known-issues) |
 | Zenoh router and connecting to the robot | [Middleware: Known issues](guides/middleware.md#known-issues), [Troubleshooting](guides/middleware.md#troubleshooting) |
 | Gazebo | [Gazebo Simulation: Known issues](guides/simulation-gazebo.md#known-issues), [Troubleshooting](guides/simulation-gazebo.md#troubleshooting) |
-| MuJoCo model, viewer, and custom worlds | [MuJoCo Simulation: Troubleshooting](guides/simulation-mujoco.md#troubleshooting) |
+| MuJoCo model, viewer, custom worlds, and the ROS 2 bringup | [MuJoCo Simulation: Troubleshooting](guides/simulation-mujoco.md#troubleshooting) |
 | Nav2, maps, localization | [Navigation: Known issues](guides/navigation.md#known-issues), [Troubleshooting](guides/navigation.md#troubleshooting) |
 | MoveIt and the arms | [Manipulation: Known issues](guides/manipulation.md#known-issues), [Troubleshooting](guides/manipulation.md#troubleshooting) |
 | Object detection and grasping | [Perception: Known issues](guides/perception.md#known-issues), [Troubleshooting](guides/perception.md#troubleshooting) |
@@ -112,8 +112,9 @@ pixi run ros2 launch robot_bringup nav_sim_omnibot.launch.py
 
 ### Gazebo problems only on computers with a system ROS
 
-The Gazebo simulation misbehaves on a computer that also has ROS 2 Jazzy in
-`/opt/ros/jazzy`, and works on a computer without it.
+The Gazebo simulation crashes with a segmentation fault, or misbehaves, on a
+computer that also has ROS 2 Jazzy in `/opt/ros/jazzy`, and works on a
+computer without it.
 
 Check whether the system plugin exists:
 
@@ -121,10 +122,11 @@ Check whether the system plugin exists:
 ls /opt/ros/jazzy/lib/libgz_ros2_control-system.so
 ```
 
-If it does, test on a computer without a system ROS, or remove the
-`GZ_SIM_SYSTEM_PLUGIN_PATH` line locally from the launch file
-(`gzsim_omnibot.launch.py` or `world_preview_gz.launch.py` in
-`simulation/gazebo/launch/`).
+If it does, remove the line `ld.add_action(gz_system_plugin_cmd)` locally
+from the launch file (`gzsim_omnibot.launch.py` or
+`world_preview_gz.launch.py` in `simulation/gazebo/launch/`). The launch file
+then no longer sets `GZ_SIM_SYSTEM_PLUGIN_PATH`, and Gazebo uses the value
+from the pixi environment. Or test on a computer without a system ROS.
 
 ??? info "Why Gazebo loads the system plugin"
     `gzsim_omnibot.launch.py` and `world_preview_gz.launch.py` set
@@ -132,6 +134,12 @@ If it does, test on a computer without a system ROS, or remove the
     that value before the other plugin folders, so Gazebo can load the system
     `libgz_ros2_control-system.so`. That library is built against different
     libraries than the pixi environment.
+
+    Since RoboStack build set `_25`, `gz_ros2_control` ships an environment
+    hook, so `pixi run` already sets `GZ_SIM_SYSTEM_PLUGIN_PATH` to the `lib`
+    folder of the pixi environment (`.pixi/envs/default/lib`). The launch
+    files replace that value. Removing the override from both launch files is
+    the fix; it has not been made yet.
 
 ### real_omnibot.launch.py stops with package not found
 
@@ -204,6 +212,12 @@ git checkout --theirs pixi.lock
 pixi lock
 git add pixi.toml pixi.lock
 ```
+
+`pixi lock` solves for the `ros2-distro-mutex` pin in the merged `pixi.toml`.
+If one branch was on another RoboStack build set, such as `feat/Pixi` on
+`_21`, the result can be on a different build set than before. Then rebuild
+everything, as in
+[Build errors after pulling a new pixi.lock](#build-errors-after-pulling-a-new-pixilock).
 
 ??? info "Why Git does not merge pixi.lock"
     `.gitattributes` sets `merge=binary` for `pixi.lock`, so Git never merges
@@ -346,6 +360,34 @@ colcon build --symlink-install --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX
     The `libpthread.so` link lives inside `.pixi/envs/default/`, so a
     reinstall of the environment removes it.
 
+### Build errors after pulling a new pixi.lock
+
+After a `git pull` that changed the `ros2-distro-mutex` pin in `pixi.toml`,
+`pixi run build-pkg` fails, or a package that was built before the pull fails
+at run time.
+
+Install the new environment and rebuild everything. `pixi run build-pkg` is
+not enough.
+
+```bash
+pixi install
+pixi run clean
+pixi run build
+```
+
+`pixi list ros2-distro-mutex` shows the build set of the installed
+environment. See [Changing the build set](guides/pixi.md#changing-the-build-set).
+
+??? info "Why a new build set needs a full rebuild"
+    The new lock is on another RoboStack build set. Every ROS package was
+    rebuilt, and many libraries changed version. The CMake caches in `build/`
+    still point at the configuration folders of the old library versions, such
+    as VTK 9.6 and OpenCV 4. Some libraries also changed their ABI. In build
+    set `_25`, these are `behaviortree_cpp` and `realtime_tools`.
+    `behaviortree_cpp` keeps the same library file name across versions, so
+    the loader does not reject Nav2 packages that were built against the old
+    version. They must be rebuilt.
+
 ## Zenoh
 
 ### Nodes cannot see each other
@@ -400,6 +442,8 @@ See [Tests](guides/testing.md).
     The task tests every package, including the 46 Nav2 packages in
     `navigation/navigation2/`. `urg_node2_test` connects to a Hokuyo lidar at
     `192.168.0.10` and has a 200 s timeout, so it fails without the lidar.
+    `test_action_follow_path_action` in `nav2_behavior_tree` can hang until
+    CTest stops it (see [Tests: Known issues](guides/testing.md#known-issues)).
 
 ## Documentation site
 

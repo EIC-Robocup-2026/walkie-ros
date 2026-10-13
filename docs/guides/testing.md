@@ -273,6 +273,10 @@ The details of the mismatch are in
     | `test_pep257` | 1 passed |
     | `test_srdf_urdf_contract` | 10 passed |
 
+    After the move to RoboStack build set `_25`, the three pytest files
+    (`test_description.py`, `test_mjcf.py`, `test_srdf_urdf_contract.py`)
+    gave the same total: 108 passed, 1 xfailed.
+
 ## Why pytest is pinned below 9
 
 `pixi.toml` has `pytest = ">=8,<9"`. pytest 9 rejects the pytest plugins of
@@ -295,6 +299,7 @@ aborts. Keep the pin until the RoboStack Jazzy packages work with pytest 9.
 | --- | --- | --- |
 | `urg_node2_test` connects to a Hokuyo lidar at `192.168.0.10`. Per the `urg_node2` README, it expects a connected, powered-on UTM-30LX-EW. | Without that lidar the test does not pass. CTest stops it after 200 seconds at most. | `pixi run test --packages-skip urg_node2`, or use `--packages-select` for the packages you changed |
 | `mock` with `real_controllers.yaml` (`test_zed.launch.py`) does not work | `test_controller_config_matches_ros2_control[mock-real_controllers]` is a strict expected failure | None yet. See [Strict expected failure](#strict-expected-failure). |
+| The fixture of `test_action_follow_path_action` in `nav2_behavior_tree` never sets `cancel_timeout`. See [Navigation: Known issues](navigation.md#known-issues). | The test can hang until CTest stops it | `pixi run test --packages-skip nav2_behavior_tree`, or skip only this test with `--packages-select nav2_behavior_tree --ctest-args -E test_action_follow_path_action` |
 
 ## Troubleshooting
 

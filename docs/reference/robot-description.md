@@ -100,7 +100,8 @@ then has no ros2_control block at all.
   `fr_wheel_joint` 3, `bl_wheel_joint` 4.
 
 !!! warning
-    The MuJoCo hardware plugin is not installed yet. See [Known issues](#known-issues).
+    The MuJoCo hardware plugin is installed, but no launch file starts it yet.
+    See [Known issues](#known-issues).
 
 ??? info "Joint limits that differ between modes"
     | Mode | Wheel velocity limit (rad/s) | `lift_joint` command range (m) | `lift_joint` initial (m) | `head_servo_joint` command range (rad) |
@@ -130,7 +131,7 @@ and checks every file against its mode.
 | Mode | Controller file | Loaded by |
 | --- | --- | --- |
 | `gazebo` | `sim_controllers.yaml` | The Gazebo plugin, through the `sim_controllers_yaml` argument. Started from `simulation/gazebo/launch/gzsim_omnibot.launch.py`. |
-| `mujoco` | `mujoco_controllers.yaml` | The MuJoCo controller manager (no launch file yet) |
+| `mujoco` | `mujoco_controllers.yaml` | `ros2_control_node` of `mujoco_ros2_control` (no launch file yet) |
 | `topic_base` | `isaac_controllers.yaml` | `bringup/launch/isaac_omnibot.launch.py` |
 | `real_robot` | `real_controllers.yaml` | `bringup/launch/real_omnibot.launch.py` |
 | `mock` | `real_controllers.yaml` | `bringup/launch/test_zed.launch.py` |
@@ -331,8 +332,12 @@ so the xacro defaults apply.
 Show the model in RViz without a simulator:
 
 ```bash
-pixi run ros2 launch walkie_description robot_preview_rviz.launch.py
+pixi run ros2 launch walkie_description robot_preview_rviz.launch.py dual_lidar:=False
 ```
+
+With the default `ros2_control:=gazebo`, pass `dual_lidar:=False` or
+`dual_lidar:=True`. Without it, xacro fails with `name 'true' is not defined`
+(see [Gazebo Simulation: Known issues](../guides/simulation-gazebo.md#known-issues)).
 
 | Launch file | What it starts |
 | --- | --- |
@@ -397,7 +402,7 @@ The full story of the MuJoCo model is in
 | Issue | Effect | Workaround |
 | --- | --- | --- |
 | `joint_broad` in `real_controllers.yaml` asks for states the `mock` block does not declare | `test_zed.launch.py` cannot activate `joint_broad` | None yet. When you fix it, remove the entry from `KNOWN_PAIRING_MISMATCHES`. |
-| `mujoco_ros2_control` is not in the pixi environment | A controller manager cannot load the `mujoco` hardware plugin | Check the model with `pixi run mjcf-view`. See [2.5 ros2_control](../migrations/02-mujoco/05-ros2-control.md). |
+| No launch file starts the `mujoco` mode | `mujoco_ros2_control` 0.1.2 is in the pixi environment, and its `ros2_control_node` runs the `mujoco` mode, but only when started by hand | Start it by hand, see [MuJoCo Simulation: Run with ROS 2](../guides/simulation-mujoco.md#run-with-ros-2). To check the model alone, use `pixi run mjcf-view`. |
 | `use_fake_arm_hardware` defaults to `false` in `robot_state_publisher.launch.py` and to `True` in the xacro | With `ros2_control:=real_robot`, the launch file uses the real OpenArm CAN plugin. A plain `xacro` call uses mock arms. | Always pass `use_fake_arm_hardware` explicitly |
 | `use_arm` is declared in the xacro but not used. No xacro file declares `use_zed`. | Setting either changes nothing. The arms are always in the model. | None |
 | `launch/rviz.launch.py` defaults to `rviz/turtlebot3_rviz.rviz`, which does not exist in this package | Started alone, RViz cannot load its config | Pass `rviz_config:=<path>`, or use a preview launch |
@@ -410,6 +415,7 @@ The full story of the MuJoCo model is in
       `test_zed.launch.py`, which pairs `mock` with `real_controllers.yaml`.
       The pairing is listed in `KNOWN_PAIRING_MISMATCHES`, and its test is a
       strict expected failure. See [Tests](../guides/testing.md).
-    - `mujoco_ros2_control`: the `mujoco` mode still expands and is tested.
+    - `mujoco` mode: the xacro expands and is tested in this mode. Only a
+      launch file that starts `mujoco_ros2_control` is missing.
     - `hardware_layout.yaml`: the hardware of each joint is set in the
       ros2_control xacro files instead.

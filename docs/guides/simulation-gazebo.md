@@ -87,7 +87,10 @@ pixi run ros2 launch robot_simulation gzsim_omnibot.launch.py \
     | `GZ_SIM_RESOURCE_PATH` | `<robot_simulation share>/models` and the `share` directory that contains `walkie_description` | Gazebo searches these directories for `model://` URIs |
     | `GZ_SIM_SYSTEM_PLUGIN_PATH` | `/opt/ros/jazzy/lib/` | Gazebo searches this directory for system plugins before the others |
 
-    The plugin path points outside the pixi environment. See
+    The plugin path points outside the pixi environment. Since RoboStack
+    build set `_25`, `pixi run` already sets `GZ_SIM_SYSTEM_PLUGIN_PATH` to
+    the `lib` folder of the pixi environment, through an environment hook of
+    `gz_ros2_control`. The launch file replaces that value. See
     [Known issues](#known-issues).
 
 ### Worlds
@@ -362,9 +365,10 @@ scene is not in this repository.
 
 | Effect | Cause | Workaround |
 | --- | --- | --- |
-| On a computer with a system ROS 2 Jazzy, Gazebo can load a system build of `libgz_ros2_control-system.so` | Plugin path set to `/opt/ros/jazzy/lib/` | See [Gazebo problems only on computers with a system ROS](../troubleshooting.md#gazebo-problems-only-on-computers-with-a-system-ros) |
+| On a computer with a system ROS 2 Jazzy, Gazebo can load a system build of `libgz_ros2_control-system.so` and crash with a segmentation fault | The launch files set the plugin path to `/opt/ros/jazzy/lib/` and replace the value that pixi sets | Remove the `SetEnvironmentVariable` action for `GZ_SIM_SYSTEM_PLUGIN_PATH` from `gzsim_omnibot.launch.py` and `world_preview_gz.launch.py`. See also [Gazebo problems only on computers with a system ROS](../troubleshooting.md#gazebo-problems-only-on-computers-with-a-system-ros). |
 | `nav_sim_omnibot.launch.py` cannot load its map | Default map is missing at the pinned map commit | Pass `map:=`. See [The simulation map](navigation.md#the-simulation-map). |
 | No `/scan` with `dual_lidar:=True`, so Nav2 has no laser data | Bridge entries commented out, no laser merger | Keep the default `dual_lidar:=False` |
+| `robot_preview_rviz.launch.py` and `robot_preview_lift_rviz.launch.py` fail with `name 'true' is not defined` | `robot_state_publisher.launch.py` defaults `dual_lidar` to `true`, which the xacro cannot evaluate in `gazebo` mode | Pass `dual_lidar:=False` (or `True`) on the command line |
 | `/gazebo_ground_truth/odom` gets no data | Bridge reads `/model/my_bot/pose`, model is `walkie_bot` | None in the repository |
 | `/bottom_depth/camera_info` gets no data | Bridge reads the wrong Gazebo topic | None in the repository |
 | `/bottom_left_ir/...` and `/bottom_right_ir/...` get no data | Camera built with `flag_ir="0"` | None needed unless you use IR |
@@ -377,14 +381,28 @@ scene is not in this repository.
     - **System plugin path.** `gzsim_omnibot.launch.py` and
       `world_preview_gz.launch.py` set `GZ_SIM_SYSTEM_PLUGIN_PATH` to
       `/opt/ros/jazzy/lib/`. Under pixi, `gz_ros2_control` is in
-      `.pixi/envs/default/lib`. On a computer with a system ROS 2 Jazzy,
-      Gazebo searches the system folder first and can load a system build of
-      `libgz_ros2_control-system.so`.
+      `.pixi/envs/default/lib`. Since RoboStack build set `_25`,
+      `share/gz_ros2_control/environment/gz_ros2_control.dsv` in the pixi
+      environment prepends that folder to the variable, and the launch files
+      replace the value. On a computer with a system ROS 2 Jazzy, Gazebo then
+      searches the system folder and can load the system build of
+      `libgz_ros2_control-system.so`. The fix, removing the override, is not
+      in the repository yet. With the value that pixi sets, Gazebo with
+      `gz_ros2_control` worked headless on build set `_25`, started by a test
+      script rather than these launch files.
     - **Simulation map.** The default map of `localization_Nav2_sim.launch.py`
       is missing at the map commit that the `navigation` submodule pins.
     - **Dual lidar.** With `dual_lidar:=True`, the `front_lidar` and
       `back_lidar` entries in `gz_bridge.yaml` are commented out, and no laser
       merger runs in simulation.
+    - **`dual_lidar` default of the preview launch files.**
+      `robot_state_publisher.launch.py` in `description/launch/` defaults
+      `dual_lidar` to `true` (lowercase). When `ros2_control` is `gazebo`,
+      `gz_walkie.urdf.xacro` evaluates `not $(arg dual_lidar)` as a Python
+      expression, and `true` is not a Python name. The two preview launch
+      files pass `ros2_control` (default `gazebo`) but not `dual_lidar`.
+      `gzsim_omnibot.launch.py` and `nav_sim_omnibot.launch.py` pass `False`,
+      so they are not affected.
     - **Bottom depth camera info.** The `/bottom_depth/camera_info` bridge
       entry reads `/bottom_depth_sensor/camera_info`, but the sensor publishes
       on `bottom_depth/camera_info`.

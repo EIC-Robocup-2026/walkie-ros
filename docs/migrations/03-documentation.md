@@ -90,6 +90,11 @@ without installing or building the ROS workspace.
     | Download | About 1.7 GB | About 70 MB |
     | Sources `install/setup.bash` | Yes | No |
 
+    The `default` package count is from RoboStack build set `_21`. Since
+    [4. Move to RoboStack Build Set _25](04-robostack-build-25.md), the
+    `default` environment has 1179 packages. The `docs` environment did not
+    change.
+
     - **Fast CI.** The workflow installs only the `docs` environment, so it
       downloads about 70 MB instead of 1.7 GB.
     - **No activation side effects.** The default feature's `[activation]`

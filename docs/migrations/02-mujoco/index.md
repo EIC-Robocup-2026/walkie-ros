@@ -16,9 +16,11 @@ This entry records what the team built, why, and what is still missing. The
 - **Key decisions:** MuJoCo for per-contact control, LeKiwi-style capsule omni wheels,
   custom worlds, the xacro as the single source of truth, and a separate controller file.
 - **Found along the way:** `robot_radius` was 0.252 instead of 0.185 in two controller files.
-- **Result:** the model, the viewer and the MJCF tests work. The ros2_control runtime does
-  not, because `mujoco_ros2_control` is not in `pixi.lock` yet. Until it works, Gazebo
-  stays the simulator for Nav2 and MoveIt ([Current status](#current-status)).
+- **Result:** the model, the viewer and the MJCF tests work. The ros2_control runtime was
+  blocked because `mujoco_ros2_control` was not in `pixi.lock`. Since
+  [entry 4](../04-robostack-build-25.md) it is installed and works when started by hand,
+  but no launch file starts it. Until one does, Gazebo stays the simulator for Nav2 and
+  MoveIt ([Current status](#current-status)).
 
 ## Why MuJoCo
 
@@ -133,7 +135,10 @@ flowchart TD
 ```
 
 - Green: works today.
-- Yellow: written, but cannot run until `mujoco_ros2_control` is installed.
+- Yellow: written, but no launch file starts it. Since the
+  [move to RoboStack build set `_25`](../04-robostack-build-25.md), the hardware plugin
+  and the controllers run in a manual bringup. MoveIt with `hardware_type:=mujoco` has not
+  been run.
 - Red: not written yet.
 
 ## What changed where
@@ -187,15 +192,23 @@ What works today, with no colcon build:
 | Open the scene in the MuJoCo viewer | `pixi run mjcf-view` |
 | Run the MJCF tests | `pixi run python -m pytest description/test/test_mjcf.py` |
 
-What does not work yet: the ros2_control runtime.
+What did not work when this entry was written: the ros2_control runtime.
 
-- `mujoco_ros2_control`, which provides the hardware plugin, is not in `pixi.lock`. The
+- `mujoco_ros2_control`, which provides the hardware plugin, was not in `pixi.lock`. The
   `mujoco` ros2_control branch was written against 0.1.2, which the `robostack-jazzy`
-  channel publishes only for RoboStack build 25. The lock is on build 21, which has only
+  channel publishes only for RoboStack build 25. The lock was on build 21, which has only
   the older 0.0.3. See [2.5 ros2_control](05-ros2-control.md#packaging-status).
 - There is no MuJoCo launch file yet.
 - The MoveIt launches accept `hardware_type:=mujoco`, but they expect the MuJoCo
   controller manager to be started separately.
+
+!!! note "Update 2026-10-13: runtime installed"
+    The default environment is now on RoboStack build set `_25`, and
+    `mujoco_ros2_control` 0.1.2 is in the lock. A headless bringup started by hand loaded
+    the model and activated the controllers, and the base followed velocity commands on
+    `/omni_wheel_drive_controller/cmd_vel`. There is still no MuJoCo launch file. See
+    [the move to build set `_25`](../04-robostack-build-25.md) and
+    [MuJoCo Simulation: Run with ROS 2](../../guides/simulation-mujoco.md#run-with-ros-2).
 
 ## Next steps
 
@@ -213,6 +226,12 @@ What does not work yet: the ros2_control runtime.
    measurements of the real robot.
 4. **Build custom worlds** for the competition arenas, following the rules in
    `description/mujoco/scene.xml`.
+
+!!! note "Update 2026-10-13"
+    Step 1 is done, see [the move to build set `_25`](../04-robostack-build-25.md). For
+    step 2, a manual bringup established what the launch file needs, including a plugin
+    parameter file for the cameras and lidars. It is listed in
+    [MuJoCo Simulation: Run with ROS 2](../../guides/simulation-mujoco.md#run-with-ros-2).
 
 ??? info "Why not a separate pixi environment for MuJoCo"
     A separate pixi environment for MuJoCo was the alternative to re-locking. It was not
@@ -236,7 +255,7 @@ For day-to-day use, see the [MuJoCo Simulation guide](../../guides/simulation-mu
 
 | Issue | Effect | Workaround |
 | --- | --- | --- |
-| No ros2_control runtime | ROS nodes cannot use the simulation yet ([Current status](#current-status)) | Use Gazebo for Nav2 and MoveIt |
+| No MuJoCo launch file | The ros2_control runtime is installed and works when started by hand, but no launch file starts it ([Current status](#current-status)) | Use Gazebo for Nav2 and MoveIt |
 | Wheel radius mismatch | Drives about 1.5 % and turns about 2.4 % slower than commanded | None. The drive test tolerances (3 % and 4 %) allow for it. |
 | `base_footprint` below the floor | It rests at z = -0.0062 m | None |
 | Wheel speed limits disagree | ros2_control: ±3.14 rad/s. MJCF actuators: ±100 rad/s. | Replace the URDF placeholder `velocity="100"` with the real motor limit, then `pixi run mjcf` |
@@ -245,6 +264,7 @@ For day-to-day use, see the [MuJoCo Simulation guide](../../guides/simulation-mu
 | Bottom camera direction | `bottom_camera` (the D415) looks about 50 degrees up | Check the mount pitch against the real robot |
 | Simplified visuals | Some parts are drawn with their collision geometry, also in camera images | Provide binary STL or OBJ visual meshes with at most 200,000 faces |
 | The base passes through furniture | By design ([2.3 Collisions](03-collisions.md)). Bumping into furniture cannot be tested in MuJoCo. | Check the Nav2 costmaps and planned paths |
+| The lift stalls when lowered from `home` | Commanded from 0.51 m down to 0.30 m, it stops near 0.48 m, and the `lift_controller` action still reports success | None yet |
 
 ??? info "Known issue causes and estimated values"
     - **Wheel radius mismatch.** The wheel capsules have radius 0.075 m, the URDF wheel
@@ -264,3 +284,6 @@ For day-to-day use, see the [MuJoCo Simulation guide](../../guides/simulation-mu
     - **Simplified visuals.** MuJoCo cannot load COLLADA files or STL files above 200,000
       faces. The wheels, the OpenArm links, hands and fingers, and the D415 are therefore
       drawn with their collision geometry.
+    - **Lift stall.** At the `home` pose, the fingers hit `base_link` when the lift goes
+      down. Plain MuJoCo, without ROS 2, shows the same, so it is a model issue. The
+      manual bringup of 2026-10-12 found it.

@@ -105,6 +105,9 @@ missing entry points at a missing `package.xml` declaration.
     - Keys with no match on either channel are kept in a commented block,
       `# The following packages were not found:`.
       [Working with Pixi](../guides/pixi.md) lists them and explains each one.
+      `ros-jazzy-laser-proc` left the block with the
+      [move to build set `_25`](04-robostack-build-25.md), which has it. The
+      workspace still builds it from source.
 
 ??? info "Other changes in the same commit"
     - The channels moved to full `prefix.dev` URLs.
@@ -262,7 +265,9 @@ several packages in parallel, without a build type.
 the external clones.
 
 `507c62e` also added back the Zenoh middleware that the robot uses, pinned as
-`ros-jazzy-rmw-zenoh-cpp = ">=0.2.10,<0.3"`.
+`ros-jazzy-rmw-zenoh-cpp = ">=0.2.10,<0.3"`. The pin is now `>=0.2.11,<0.3`,
+because 0.2.10 has a lost-wakeup bug. See
+[4. Move to RoboStack Build Set _25](04-robostack-build-25.md).
 
 ??? info "Earlier build flags and the Zenoh history"
     The first version also passed `--parallel-workers 1` and
@@ -348,7 +353,10 @@ aborted before running, because pytest 9 rejects a plugin hook of
     ```
 
 The same commit added `mujoco = ">=3.14"` and the `mjcf` and `mjcf-view`
-tasks. [2. Add MuJoCo Simulation](02-mujoco/index.md) covers that work.
+tasks. [2. Add MuJoCo Simulation](02-mujoco/index.md) covers that work. The
+MuJoCo pin is now `mujoco = "3.15.*"`, to match the libmujoco that
+`mujoco_vendor` is built against. See
+[4. Move to RoboStack Build Set _25](04-robostack-build-25.md).
 
 ## What is not on pixi yet
 
@@ -371,6 +379,8 @@ tasks. [2. Add MuJoCo Simulation](02-mujoco/index.md) covers that work.
     - **RealSense camera and topic relay:** `ros-jazzy-realsense2-camera` and
       `ros-jazzy-topic-tools` exist on `robostack-jazzy` for the locked
       RoboStack build, but nobody has added or tried them.
-    - **`laser_proc`:** `ros-jazzy-laser-proc` is on `robostack-jazzy` only for
-      a newer RoboStack build than the one in `pixi.lock`.
+    - **`laser_proc`:** `ros-jazzy-laser-proc` 1.0.2 is on `robostack-jazzy`
+      in build set `_25`, which `pixi.lock` uses since
+      [4. Move to RoboStack Build Set _25](04-robostack-build-25.md). The
+      workspace still builds it from source.
     - **`twist_stamper`:** not on the channel.

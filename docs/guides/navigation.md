@@ -378,6 +378,17 @@ footprint of furniture, which helps when drawing keepout zones.
 - Nav2 publishes velocity commands as `geometry_msgs/msg/TwistStamped`
   (`enable_stamped_cmd_vel` defaults to `true`). `twist_mux` and the wheel
   controller expect stamped messages too.
+- Nav2 links the `behaviortree_cpp` library of the pixi environment. The
+  library's SONAME has no version, so Nav2 loads a newer release without an
+  error, even when its ABI changed. After a change of the RoboStack build set,
+  rebuild the whole workspace with `pixi run clean && pixi run build` (see
+  [Changing the build set](pixi.md#changing-the-build-set)).
+
+??? info "Nav2 on behaviortree_cpp 4.10"
+    Since [4. Move to RoboStack Build Set _25](../migrations/04-robostack-build-25.md),
+    the pixi environment has `behaviortree_cpp` 4.10.0 (it was 4.9.1). All
+    Nav2 packages build against it. A Nav2 run in simulation, with
+    `bt_navigator` on 4.10.0, has not been tested yet.
 
 ??? info "Why the Jazzy release of Nav2 is not enough"
     The custom behavior tree plugins in `robot_navigation` need this build.
@@ -492,6 +503,7 @@ launch files are in `launch/`, the Nav2 parameter files and behavior trees in
 | `octomap_3d_mapping.launch.py` needs `octomap_server` and `topic_tools`, which are not in `pixi.toml` | The launch fails with "package not found" under pixi | Add both packages to the environment |
 | `scripts/bringup/real_slam_nav.sh` is broken | The Nav2 tab fails | Use the launch files in [Localization and mapping on the real robot](#localization-and-mapping-on-the-real-robot) |
 | `navigation/README.md` describes an older setup | Its commands fail | Use this page |
+| The fixture of the Nav2 test `test_action_follow_path_action` never sets `cancel_timeout` | The test can hang until CTest stops it. `bt_navigator` is not affected. | Skip the test: `pixi run test --packages-select nav2_behavior_tree --ctest-args -E test_action_follow_path_action` |
 
 ??? info "Causes of the known issues"
     - **Missing simulation map.** `localization_Nav2_sim.launch.py` and
@@ -517,6 +529,15 @@ launch files are in `launch/`, the Nav2 parameter files and behavior trees in
       both publish the `map` to `odom` transform.
     - **`navigation/README.md`.** It starts `localization_Nav2.launch.py` with a
       config under `./src/navigation/nav2/config/`. Neither exists.
+    - **`test_action_follow_path_action`.**
+      `nav2_behavior_tree/test/plugins/action/test_follow_path_action.cpp` in
+      `navigation/navigation2/` puts `server_timeout`, `bt_loop_duration`, and
+      `wait_for_service_timeout` on the blackboard, but not `cancel_timeout`.
+      `BtActionNode` reads `cancel_timeout` from the blackboard into a member
+      that has no initial value. The hang was seen on RoboStack build sets
+      `_21` and `_25`. `bt_navigator` is not affected, because the behavior
+      tree action server always sets `cancel_timeout`. The fix is to set
+      `cancel_timeout` in the test fixture of the Nav2 fork.
 
 ## Troubleshooting
 

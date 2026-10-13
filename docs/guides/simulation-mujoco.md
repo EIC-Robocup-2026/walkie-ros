@@ -1,14 +1,13 @@
 # MuJoCo Simulation
 
-This guide shows how to view and regenerate the MuJoCo model of Walkie, and how to build
-your own world around it.
+This guide shows how to view and regenerate the MuJoCo model of Walkie, how to build
+your own world around it, and how to start it with ROS 2 by hand.
 
-!!! warning "The ROS 2 runtime is not wired up yet"
-    You can load, view, script and test the MuJoCo model today. No launch file starts it
-    with ROS 2 yet, so MuJoCo publishes no topics and accepts no `/cmd_vel`. The
-    `mujoco_ros2_control` package is not in the pixi environment either. Use Gazebo for
-    anything that needs ROS 2. [2.5 ros2_control](../migrations/02-mujoco/05-ros2-control.md)
-    lists what is still missing.
+!!! warning "The ROS 2 runtime has no launch file yet"
+    You can load, view, script and test the MuJoCo model today. The ROS 2 runtime,
+    `mujoco_ros2_control`, is in the pixi environment and works when started by hand. No
+    launch file starts it yet. Use Gazebo for Nav2 and MoveIt.
+    [Run with ROS 2](#run-with-ros-2) lists the parts that a bringup needs.
 
 ## Quick start { #what-works-now }
 
@@ -72,8 +71,8 @@ generator works.
 
 Press ++space++ to run or pause. To drive the robot, use the **Control** panel on the
 right: one slider per actuator. A slider sets the target of its actuator: a speed for the
-four wheels, a position for the lift, head and arm joints. This is the way to drive it until the ROS 2 side
-exists. Press ++f1++ for the full list of shortcuts.
+four wheels, a position for the lift, head and arm joints. This is the way to drive it
+without ROS 2. Press ++f1++ for the full list of shortcuts.
 
 ??? info "All viewer controls and panels"
     | Input | Action |
@@ -129,10 +128,19 @@ exists. Press ++f1++ for the full list of shortcuts.
     unexpected change. If it prints `error:` lines or stops with a `ValueError`, see
     [Troubleshooting](#troubleshooting).
 
+    Always run the generator through pixi. Another MuJoCo version writes a different
+    `walkie.xml`.
+
 3. Look at the result with `pixi run mjcf-view`, then run
    `pixi run python -m pytest description/test/test_mjcf.py`.
 4. Commit the xacro change and the new `walkie.xml` together, inside the `description`
    submodule. Then commit the updated submodule pointer in walkie-ros.
+
+??? info "Why the MuJoCo version is pinned"
+    `pixi.toml` pins `mujoco` to `3.15.*`, the libmujoco version that `mujoco_vendor`
+    0.1.0, and with it `mujoco_ros2_control`, is built against. The MjSpec serializer
+    differs between versions: MuJoCo 3.10 writes a different `walkie.xml` than the
+    checked-in 3.15 output.
 
 ### Change a MuJoCo-only value { #mujoco-only-values }
 
@@ -310,6 +318,127 @@ print('front_lidar-120', data.sensor('front_lidar-120').data)
 Save it outside `description/` and run it from the repository root with
 `pixi run python <script>`. The time step is 0.002 s, so 2 s is 1000 steps.
 
+## Run with ROS 2
+
+No launch file in the repository starts MuJoCo with ROS 2 yet. The runtime,
+`mujoco_ros2_control` 0.1.2, is in the pixi environment since the
+[move to RoboStack build set `_25`](../migrations/04-robostack-build-25.md). A headless
+bringup started by hand worked on 2026-10-12. It used these parts, and a launch file needs
+the same:
+
+1. **The installed model.** The hardware plugin loads `mujoco/scene.xml` from the installed
+   `walkie_description`, and `scene.xml` includes the installed `walkie.xml`. Build the
+   package before the first run, so that `install/` has the `mujoco` folder:
+
+    ```bash
+    pixi run build-pkg walkie_description
+    ```
+
+    A world file that you add later needs another build (see
+    [What needs a rebuild](pixi.md#what-needs-a-rebuild)).
+
+2. **`robot_state_publisher`**, with `use_sim_time: true` and the URDF of
+   `description/robots/gz_walkie.urdf.xacro` expanded with `ros2_control:=mujoco` and
+   `mujoco_headless:=true`. Without `mujoco_headless:=true`, the MuJoCo window opens.
+   `description/launch/robot_state_publisher.launch.py` does not forward `mujoco_model` or
+   `mujoco_headless`.
+3. **`ros2_control_node` of the package `mujoco_ros2_control`**, not the one of
+   `controller_manager`. It steps the physics and runs the controller manager in one
+   process, and reads the URDF from the `/robot_description` topic. Give it three sets of
+   parameters: `description/config/ros2_controller/mujoco_controllers.yaml`, the
+   [mujoco_plugins parameter file](#the-mujoco_plugins-parameter-file), and
+   `use_sim_time: true`.
+4. **Spawners** for `joint_broad`, `imu_sensor_broadcaster`, `omni_wheel_drive_controller`,
+   `lift_controller`, `left/right_joint_trajectory_controller`,
+   `left/right_gripper_controller` and `head_servo_controller`. Give each one
+   `--param-file` with `mujoco_controllers.yaml`.
+
+The base then follows `TwistStamped` messages on `/omni_wheel_drive_controller/cmd_vel`.
+Ground truth is a `nav_msgs/Odometry` on `/mujoco_ground_truth/odom`, without TF. Gazebo
+uses `/gazebo_ground_truth/odom`.
+
+A launch file also needs:
+
+- Remap `/imu_sensor_broadcaster/imu` to `/imu`. See [2.4 Sensors](../migrations/02-mujoco/04-sensors.md#imu).
+- As in Gazebo, remap the `twist_mux` output `/cmd_vel_out` to
+  `/omni_wheel_drive_controller/cmd_vel`.
+- Merge `/front_lidar` and `/back_lidar` into `/scan` with `dual_laser_merger`. See
+  [2.4 Sensors](../migrations/02-mujoco/04-sensors.md#what-scan-will-need).
+
+??? info "What the manual bringup measured"
+    | Item | Result |
+    | --- | --- |
+    | Controllers | The nine spawned controllers (of the 14 in `mujoco_controllers.yaml`) became active |
+    | `/joint_states` | 22 joints at about 55 Hz (`update_rate` 60) |
+    | Real-time factor | About 1.0 |
+    | Base drive | 0.2 m/s on `/omni_wheel_drive_controller/cmd_vel` for 4 s. The controller odometry stayed within about 1.5 % of the ground truth. |
+    | Cameras and lidars | Published with the `mujoco_plugins` parameter file |
+    | Not tested | MoveIt and Nav2 with MuJoCo, RViz |
+
+### The mujoco_plugins parameter file
+
+The cameras and lidars publish on the topics below only with this file, passed to
+`ros2_control_node`. The file is not in the repository yet. This version worked in the
+manual bringup:
+
+```yaml
+/**:
+  ros__parameters:
+    mujoco_plugins:
+      mujoco_camera_plugin:
+        type: "mujoco_ros2_control_plugins/CameraPlugin"
+        camera_publish_rate: 5.0
+        head_camera:
+          policy: streaming
+          frame_name: zed_head_left_camera_frame_optical
+          info_topic: /head_camera/camera_info
+          image_topic: /head_camera/image_raw
+          depth_topic: /head_camera/depth/image_raw
+        bottom_camera:
+          policy: streaming
+          frame_name: bottom_color_optical_frame
+          info_topic: /bottom_camera/camera_info
+          image_topic: /bottom_camera/image_raw
+          depth_topic: /bottom_camera/depth/image_raw
+      rangefinder_lidar_plugin:
+        type: "mujoco_ros2_control_plugins/RangefinderLidarPlugin"
+        lidar_publish_rate: 40.0
+        front_lidar:
+          frame_name: front_lidar_link
+          angle_increment: 0.017444444416
+          min_angle: -2.09333333
+          max_angle: 2.09333333
+          range_min: 0.18
+          range_max: 10.0
+          laserscan_topic: /front_lidar
+        back_lidar:
+          frame_name: back_lidar_link
+          angle_increment: 0.017444444416
+          min_angle: -2.09333333
+          max_angle: 2.09333333
+          range_min: 0.18
+          range_max: 10.0
+          laserscan_topic: /back_lidar
+```
+
+- **Name the lidar instance exactly `rangefinder_lidar_plugin`.** The plugin reads its
+  publish rate from the fixed key
+  `mujoco_plugins.rangefinder_lidar_plugin.lidar_publish_rate`.
+- The camera topic names were chosen for the test. Match them to what the consumer
+  expects.
+
+??? info "How the file maps to the model"
+    - One lidar instance serves both lidars. `front_lidar` and `back_lidar` are the sensor
+      name prefixes in `walkie.xml` (`front_lidar-0` and so on). Each `frame_name` is the
+      URDF frame of the lidar.
+    - The beam values come from the `walkie.xml` header.
+    - A beam without a return reads -1. Whatever builds `/scan` from the two topics must
+      treat it as no return.
+    - The camera `frame_name` values are the URDF optical frames.
+    - `RangefinderLidarPlugin` is deprecated upstream.
+      [2.4 Sensors](../migrations/02-mujoco/04-sensors.md#what-scan-will-need) covers the
+      alternative.
+
 ## Tests
 
 Run the tests after every model change. Add `-k lidar` to run only the tests whose name
@@ -328,13 +457,13 @@ pixi run python -m pytest description/test/test_mjcf.py
 
 | Feature | Status | Details |
 | --- | --- | --- |
-| Launch file that runs MuJoCo with ROS 2 | Not written | [2.5 ros2_control](../migrations/02-mujoco/05-ros2-control.md) |
-| `mujoco_ros2_control` in the pixi environment | The 0.1.2 build that the xacro targets needs the RoboStack `_25` build set. The lock file has `_21`. | [2.5 ros2_control](../migrations/02-mujoco/05-ros2-control.md#packaging-status) |
-| `/cmd_vel`, `/joint_states` and the controllers in `mujoco_controllers.yaml` | Configured, but nothing loads them | [2.5 ros2_control](../migrations/02-mujoco/05-ros2-control.md) |
-| `/scan` from the emulated lidars | The beams exist in the model; the ROS plugin is not set up | [2.4 Sensors](../migrations/02-mujoco/04-sensors.md) |
-| Camera and IMU topics | The sensors exist in the model; nothing publishes them | [2.4 Sensors](../migrations/02-mujoco/04-sensors.md) |
-| MoveIt with `hardware_type:=mujoco` | The launch option exists, but there is no MuJoCo controller manager to talk to | [2.5 ros2_control](../migrations/02-mujoco/05-ros2-control.md) |
-| Nav2 in MuJoCo | Needs `/scan` and the drive controller first | [2. Add MuJoCo Simulation](../migrations/02-mujoco/index.md) |
+| Launch file that runs MuJoCo with ROS 2 | Not written. The runtime works when started by hand. | [Run with ROS 2](#run-with-ros-2) |
+| `/cmd_vel`, `/joint_states` and the controllers in `mujoco_controllers.yaml` | Work in a manual bringup; no launch file starts them | [Run with ROS 2](#run-with-ros-2) |
+| `mujoco_plugins` parameter file for the cameras and lidars | Not in the repository. A working version is on this page. | [The mujoco_plugins parameter file](#the-mujoco_plugins-parameter-file) |
+| `/scan` from the emulated lidars | `/front_lidar` and `/back_lidar` publish with the parameter file; nothing merges them into `/scan` yet | [2.4 Sensors](../migrations/02-mujoco/04-sensors.md#what-scan-will-need) |
+| `/imu` | `imu_sensor_broadcaster` publishes on `/imu_sensor_broadcaster/imu`; the remap belongs in the launch file | [2.4 Sensors](../migrations/02-mujoco/04-sensors.md#imu) |
+| MoveIt with `hardware_type:=mujoco` | The launch option exists, but no launch file starts the MuJoCo controller manager. Not tested. | [2.5 ros2_control](../migrations/02-mujoco/05-ros2-control.md) |
+| Nav2 in MuJoCo | Needs the launch file and `/scan` first | [2. Add MuJoCo Simulation](../migrations/02-mujoco/index.md) |
 | Robot base collisions with the world | Left out by design | [2.3 Collisions](../migrations/02-mujoco/03-collisions.md) |
 
 ## Troubleshooting
@@ -354,3 +483,9 @@ pixi run python -m pytest description/test/test_mjcf.py
 | The arms pass through a world object | The geom has no collision bits, or the wrong ones | Set FURN or OBJ bits |
 | The robot drives through a wall | By design: the base never collides with world geometry | Use the lidar readings for clearance |
 | The head camera shows the inside of its housing | `znear` or `extent` was changed | Restore `<statistic extent="2.2"/>` and `<map znear="0.025"/>` |
+| The lift stops near 0.48 m when you lower it from `home` | At `home`, the fingers hit `base_link`. This is a model issue: it happens with and without ROS 2. | None yet. See [Known issues](../migrations/02-mujoco/index.md#known-issues). |
+| `ros2_control_node` of `mujoco_ros2_control` cannot load the model | `install/` has no `mujoco` folder, or not your world file | `pixi run build-pkg walkie_description` |
+| A MuJoCo window opens when `ros2_control_node` starts | `mujoco_headless` defaults to `false` | Expand the xacro with `mujoco_headless:=true` |
+| `/front_lidar` and `/back_lidar` do not exist | No `mujoco_plugins` parameter file was passed to `ros2_control_node` | Pass one, see [The mujoco_plugins parameter file](#the-mujoco_plugins-parameter-file) |
+| `/front_lidar` and `/back_lidar` publish at about 28 Hz, not 40 Hz | Measured in the manual bringup. The cause has not been investigated. | None yet |
+| Camera topics appear under `/mujoco_camera_plugin/...`, and their frames are not in TF | No `CameraPlugin` is configured, so the cameras register themselves (deprecated) | Add the `mujoco_camera_plugin` entry of the parameter file |

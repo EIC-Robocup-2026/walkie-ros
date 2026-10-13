@@ -4,7 +4,7 @@ Use this page to run commands in the pixi environment, build the workspace, and
 add dependencies. It assumes you have finished
 [Getting Started](../getting-started.md).
 
-??? info "What pixi, conda packages, channels, and RoboStack are"
+??? info "What pixi, conda packages, channels, RoboStack, and build sets are"
     - **pixi** is a package manager. It installs packages into the project
       folder (`.pixi/envs/`), not into the system. `pixi.lock` records the
       exact version of every package, so everyone on the team gets the same
@@ -17,6 +17,18 @@ add dependencies. It assumes you have finished
       `pixi.toml`.
     - **RoboStack** is a project that builds ROS packages as conda packages
       and publishes them on the `robostack-jazzy` channel.
+    - A **build set** is one complete rebuild of all RoboStack ROS packages.
+      Its number is the suffix of the package build strings, for example `_25`
+      in `ros2-rmw-zenoh-cpp-0.2.11-np2py312h815c85b_25`. Every `ros2-`
+      package depends on the matching version of the `ros2-distro-mutex`
+      package, so one environment holds the ROS packages of one build set.
+      See [The RoboStack build set](#the-robostack-build-set).
+    - In build set `_25`, a `ros-jazzy-<name>` package contains no files. It
+      is an alias that depends on `ros2-<name>`, the package with the files.
+      `pixi.toml` uses the `ros-jazzy-` names, which still resolve, and
+      `pixi list` shows both names. A few aliases, such as
+      `ros-jazzy-ros-base`, still carry the build number `_21`. The `ros2-`
+      packages they depend on are from build set `_25`.
 
     | Channel | What it provides |
     | --- | --- |
@@ -28,7 +40,7 @@ add dependencies. It assumes you have finished
     | --- | --- | --- |
     | `pixi.toml` | The workspace manifest: channels, dependencies, tasks, environments. You edit this file. | Yes |
     | `pixi.lock` | The exact version of every package in every environment. pixi writes it. Never edit it by hand. | Yes |
-    | `.pixi/envs/default/` | The installed ROS environment, about 8 GB | No |
+    | `.pixi/envs/default/` | The installed ROS environment, about 7 GB | No |
     | `.pixi/envs/docs/` | The installed documentation environment | No |
     | `walkie_external.repos` | Source packages that are not on the channels. `pixi run import` clones them. | Yes |
     | `install/setup.bash` | Created by the first build. pixi sources it when it activates the environment. | No |
@@ -61,7 +73,8 @@ To see what is installed:
 
 ```bash
 pixi list                      # all packages in the default environment
-pixi list ros-jazzy-rmw        # only packages whose name matches
+pixi list ros2-rmw             # only packages whose name matches
+pixi list ros2-distro-mutex    # the build set: version 0.19.0, build jazzy_25
 pixi list -e docs              # packages in the docs environment
 ```
 
@@ -192,6 +205,7 @@ installed "copy" changes with it. To rebuild one package, run
 | A new file, such as a launch file, config file, or script | Yes. It has no link in `install/` until the next build. |
 | C++ code | Yes. C++ must be compiled. |
 | `package.xml`, `CMakeLists.txt`, or `setup.py` | Yes. |
+| The `ros2-distro-mutex` pin in `pixi.toml`, for example through a `git pull`. `pixi.lock` is then on another RoboStack build set. | Yes, everything: `pixi install`, then `pixi run clean && pixi run build`. `build-pkg` is not enough. See [Changing the build set](#changing-the-build-set). |
 
 ## Add a dependency { #adding-a-dependency }
 
@@ -207,7 +221,9 @@ installed "copy" changes with it. To rebuild one package, run
     ```
 
 2. Add it. This adds a line to `[dependencies]` in `pixi.toml`, solves the
-   environment again, updates `pixi.lock`, and installs the package.
+   environment again, updates `pixi.lock`, and installs the package. It fails
+   for a ROS package that is not in the pinned
+   [build set](#the-robostack-build-set).
 
     ```bash
     pixi add ros-jazzy-<package-name>
@@ -238,6 +254,12 @@ pixi lock
 git add pixi.toml pixi.lock
 ```
 
+A branch that is still on an older build set, such as `feat/Pixi` on `_21`,
+conflicts on `pixi.lock` when it is merged with a branch on `_25`. Resolve it
+the same way. `pixi lock` solves for the `ros2-distro-mutex` pin in the merged
+`pixi.toml`. If that moves the lock to another build set, run `pixi install`,
+then `pixi run clean && pixi run build`.
+
 ??? info "How .gitattributes handles pixi.lock"
     `.gitattributes` contains this line:
 
@@ -254,9 +276,10 @@ git add pixi.toml pixi.lock
 
 ### Packages that are not on the channels
 
-Some ROS packages are not published on `robostack-jazzy`. They are cloned as
-source code and built with the rest of the workspace. `walkie_external.repos`
-lists them in the [vcstool](https://github.com/dirk-thomas/vcstool) format.
+Some ROS packages are not published on `robostack-jazzy`, or were not when the
+workspace moved to pixi. They are cloned as source code and built with the
+rest of the workspace. `walkie_external.repos` lists them in the
+[vcstool](https://github.com/dirk-thomas/vcstool) format.
 
 | Path | Version | Needed by |
 | --- | --- | --- |
@@ -281,12 +304,13 @@ To add a package:
 3. Run `pixi run import`, or `pixi run build`, which runs it.
 
 ??? info "Why laser_proc and twist_stamper are built from source"
-    `robostack-jazzy` has `ros-jazzy-laser-proc` only in a newer RoboStack
-    build (build number 25, which requires `ros2-distro-mutex` 0.19).
-    `pixi.lock` uses the older build (build number 21, `ros2-distro-mutex`
-    0.16). Moving `laser_proc` to `pixi.toml` means moving the whole ROS
-    environment to the newer build first. `ros-jazzy-twist-stamper` is not on
-    the channel.
+    Build set `_25` has `ros-jazzy-laser-proc` 1.0.2, but the workspace still
+    clones and builds `laser_proc` from source. Moving it to `pixi.toml` means
+    adding `ros-jazzy-laser-proc`, removing its entry from
+    `walkie_external.repos`, and deleting `hardware/lidar/laser_proc` on every
+    computer. colcon still builds a clone that is left in place, and that
+    build shadows the conda package. `ros-jazzy-twist-stamper` is not on the
+    channel.
 
 ??? info "The 'packages were not found' block in pixi.toml"
     At the end of `[dependencies]`, `pixi.toml` has a commented block that
@@ -297,10 +321,98 @@ To add a package:
 
     | Name | Declared in | Notes |
     | --- | --- | --- |
-    | `ros-jazzy-laser-proc` | `hardware/lidar/urg_node2/package.xml` | Built from source through `walkie_external.repos` |
     | `libblosc-dev`, `liblzma-dev`, `libopenvdb-dev` | `navigation/spatio_temporal_voxel_layer/openvdb_vendor/package.xml` | Debian package names. The OpenVDB library comes from the `openvdb` conda package. |
     | `libopenexr-dev` | `navigation/spatio_temporal_voxel_layer/spatio_temporal_voxel_layer/package.xml` | Debian package name |
     | `libqt6-core`, `libqt6gui6t64`, `libqt6statemachine6`, `libqt6widgets6t64`, `qt6-base-dev`, `qt6-scxml-dev` | `navigation/navigation2/nav2_rviz_plugins/package.xml` | Debian package names |
+
+    `ros-jazzy-laser-proc` (declared in `hardware/lidar/urg_node2/package.xml`)
+    was in this block until the move to build set `_25`. It now has its own
+    commented line above the block, because the package is on the channel but
+    is still built from source.
+
+## The RoboStack build set
+
+`pixi.lock` uses RoboStack build set `_25`. The first entry of
+`[dependencies]` pins it through the `ros2-distro-mutex` package:
+
+```toml title="pixi.toml"
+ros2-distro-mutex = "0.19.*"
+```
+
+`pixi list ros2-distro-mutex` shows the build set of the installed
+environment: version 0.19.0, build `jazzy_25`.
+
+- `pixi add` and `pixi update` stay inside build set `_25`. A ROS package
+  that exists only in another build set cannot be added until the pin
+  changes.
+- A new build set changes every ROS package and needs a full rebuild. See
+  [Changing the build set](#changing-the-build-set).
+- Build set `_25` requires OpenCV 5.0 (`libopencv`, `py-opencv`). apt Jazzy
+  and the [Docker images](docker.md) use Ubuntu's OpenCV 4.6, so code that
+  uses OpenCV must work with both versions. See
+  [Perception: OpenCV under pixi](perception.md#opencv-under-pixi).
+
+??? info "Why the mutex is pinned"
+    RoboStack rebuilds every ROS package for a new build set. So far, it has
+    stopped publishing to a build set once a newer one exists. This is an
+    observed pattern, not a documented RoboStack policy. The packages of older
+    build sets have so far stayed downloadable. New ROS packages and new
+    versions therefore appear only in the newest build set.
+
+    Without the pin, `pixi update`, or `pixi add` of a package that only the
+    newest build set has, solves the whole environment again for the newest
+    build set. Every ROS package changes, and the workspace needs a clean
+    rebuild. Before the pin, `pixi update` and
+    `pixi add ros-jazzy-mujoco-ros2-control` both did this.
+    [4. Move to RoboStack Build Set _25](../migrations/04-robostack-build-25.md)
+    records the move to `_25` and the pin.
+
+### Entries that depend on the build set
+
+| Entry in `pixi.toml` | Why |
+| --- | --- |
+| `ros2-distro-mutex = "0.19.*"` | Keeps the environment in build set `_25` |
+| `mujoco = "3.15.*"` | Must match the libmujoco 3.15.0 that `ros-jazzy-mujoco-vendor` 0.1.0 is built against |
+| `ros-jazzy-mujoco-ros2-control = ">=0.1.2"` | The MuJoCo ros2_control runtime. Version 0.1.x exists only in build set `_25`. See [MuJoCo Simulation](simulation-mujoco.md#run-with-ros-2). |
+| `ros-jazzy-rmw-zenoh-cpp = ">=0.2.11,<0.3"` | 0.2.11 fixes a lost-wakeup bug of 0.2.10. See [Middleware (Zenoh)](middleware.md#turn-on-zenoh-in-every-terminal). |
+| `python-graphviz = "*"` | Provides the Python `graphviz` module for `ros2 control view_controller_chains`. Without it, the verb fails with `KeyError: 'view_controller_chains'`. A build does not catch this. See [One break and its fix](../migrations/04-robostack-build-25.md#one-break-and-its-fix). |
+
+### Changing the build set
+
+Change the build set on purpose, in its own commit. These are the steps used
+for build set `_25`:
+
+1. Find the mutex version of the new build set with
+   `pixi search ros2-distro-mutex`. Set the pin in `pixi.toml` to it, and
+   update the comment above the pin.
+2. Check the other
+   [entries that depend on the build set](#entries-that-depend-on-the-build-set).
+   For example, `mujoco` must match the libmujoco that the new
+   `mujoco_vendor` is built against.
+3. Run `pixi lock`. Compare the old and new versions of the libraries that
+   the workspace uses. Build set `_25`, for example, moved OpenCV from 4.13
+   to 5.0.
+4. Install the new environment and rebuild everything. `build-pkg` is not
+   enough: the CMake caches in `build/` point at the old library versions,
+   and libraries can change their ABI between build sets.
+
+    ```bash
+    pixi install
+    pixi run clean && pixi run build
+    ```
+
+    [After pulling this change](../migrations/04-robostack-build-25.md#after-pulling-this-change)
+    records how long the full build took for build set `_25`.
+
+5. Run the tests (see [Tests](testing.md)). `test_generated_model_is_up_to_date`
+   in `test_mjcf.py` also catches a MuJoCo version that writes a different
+   `walkie.xml`.
+6. Commit `pixi.toml` and `pixi.lock` together. Record the move in the
+   [Migration Log](../migrations/index.md), with what was checked and what
+   was not, as in
+   [4. Move to RoboStack Build Set _25](../migrations/04-robostack-build-25.md).
+7. Tell the team. After they pull the change, every computer runs
+   `pixi install`, then `pixi run clean && pixi run build`.
 
 ## Python virtual environments next to pixi
 
@@ -315,6 +427,14 @@ computers that need it.
 | venv location | `bringup/.venv` | `~/perception-venv` |
 | Created by | `pixi run uv` inside `bringup/` (below) | `perception/setup_env.sh`, on the system Python |
 | Full setup | [Real Robot](real-robot.md#python-environment) | [Perception](perception.md#what-a-pixi-user-must-do), including a computer with pixi only |
+
+!!! warning "Do not pip install into the pixi environment"
+    The default environment contains `pip`, `virtualenv`, `pip-compile`, and
+    similar tools in `.pixi/envs/default/bin`, because `mujoco_ros2_control`
+    depends on them. `pixi run pip install ...` finds this `pip` and installs
+    into `.pixi/envs/default/`. pixi does not track such packages: they are
+    not in `pixi.lock`, and no other computer gets them. Add conda packages
+    with `pixi add`, and put PyPI packages in a venv.
 
 Create the lift node venv inside `bringup/`:
 
@@ -346,7 +466,7 @@ pixi run uv sync
 
 | Environment | Contents | Size |
 | --- | --- | --- |
-| `default` | ROS 2 Jazzy, Gazebo, MoveIt, compilers, MuJoCo, and the other build and simulation dependencies | 1276 packages, about 1.7 GB download |
+| `default` | ROS 2 Jazzy, Gazebo, MoveIt, compilers, MuJoCo, and the other build and simulation dependencies | 1179 packages, about 1.7 GB download |
 | `docs` | MkDocs and the Material theme. No ROS, and it does not source `install/setup.bash`. | 63 packages, about 70 MB download |
 
 How pixi chooses the environment:

@@ -18,7 +18,7 @@ pixi run docs    # serves http://127.0.0.1:8000
 |---|---|
 | [Getting Started](docs/getting-started.md) | Prerequisites, clone, install, build, and the first simulation run |
 | [Guides](docs/guides/index.md) | Simulation, navigation, manipulation, perception, the real robot, tests, Docker |
-| [Migration Log](docs/migrations/index.md) | Why the workspace looks the way it does: the move to pixi, the MuJoCo model, the docs site |
+| [Migration Log](docs/migrations/index.md) | Why the workspace looks the way it does: the move to pixi, the MuJoCo model, the docs site, the RoboStack build set |
 | [Troubleshooting](docs/troubleshooting.md) | Known errors and their fixes |
 
 ## Quick start

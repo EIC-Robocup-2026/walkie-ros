@@ -6,7 +6,9 @@ compose files in `docker/`, and pull the images that CI publishes.
 !!! note "The images do not use pixi"
     The images install ROS 2 Jazzy from apt, resolve dependencies with
     `rosdep`, and build with `colcon`. They ignore `pixi.toml` and
-    `pixi.lock`, so package versions can differ. For daily development, use
+    `pixi.lock`, so package versions can differ. For example, the images use
+    Ubuntu's OpenCV 4.6, and the pixi environment has OpenCV 5.0. Code that
+    uses OpenCV must work with both. For daily development, use
     [pixi](pixi.md).
 
 ## Before you start

@@ -198,8 +198,8 @@ in a way that gives it a ROS 2 installation. Drop `--grasp` if you only need
     checkpoint.
 
 !!! warning
-    Under `pixi run`, the venv imports pixi's numpy 2.x. See
-    [Known issues](#known-issues).
+    Under `pixi run`, the venv imports pixi's numpy 2.x and pixi's OpenCV 5.0.
+    See [Known issues](#known-issues).
 
 To use a venv at another path, set `PERCEPTION_VENV` to its Python
 executable (`export PERCEPTION_VENV=/path/to/venv/bin/python3`), not to the
@@ -439,7 +439,7 @@ pixi run ros2 service call /grasp/standby std_srvs/srv/SetBool "{data: false}"
 | The `ob_pose_service_cpp` code defaults use the old `/zed` namespace | Started without parameters, the node waits for topics that nothing publishes | Pass `depth_topic` and `info_topic`, as in [Get 3D positions from 2D detections](#classic-pipeline) |
 | No node in the repository publishes `/yolo/detections_2d`, the input of `ob_pose` | `ob_pose` never publishes poses | Remap its input to `/yolo/tracked_detections_2d`, or publish detections on `/yolo/detections_2d` |
 | The default `model_path` of `yolo_node` points to `models/yolo11l-seg.pt` in the installed share directory, but the build installs no `models/` directory | The default model file is not there after a build | Pass `-p model_path:=/path/to/yolo11l-seg.pt` |
-| Inside `pixi run`, `PYTHONPATH` lists pixi's `site-packages`, and `PYTHONPATH` entries come before the venv's own packages | The venv interpreter imports pixi's numpy 2.5.3 instead of the pinned numpy 1.x | If a node fails with a numpy or binary compatibility error, run the grasp pipeline in the physical Docker image |
+| Inside `pixi run`, `PYTHONPATH` lists pixi's `site-packages`, and `PYTHONPATH` entries come before the venv's own packages | The venv interpreter imports pixi's numpy 2.5.3 instead of the pinned numpy 1.x, and pixi's `cv2` (`py-opencv` 5.0.0) instead of the pinned `opencv-python` 4.11.0.86. See [OpenCV under pixi](#opencv-under-pixi). | If a node fails with a numpy or binary compatibility error, run the grasp pipeline in the physical Docker image |
 | The final message of `setup_env.sh` tells you to build `grasp_interfaces` in `~/Walkie_Project` | No `grasp_interfaces` package exists; the service definitions are in `walkie_perception` | `pixi run build-pkg walkie_perception` |
 | Parts of the perception README are out of date | The README and the code disagree | Follow the code, see the table below |
 
@@ -456,6 +456,31 @@ pixi run ros2 service call /grasp/standby std_srvs/srv/SetBool "{data: false}"
 | `obb3d` publishes `/obb3d/markers` | It publishes `apex/markers`, `apex/detections_3d`, and debug topics, and also serves `apex/dump_database` |
 | `yolo_node` runs YOLOv8-seg | The default model is `yolo11l-seg.pt` |
 | Install uv with `pip install uv`, build with `colcon build` | Use pixi for the build; `uv` is a separate tool on `PATH` |
+
+### OpenCV under pixi
+
+The perception code meets more than one OpenCV version. When you add OpenCV
+code to the perception nodes, make sure it works on OpenCV 4 and OpenCV 5.
+
+| Source | OpenCV |
+| --- | --- |
+| `perception/uv.lock`, for the venv | `opencv-python` and `opencv-python-headless` 4.11.0.86 |
+| The pixi environment | `py-opencv` 5.0.0. The pixi `cv_bridge` is built against it. Under `pixi run`, `import cv2` in the venv loads this one, because `PYTHONPATH` comes first (see [Known issues](#known-issues)). |
+| apt Jazzy and the [Docker images](docker.md) | Ubuntu's OpenCV 4.6, for their ROS packages such as `cv_bridge` |
+
+??? info "OpenCV calls in the perception nodes, and the OpenCV 5 trial"
+    Under pixi, OpenCV was 4.13.0 before
+    [the move to RoboStack build set `_25`](../migrations/04-robostack-build-25.md).
+    The nodes call only a few OpenCV functions:
+
+    | File | Calls |
+    | --- | --- |
+    | `yolo_node.py` | `CvBridge.imgmsg_to_cv2(msg, 'bgr8')`, `cv2.imdecode`, `cv2.fillPoly` |
+    | `grasp_node.py` | `cv2.resize` with `INTER_NEAREST`, `cv2.erode` |
+    | `test_grasp_viz.py` | `cv2.resize` with `INTER_NEAREST` |
+
+    In a trial on 2026-10-12, these calls gave bit-identical results on
+    OpenCV 5.0.0 and 4.13.0, and a `CvBridge` round trip worked.
 
 ## Troubleshooting
 

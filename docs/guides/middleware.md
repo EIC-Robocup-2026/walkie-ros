@@ -13,9 +13,9 @@ export RMW_IMPLEMENTATION=rmw_zenoh_cpp
 export ROS_DOMAIN_ID=23
 ```
 
-- `pixi.toml` installs `ros-jazzy-rmw-zenoh-cpp` (`>=0.2.10,<0.3`), but pixi
-  does not set `RMW_IMPLEMENTATION`. Without it, ROS 2 Jazzy uses its default
-  DDS middleware (`rmw_fastrtps_cpp`).
+- `pixi.toml` installs `ros-jazzy-rmw-zenoh-cpp` (`>=0.2.11,<0.3`; the lock
+  has 0.2.11), but pixi does not set `RMW_IMPLEMENTATION`. Without it, ROS 2
+  Jazzy uses its default DDS middleware (`rmw_fastrtps_cpp`).
 - All processes that must talk to each other need the same middleware and the
   same `ROS_DOMAIN_ID`. A node that uses DDS cannot see a node that uses Zenoh.
 - `pixi run` keeps the variables of the terminal it starts from, so the
@@ -46,6 +46,17 @@ export ROS_DOMAIN_ID=23
     with `rmw_zenoh_cpp` (`scouting.multicast.enabled: false`). Nothing is
     found automatically. Every connection between machines is configured on
     purpose.
+
+??? info "Why rmw_zenoh_cpp 0.2.11 or newer"
+    0.2.10 has a lost-wakeup bug: an executor can stall until another event
+    arrives, and a process without timers can stall indefinitely. 0.2.11
+    fixes it. Both versions use zenoh-c 1.9.0. The message type hashes are
+    the same in RoboStack build sets `_21` and `_25` and in apt Jazzy.
+
+    With 0.2.11, a local `rmw_zenohd` starts and relays messages.
+    Communication across machines, through the team router or with computers
+    on apt Jazzy, has not been tested with it yet. See
+    [4. Move to RoboStack Build Set _25](../migrations/04-robostack-build-25.md).
 
 ## Start the router
 
