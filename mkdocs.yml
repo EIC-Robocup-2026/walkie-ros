@@ -102,4 +102,5 @@ nav:
           - 2.7 Launch Files and Nav2: migrations/02-mujoco/07-launch.md
       - 3. Add the Documentation Site: migrations/03-documentation.md
       - 4. Move to RoboStack Build Set _25: migrations/04-robostack-build-25.md
+      - 5. Repair Nav2 After the navigation2 Bump: migrations/05-nav2-repair.md
   - Troubleshooting: troubleshooting.md

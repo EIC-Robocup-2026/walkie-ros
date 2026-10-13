@@ -294,6 +294,14 @@ Not verified on `_25` yet:
     Nav2 launches fail to configure `controller_server`. See
     [2.7 Launch Files and Nav2](02-mujoco/07-launch.md).
 
+    **Update 2026-10-14:** every MPPI parameter file now sets the Omni plugin
+    key, and the Nav2 launches that include `navigation_launch.py` or
+    `localization_launch.py` directly start their own `lifecycle_manager_nav2`.
+    See
+    [5. Repair Nav2 After the navigation2 Bump](05-nav2-repair.md#mppi-motion-models-are-plugins).
+    Under Fast DDS, the real-robot launches still fail on an older, separate
+    problem ([entry 5: Still open](05-nav2-repair.md#still-open)).
+
 ## Pre-existing issues found by the trial
 
 The trial found three problems that do not come from the move. This change

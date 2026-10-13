@@ -181,6 +181,12 @@ frame `merged_lidar_link` and remaps the output to `/scan`. Nav2 reads `/scan`.
     [MuJoCo Simulation: The mujoco_plugins parameter file](../../guides/simulation-mujoco.md#the-mujoco_plugins-parameter-file)
     has the file, and [2.7 Launch Files and Nav2](07-launch.md) records the launch files.
 
+!!! note "Update 2026-10-14: changed in entry 5"
+    With `publish_on_empty_cloud`, a new merger parameter that `mujoco_omnibot.launch.py`
+    sets to `true`, the merger publishes `/scan` in the empty `scene.xml`. A lidar with no
+    return in range reads as free space. The real robot keeps the default, `false`. See
+    [5. Repair Nav2 After the navigation2 Bump](../05-nav2-repair.md#scan-in-the-empty-mujoco-world).
+
 When this entry was written, no launch file published the MuJoCo lidars on ROS topics.
 Two parts were missing:
 
@@ -418,7 +424,7 @@ Six tests cover the sensors: `test_imu_at_rest`, `test_lidar_beam_layout`,
 
 | Item | Status |
 | --- | --- |
-| Lidar publishing | Done 2026-10-13: `RangefinderLidarPlugin` for both lidars and `dual_laser_merger` to `/scan` in `mujoco_omnibot.launch.py`. The plugin stays deprecated upstream; `Mujoco3dLidarPlugin` needs the `mujoco_3d_lidar` MuJoCo extension, which is not in the pixi environment. |
+| Lidar publishing | Done 2026-10-13: `RangefinderLidarPlugin` for both lidars and `dual_laser_merger` to `/scan` in `mujoco_omnibot.launch.py`. The plugin stays deprecated upstream; `Mujoco3dLidarPlugin` needs the `mujoco_3d_lidar` MuJoCo extension, which is not in the pixi environment. Update 2026-10-14: since [entry 5](../05-nav2-repair.md#scan-in-the-empty-mujoco-world), `/scan` is also published in the empty `scene.xml` (`publish_on_empty_cloud`). |
 | Lidar rate | About 27.8 Hz instead of the configured 40 Hz. The likely cause, not verified, is in "Measured lidar rate" under [Lidars](#lidars). |
 | Camera publishing | Done 2026-10-13: `CameraPlugin` for `head_camera` and `bottom_camera` in `bringup/config/mujoco/mujoco_plugins.yaml` |
 | IMU topic | Done 2026-10-13: remapped to `/imu` in `mujoco_omnibot.launch.py` |

@@ -437,27 +437,170 @@ Set the same `ROS_DOMAIN_ID` everywhere. The team uses domain 23. See
 
 ## Nav2 and launch files
 
-These problems come from the Nav2 fork in `navigation/navigation2/` and hit
-more than one launch file.
+The first three problems below come from navigation2 (upstream main) in
+`navigation/navigation2/`. The Walkie launch and parameter files avoid them
+since [5. Repair Nav2 After the navigation2 Bump](migrations/05-nav2-repair.md).
+They still hit a custom parameter file, a launch file of your own, or
+`nav2_bringup` started directly.
 
 ### Nav2 stops with Failed to load motion model plugin 'Omni' { #nav2-fails-to-load-the-omni-motion-model }
 
 `controller_server` fails to configure, Nav2 stops during bringup, and the log
 shows `Can not get 'plugin' param value for FollowPath.Omni` and
-`Failed to load motion model plugin 'Omni'`. Every Nav2 launch except
-`nav_mujoco_omnibot.launch.py` stops this way.
+`Failed to load motion model plugin 'Omni'`. The MPPI parameter file sets
+`motion_model: "Omni"` without a plugin key. The files in `robot_navigation`
+set it, but a custom or older file may not.
 
 Add `Omni: plugin: "mppi::OmniMotionModel"` under `FollowPath` in the MPPI
 parameter file. See
 [Navigation: controller_server cannot load the Omni motion model](guides/navigation.md#mppi-omni-motion-model-plugin).
 
+### Nav2 nodes stay unconfigured { #nav2-nodes-stay-unconfigured }
+
+Every Nav2 node logs `Waiting on external lifecycle transitions to activate`,
+and nothing follows. No lifecycle manager runs. `nav2_bringup`'s
+`navigation_launch.py` and `localization_launch.py` no longer start one; only
+its `bringup_launch.py` does.
+
+Start Nav2 with `bringup_launch.py`, or start a lifecycle manager next to the
+included files, as `localization_Nav2_real.launch.py`,
+`mapping_Nav2_real.launch.py`, and `nav2_loopback.launch.py` do. Name it
+`lifecycle_manager_nav2`: the RViz Nav2 panel talks to that name.
+
+The Walkie launch files start `lifecycle_manager_nav2` themselves; see
+[Navigation: Localization and mapping on the real robot](guides/navigation.md#localization-and-mapping-on-the-real-robot).
+
 ### Nav2 waits forever for smoother_server/get_state { #nav2-waits-for-smoother-server }
 
 Nav2 never becomes active, and the log repeats
-`Waiting for service smoother_server/get_state...`.
+`Waiting for service smoother_server/get_state...`. The Walkie launch files
+avoid this. It happens when you run `nav2_bringup`'s `bringup_launch.py`
+directly, with its default `use_composition:=True`.
 
-Pass `use_composition:=False` to `nav2_bringup`'s `bringup_launch.py`. See
+Pass `use_composition:=False` to `bringup_launch.py`. See
 [Navigation: Nav2 bringup hangs at smoother_server/get_state](guides/navigation.md#nav2-composition-deadlock).
+
+### The robot stops or slows near obstacles under Nav2 { #nav2-robot-stops-near-obstacles }
+
+Under Nav2, the robot stops at obstacles, crawls through narrow passages, or
+does not move at all, while joystick driving works. Nav2
+commands pass the collision monitor before `twist_mux`; joystick and keyboard
+commands do not (see
+[Navigation: Velocity command path](guides/navigation.md#velocity-command-path)).
+
+Find the cause in the `collision_monitor` log. It logs a line each time its
+action changes:
+
+| Log line | Cause |
+| --- | --- |
+| `Robot to stop due to PolygonStop polygon` | 4 or more points within 0.35 m of the base center. `/scan` has no points closer than 0.30 m, so only obstacles 0.30 to 0.35 m from the center count; on the real robot, the 3D lidar cloud has no such limit. |
+| `Robot to slowdown for 40.000000 percents due to PolygonSlow polygon` | 4 or more points within 0.55 m |
+| `Robot to approach for 2.000000 seconds away from collision` | At the commanded speed, the footprint would reach 6 or more points within 2 s, so the monitor slows the robot |
+| `Robot to stop due to invalid source` | A source had no new data for 2 s, or its frame cannot be transformed to `base_footprint`. The causes are listed below. |
+
+The invalid-source stop blocks every Nav2 command. Its causes:
+
+- A lidar topic is not published. The merger needs both `/front_lidar` and
+  `/back_lidar`; without one of them, there is no `/scan`.
+- On the real robot, a lidar has no valid return at all: it is covered, it is
+  faulty, or nothing is within its range in any direction. The merger then
+  drops the scan, because the real robot keeps its default
+  `publish_on_empty_cloud: false`. MuJoCo sets it to `true`, so the empty
+  MuJoCo world still has `/scan`.
+- On the real robot with `use_unitree_lidar:=false`, the `pointcloud` source
+  (`/unilidar/cloud/filtered`) has no data.
+- A TF failure: the source frame cannot be transformed to `base_footprint`.
+  The log then also shows `Failed to get "..."->"..." frame transform`,
+  followed by the TF error.
+
+More checks:
+
+- In RViz, add `Polygon` displays for `/polygon_stop` and `/polygon_slowdown`
+  to see the zones, and a `MarkerArray` display for
+  `/collision_monitor/collision_points_marker` to see the points the monitor
+  checks.
+- If the robot does not move and the stop line appears with no obstacle
+  nearby, a source sees parts of the robot within 0.35 m. Check where those
+  points lie in RViz.
+- In Gazebo, the stop and slow-down circles never trigger: the simulated
+  lidar's minimum range is 0.6 m. See
+  [Gazebo Simulation: Run Gazebo with Nav2](guides/simulation-gazebo.md#gazebo-with-nav2).
+
+The zones, the sources, and all settings are in
+[Navigation: Collision monitor](guides/navigation.md#collision-monitor).
+
+??? info "Switch the polygons off to test them"
+    To test whether a polygon stops the robot, switch the polygons off and on
+    again:
+
+    ```bash
+    pixi run ros2 service call /collision_monitor/toggle nav2_msgs/srv/Toggle "{enable: false}"
+    pixi run ros2 service call /collision_monitor/toggle nav2_msgs/srv/Toggle "{enable: true}"
+    ```
+
+    While the polygons are off, nothing stops the robot before an obstacle.
+    The switch does not affect the invalid-source stop.
+
+### The robot is stuck near an obstacle, and goals abort with error 105 { #nav2-stuck-after-a-stop }
+
+The robot stopped next to an obstacle and does not move under Nav2, in any
+direction. Every goal aborts after a while with error 105
+(`Failed to make progress`). The `collision_monitor` log shows
+`Robot to stop due to PolygonStop polygon`.
+
+Drive the robot away with the joystick or keyboard. `twist_mux` gives them
+priority 100, and their commands do not pass the collision monitor. Then send
+the goal again.
+
+??? info "Why Nav2 cannot drive away from the obstacle"
+    While 4 or more points are inside the 0.35 m stop circle, `PolygonStop`
+    sets every Nav2 command to zero, including commands that drive away from
+    the obstacle. In the MuJoCo stop test on 2026-10-14, the robot stopped
+    with the front of its footprint at a wall, and two goals then aborted
+    with error 105. How to change the stop circle is an open decision; see
+    [Navigation: Collision monitor](guides/navigation.md#collision-monitor).
+
+### controller_server fails with an incompatible type for voxel_grid { #nav2-voxel-grid-incompatible-type }
+
+`localization_Nav2_real.launch.py` or `mapping_Nav2_real.launch.py` does not
+become active, and `controller_server` cannot configure:
+
+```text
+Failed to initialize costmap plugin stvl_layer! could not create publisher: create_publisher() called for existing topic name rt/local_costmap/voxel_grid with incompatible type
+```
+
+Run on `rmw_zenoh_cpp`, the team middleware. Start a router and export
+`RMW_IMPLEMENTATION` in every terminal (see
+[Nodes cannot see each other](#nodes-cannot-see-each-other)).
+
+??? info "Why only Fast DDS fails"
+    The message comes from Fast DDS (`rmw_fastrtps_cpp`), the default when
+    `RMW_IMPLEMENTATION` is not set. In `nav2_mppi_walkie_real_param.yaml` and
+    `nav2_mppi_walkie_real_restaurant_param.yaml`, two local costmap layers
+    publish `voxel_grid` from the same node with different message types.
+    Fast DDS rejects that; `rmw_zenoh_cpp` does not. The parameter files are
+    not fixed yet. See
+    [Navigation: Known issues](guides/navigation.md#known-issues).
+
+### Nav2 never activates in nav2_loopback.launch.py { #nav2-loopback-never-activates }
+
+After `nav2_loopback.launch.py` starts, `lifecycle_manager_nav2` never reports
+that the managed nodes are active, and `local_costmap` waits for the transform
+from `odom` to `base_footprint`.
+
+Set an initial pose with the **2D Pose Estimate** tool in RViz, or publish
+one:
+
+```bash
+pixi run ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
+  "{header: {frame_id: map}, pose: {pose: {orientation: {w: 1.0}}}}"
+```
+
+??? info "Why the loopback simulator waits for an initial pose"
+    `nav2_loopback_sim` publishes the `map` to `odom` to `base_footprint`
+    transforms only after it receives an initial pose. This is upstream
+    behavior. See
+    [Navigation: Test goal logic without physics](guides/navigation.md#test-goal-logic-without-physics).
 
 ## Tests
 
