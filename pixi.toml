@@ -220,9 +220,11 @@ test = {cmd = "colcon test", description = "Run tests for the workspace"}
 clean = {cmd = "rm -rf build install log", description = "Clean build artifacts (build, install, log directories)"}
 mjcf = {cmd = "python description/scripts/build_mjcf.py", description = "Regenerate the MuJoCo model description/mujoco/walkie.xml from the robot xacro (no build needed)"}
 mjcf-view = {cmd = "python -c \"import mujoco, mujoco.viewer; m = mujoco.MjModel.from_xml_path('description/mujoco/scene.xml'); d = mujoco.MjData(m); mujoco.mj_resetDataKeyframe(m, d, m.key('home').id); mujoco.viewer.launch(m, d)\"", description = "Open the MuJoCo scene (robot on a floor) in the interactive viewer, starting from the home keyframe"}
-sim = {cmd = "env -u PYTHONPATH ROS_DISTRO=humble RMW_IMPLEMENTATION=rmw_fastrtps_cpp LD_LIBRARY_PATH=/home/kay/IsaacLab/.venv/lib/python3.12/site-packages/isaacsim/exts/isaacsim.ros2.core/humble/lib:$LD_LIBRARY_PATH /home/kay/IsaacLab/.venv/bin/python walkie-isaac/launch_sim.py", description = "Launch Isaac Sim Walkie Bot simulation with automated ROS 2 bridge"}
+sim = {cmd = "env -u PYTHONPATH ROS_DISTRO=jazzy RMW_IMPLEMENTATION=rmw_fastrtps_cpp LD_LIBRARY_PATH=/home/kay/IsaacLab/.venv/lib/python3.12/site-packages/isaacsim/exts/isaacsim.ros2.core/jazzy/lib:$LD_LIBRARY_PATH /home/kay/IsaacLab/.venv/bin/python walkie-isaac/launch_sim.py", description = "Launch Isaac Sim Walkie Bot simulation with automated ROS 2 bridge (Jazzy)"}
 teleop = {cmd = "ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -p use_sim_time:=true", description = "Teleoperate Walkie Bot base with sim time enabled"}
 topics = {cmd = "ros2 topic list", description = "List active ROS 2 topics"}
+rviz = {cmd = "ros2 run rviz2 rviz2 --ros-args -p use_sim_time:=true", description = "Launch RViz2 with simulation time enabled"}
+rviz-scan = {cmd = "ros2 run rviz2 rviz2 -d walkie-isaac/config/view_scan.rviz --ros-args -p use_sim_time:=true", description = "Launch RViz2 pre-configured for Walkie Bot LiDAR scan"}
 
 [tasks.build-setup]
 args = [{ arg = "workers", default = "1" }]
