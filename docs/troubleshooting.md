@@ -490,15 +490,20 @@ then run `pixi run docs-build` again.
 
 ### The docs deploy job is rejected
 
-A manual run of the Docs workflow on a branch other than `main` builds the
-site, but the `deploy` job fails.
+A run of the Docs workflow on a branch other than `main` (such as `feat/Pixi`)
+builds the site, but the `deploy` job fails with a message such as
+`Deployment to github-pages was rejected: branch feat/Pixi is not allowed to deploy`.
 
-Merge the change to `main`. To check a branch, run `pixi run docs-build`
-locally instead.
+To allow `feat/Pixi` to deploy to GitHub Pages:
 
-??? info "Why only main can deploy"
-    By default, the `github-pages` environment accepts deployments only from
-    the default branch, `main`.
+1. Open the repository on GitHub and go to **Settings → Environments → github-pages**.
+2. Under **Deployment branches and tags**, add `feat/Pixi` (or select "No restriction").
+
+??? info "Why only main can deploy by default"
+    By default, GitHub creates the `github-pages` environment with deployment
+    protection rules that restrict deployments to the default branch (`main`).
+    Adding `feat/Pixi` allows documentation changes made during development to
+    publish automatically.
 
 ### Port 8000 is already in use
 

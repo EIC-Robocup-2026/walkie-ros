@@ -2,7 +2,15 @@ name: Docs
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/Pixi]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "pixi.toml"
+      - "pixi.lock"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    branches: [main, feat/Pixi]
     paths:
       - "docs/**"
       - "mkdocs.yml"
@@ -34,10 +42,12 @@ jobs:
         run: pixi run -e docs docs-build
 
       - uses: actions/upload-pages-artifact@v5
+        if: github.event_name != 'pull_request'
         with:
           path: site
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     permissions:
