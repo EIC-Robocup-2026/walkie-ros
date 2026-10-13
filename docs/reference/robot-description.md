@@ -13,7 +13,7 @@ is a git submodule, so commit changes there first (see
 | Path (in `description/`) | Contents |
 | --- | --- |
 | `robots/gz_walkie.urdf.xacro` | The only entry point for the full robot. Robot name `walkie_bot`. |
-| `urdf/walkie/` | Xacro macros for the base, omni wheels, lift, head servo, lidars, IMU, cameras, and `ros2_control.xacro` |
+| `urdf/walkie/` | Xacro macros for the base, omni wheels and their rollers, lift, head servo, lidars, IMU, cameras, and `ros2_control.xacro` |
 | `urdf/openarm/` | Xacro macros for the two OpenArm v10 arms and hands, and their ros2_control blocks |
 | `config/ros2_controller/` | Controller manager parameter files, one per ros2_control mode |
 | `config/openarm/` | Arm, arm body, and hand parameters (`arm/`, `body/`, `hand/`): joint limits, gains, inertials, kinematics. Loaded with `xacro.load_yaml` by `gz_walkie.urdf.xacro` and `urdf/openarm/robot/openarm_robot.xacro`. |
@@ -23,6 +23,8 @@ is a git submodule, so commit changes there first (see
 | `rviz/robot_preview.rviz` | RViz config for the previews |
 | `mujoco/` | `walkie.xml` (generated) and `scene.xml` (hand-written world) |
 | `scripts/build_mjcf.py` | Generates `mujoco/walkie.xml` from the xacro |
+| `scripts/create_gz_walkie_urdf.sh` | Writes expanded URDF files to `robots/`. See [Export a plain URDF](#export-a-plain-urdf). |
+| `readme.md` | Why the mirrored OpenArm links use pre-mirrored meshes instead of a negative scale |
 | `test/` | Model tests. See [Tests](../guides/testing.md). |
 
 ## Entry point and xacro arguments
@@ -40,6 +42,8 @@ pixi run check_urdf /tmp/walkie.urdf
 | --- | --- | --- |
 | `ros2_control` | `gazebo` | Which ros2_control hardware to declare. See [ros2_control modes](#ros2_control-modes). |
 | `dual_lidar` | `True` | Front and back lidars. `False` gives one 360 degree `single_lidar_link`, only in `gazebo` mode. Every other mode always has two lidars. |
+| `roller` | `false` | `true` replaces the collision cylinder of each omni wheel with 28 free-spinning roller links. Not supported in `mujoco` mode. |
+| `lift_at_top` | `false` | `true` mounts `lift_joint` at the top of its travel and changes its range to -0.7435 to 0 m, so 0 is the top. Not supported in `mujoco` mode. See [Known issues](#known-issues). |
 | `use_arm` | `True` | Declared, but has no effect. The arms are always included. |
 | `use_fake_arm_hardware` | `True` | Default for the two arguments below. `robot_state_publisher.launch.py` uses another default, see [Known issues](#known-issues). |
 | `left_use_fake_arm_hardware` | value of `use_fake_arm_hardware` | `real_robot` mode only: `True` uses `mock_components/GenericSystem` for the left arm, `False` uses the OpenArm CAN plugin |
@@ -61,6 +65,34 @@ pixi run check_urdf /tmp/walkie.urdf
     | `camera_model` | `zed2i` |
     | `use_zed_localization` | `false` |
 
+    `urdf/walkie/omni_wheel/gz_omni_wheel.urdf.xacro` declares `roller`
+    (default `false`) a second time, and `standalone` (default `false`),
+    `prefix`, and `parent`. The last three only matter when the file is
+    expanded alone to test one wheel.
+
+??? info "What `roller` and `lift_at_top` change"
+    - `roller:=true`: each wheel gets 28 links `roller_<wheel>_<n>_link` (for
+      example `roller_fl_1_link`) on continuous joints
+      `roller_<wheel>_<n>_joint`. Each roller collides as four spheres of
+      about 0.009 m radius. The wheel link loses its collision cylinder, so the
+      model has 168 links instead of 56. The anisotropic wheel friction of
+      `wheel_gazebo_v0` (`mu1` 1.0, `mu2` 0.001) then has no collision to act
+      on. `urdf/walkie/roller/roller.gazebo.xacro` defines
+      `roller_gazebo_v0`, but nothing calls it, so the rollers use the Gazebo
+      default surface parameters.
+    - `lift_at_top:=true`: the `lift_joint` origin moves from z = 0.3985 m to
+      z = 1.1420 m in `base_link` (0.3985 + 0.7435), and the URDF range
+      becomes -0.7435 to 0 m. The `mock`, `gazebo`, `topic_base`, and
+      `real_robot` ros2_control blocks use the same range. `mock` and
+      `real_robot` start at 0 (the top). `gazebo` still starts at 0.51.
+    - `mujoco` mode: `build_mjcf.py` expands the xacro with only
+      `ros2_control:=mujoco`, so `walkie.xml` always has the plain wheels and
+      the lift mounted at the bottom. The `mujoco` ros2_control block keeps
+      fixed lift limits of 0 to 0.743 m and an initial position of 0.51 m.
+      `mujoco_omnibot.launch.py` passes neither argument.
+    - No launch file in `robot_bringup` sets either argument.
+      `robot_state_publisher.launch.py` forwards both to xacro.
+
 ??? info "Why `sim_controllers_yaml` exists"
     Gazebo reads the controller file from a path inside the URDF, not from a
     launch argument. For example, with `hardware_type:=gazebo` and
@@ -74,6 +106,29 @@ pixi run check_urdf /tmp/walkie.urdf
       the default of `ros2_control` to `mock` for MoveIt.
     - `urdf/openarm/robot/v10.urdf.xacro` describes the OpenArm alone. It is
       not part of the Walkie model.
+
+### Export a plain URDF
+
+`scripts/create_gz_walkie_urdf.sh` expands the xacro with the default
+`ros2_control:=gazebo` and writes URDF files to `description/robots/`, for
+tools that cannot run xacro. It needs a build, because the xacro files use
+`$(find walkie_description)`.
+
+```bash
+pixi run description/scripts/create_gz_walkie_urdf.sh [all|simple|roller] [true|false]
+```
+
+The first argument picks the variants (default `all`). The second one is
+`lift_at_top` (default `false`).
+
+| Variant | `roller` | Files |
+| --- | --- | --- |
+| `simple` | `false` | `gz_walkie_simple.urdf`, `gz_walkie_simple_absolute_path.urdf` |
+| `roller` | `true` | `gz_walkie_roller.urdf`, `gz_walkie_roller_absolute_path.urdf` |
+
+The `*_absolute_path.urdf` files replace `package://walkie_description` with a
+`file://` path to the `description/` source folder. `description/.gitignore`
+ignores `*.urdf`, so the files are not committed.
 
 ## ros2_control modes
 
@@ -107,13 +162,19 @@ then has no ros2_control block at all.
     | Mode | Wheel velocity limit (rad/s) | `lift_joint` command range (m) | `lift_joint` initial (m) | `head_servo_joint` command range (rad) |
     | --- | --- | --- | --- | --- |
     | `mock` | ±3.14 | 0.000 to 0.7435 | 0.7435 | ±1.54 |
-    | `gazebo` | ±3.14 | 0.000 to 0.743 | 0.51 | ±1.54 |
+    | `gazebo` | ±3.14 | 0.000 to 0.7435 | 0.51 | ±1.54 |
     | `mujoco` | ±3.14 | 0.000 to 0.743 | 0.51 | ±1.54 |
-    | `topic_base` | ±16 | 0.000 to 0.743 | not set | ±1.54 |
-    | `real_robot` | ±16 | 0.08 to 0.7435 | 0.7435 | ±0.7854 |
+    | `topic_base` | ±16 | 0.000 to 0.7435 | not set | ±1.54 |
+    | `real_robot` | ±16 | 0.000 to 0.7435 | 0.7435 | ±0.7854 |
 
-    The URDF joint limits are `lift_joint` 0.080 to 0.7435 m and
-    `head_servo_joint` -0.785 to 1.047 rad. Several modes allow more than this.
+    The lift values are for the default `lift_at_top:=false`. With
+    `lift_at_top:=true`, every mode except `mujoco` uses -0.7435 to 0 m, and
+    `mock` and `real_robot` start at 0. `gazebo` keeps 0.51 and `mujoco`
+    keeps its values.
+
+    The URDF joint limits are `lift_joint` 0 to 0.7435 m (-0.7435 to 0 m with
+    `lift_at_top:=true`) and `head_servo_joint` -0.785 to 1.047 rad. Every mode
+    except `real_robot` allows a wider `head_servo_joint` range than the URDF.
 
 ??? info "`mujoco` mode interfaces and IMU"
     In `mujoco` mode the wheels have only a velocity command interface and
@@ -217,16 +278,20 @@ All four files use the same `omni_wheel_drive_controller` parameters, except
 ## Frames and joints
 
 `base_footprint` is the root link. It sits on the floor. `base_link` is
-rotated 90 degrees about z (`base_link_joint`, z = 0.0312 m).
+0.0312 m above it (`base_link_joint`) with the same orientation, so forward
+is +x in both frames.
 
-!!! warning "Forward is +x in `base_footprint` but -y in `base_link`"
-    Use `base_footprint` for anything that moves the robot.
+!!! warning "Forward is -y in `lift_link` and `head_servo_link`"
+    `lift_joint` is rotated 90 degrees about z, so the x axis of `lift_link`
+    and `head_servo_link` points to the robot's left. `zed_head_camera_link`
+    and the arm `link0` frames have x forward again.
 
 ```mermaid
 graph TD
     odom -.->|omni_wheel_drive_controller| base_footprint
     base_footprint --> base_link
     base_link --> wheels["fl / fr / bl / br _wheel_link"]
+    wheels --> rollers["roller_*_*_link, 28 per wheel (roller:=true only)"]
     base_link --> lift_link
     base_link --> front_lidar_link
     base_link --> back_lidar_link
@@ -242,24 +307,37 @@ graph TD
     openarm_right_link0 --> right_hand["... openarm_right_hand, openarm_right_hand_tcp"]
 ```
 
+??? info "`base_link` was rotated 90 degrees before description f6649ee"
+    Until the description `main` branch was merged (description `f6649ee`),
+    `base_link` was rotated 90 degrees about z, and forward was -y in
+    `base_link`. The merge removed the rotation and re-expressed the base
+    geometry and the wheel, lidar, camera, and lift origins, so their poses
+    in the world are unchanged. Only `base_link` and the two frames fixed to
+    it without a rotation of their own, `merged_lidar_link` and
+    `top_imu_link`, turned by 90 degrees. Data in these frames, such as the
+    merged scan and the IMU, is now x forward. Code that uses TF is not
+    affected. Code that assumed the old axes is.
+
 ### Main frames
 
-With `ros2_control:=gazebo`, the model has 56 links. The main ones:
+With `ros2_control:=gazebo`, the model has 56 links (168 with
+`roller:=true`). The main ones:
 
 | Frame | Parent | Notes |
 | --- | --- | --- |
 | `base_footprint` | none (root) | Robot origin on the floor. MuJoCo puts its free joint `floating_base_joint` here. |
-| `base_link` | `base_footprint` | Rotated 90 degrees about z |
+| `base_link` | `base_footprint` | 0.0312 m above `base_footprint`, same orientation |
 | `fl_wheel_link`, `fr_wheel_link`, `bl_wheel_link`, `br_wheel_link` | `base_link` | Omni wheels, at 45, 315, 135, and 225 degrees around `base_footprint` |
-| `lift_link` | `base_link` | Moves up and down with `lift_joint` |
-| `front_lidar_link`, `back_lidar_link` | `base_link` | 0.235 m in front of and behind the center, 0.28232 m above `base_link`. Field of view ±2.09333333 rad, range 0.18 to 10 m in Gazebo. |
-| `merged_lidar_link` | `base_link` | Frame of the merged scan, at the center and the lidar height |
+| `roller_<wheel>_<n>_link` (`n` 1 to 28) | `<wheel>_wheel_link` | Only with `roller:=true` |
+| `lift_link` | `base_link` | Moves up and down with `lift_joint`. Rotated 90 degrees about z: x points left. |
+| `front_lidar_link`, `back_lidar_link` | `base_link` | 0.235 m in front of and behind the center, 0.28232 m above `base_link`. `back_lidar_link` faces backward. Field of view ±2.09333333 rad, range 0.18 to 10 m in Gazebo. |
+| `merged_lidar_link` | `base_link` | Frame of the merged scan, at the center and the lidar height, same orientation as `base_link` |
 | `single_lidar_link` | `base_link` | Only with `ros2_control:=gazebo dual_lidar:=False` |
-| `top_imu_link` | `base_link` | IMU, 0.17 m above `base_link` |
+| `top_imu_link` | `base_link` | IMU, 0.17 m above `base_link`, same orientation |
 | `bottom_link`, `bottom_color_optical_frame`, `bottom_depth_optical_frame` | `base_link`, via `bottom_bottom_screw_frame` | RealSense D415 camera (prefix `bottom`) at the front of the base, about 0.22 m above the floor. In the URDF its optical axis points forward and 50 degrees up. |
 | `unitree4d_l2_imu_initial`, `unitree4d_l2_imu` | `base_link`, then `unitree4d_l2_imu_initial` | Unitree lidar frames, near the top of the robot |
-| `head_servo_link` | `lift_link` | Turns with `head_servo_joint` |
-| `zed_head_camera_link`, `zed_head_left_camera_frame_optical` | `head_servo_link` (the optical frame via `zed_head_camera_link`) | ZED 2i head camera |
+| `head_servo_link` | `lift_link` | Turns with `head_servo_joint`. Rotated like `lift_link`: x points left. Collision mesh: `HeadCameraMount_collision.stl`. |
+| `zed_head_camera_link`, `zed_head_left_camera_frame_optical` | `head_servo_link` (the optical frame via `zed_head_camera_link`) | ZED 2i head camera. The ZED links have no collision geometry. |
 | `openarm_left_link0` to `openarm_left_link7`, `openarm_right_link0` to `openarm_right_link7` | `lift_link` | The two arms. `link0` is fixed to the lift. |
 | `openarm_left_hand_tcp`, `openarm_right_hand_tcp` | `openarm_*_hand` | Tool center points, 0.08 m from the hand |
 
@@ -268,7 +346,7 @@ With `ros2_control:=gazebo`, the model has 56 links. The main ones:
 | Joint | Type | Limits | Notes |
 | --- | --- | --- | --- |
 | `fl_wheel_joint`, `fr_wheel_joint`, `bl_wheel_joint`, `br_wheel_joint` | continuous | none | Velocity command |
-| `lift_joint` | prismatic | 0.080 to 0.7435 m, 0.1 m/s | Position command |
+| `lift_joint` | prismatic | 0 to 0.7435 m (-0.7435 to 0 m with `lift_at_top:=true`), 0.1 m/s | Position command. 0 is the bottom, or the top with `lift_at_top:=true`. |
 | `head_servo_joint` | revolute | -0.785398163 to 1.04719755 rad | Position command |
 | `openarm_left_joint1` to `openarm_left_joint7`, `openarm_right_joint1` to `openarm_right_joint7` | revolute | from `config/openarm/` | Position command. `openarm_right_joint2` is left out when `right_joint2_fixed` is true. |
 | `openarm_left_finger_joint1`, `openarm_right_finger_joint1` | prismatic | 0 to 0.044 m | Gripper. `openarm_*_finger_joint2` copies it as a mimic joint and is not commanded. |
@@ -292,14 +370,32 @@ real files:
 git submodule foreach --recursive git lfs pull
 ```
 
-??? info "The 13 files in Git LFS"
+??? info "The 23 files in Git LFS"
     | Path (in `description/`) | Used for |
     | --- | --- |
-    | `meshes/openarm/arm/v10/visual/link0.dae` to `link7.dae` | Arm visuals |
+    | `meshes/openarm/arm/v10/visual/link0.dae` to `link7.dae` | Right arm visuals, and `link4` of the left arm |
+    | `meshes/openarm/arm/v10/visual/link0_inv.dae` to `link7_inv.dae` | Mirrored left arm visuals. `link4_inv.dae` is not used. |
+    | `meshes/openarm/arm/v10/visual/link3_original.dae` | Not used by the model |
     | `meshes/openarm/body/v10/visual/body_link0.dae` | Not used by the Walkie model, which has no OpenArm body link |
-    | `meshes/openarm/ee/openarm_hand/visual/hand.dae`, `finger.dae` | Hand visuals |
+    | `meshes/openarm/ee/openarm_hand/visual/hand.dae`, `finger.dae`, `finger_inv.dae` | Hand visuals. `finger_inv.dae` is the `right_finger` of each hand. |
     | `meshes/walkie/omni_wheel_optimize.dae` | Omni wheel visual |
     | `urdf/walkie/depth_camera/d415/visual/d435.dae` | Not used by the model. The D415 macro uses `d415.stl`. |
+
+??? info "Mirrored OpenArm meshes and simplified collision meshes"
+    The mirrored OpenArm links use pre-mirrored meshes with a positive scale:
+    `*_inv.dae` for visuals, `*_symp_inv.stl` for collisions, and
+    `finger_inv.*` for the right finger of each hand. The model has no
+    negative mesh scale. PhysX-based simulators (Isaac Sim, SAPIEN, O3DE) fail
+    to cook meshes with a negative scale, and MuJoCo's URDF importer rejects
+    them. `description/readme.md` explains this in detail.
+
+    The collision meshes of the arm links, the hands, the wrist camera
+    brackets, and the head mount (`HeadCameraMount_collision.stl`) are
+    low-poly meshes of fewer than 100 triangles each. The ZED camera links
+    have no collision geometry.
+
+    Both changes came with the merge of description `main` (description
+    `f6649ee`).
 
 ## Launch files
 
@@ -319,6 +415,8 @@ starts `robot_state_publisher`.
 | `left_can_interface` | `can1` | yes |
 | `right_can_interface` | `can0` | yes |
 | `right_joint2_fixed` | `false` | yes |
+| `roller` | `false` | yes |
+| `lift_at_top` | `false` | yes |
 | `use_sim_time` | `false` | no, it is a robot_state_publisher parameter |
 
 It does not pass `mujoco_model`, `mujoco_headless`, or `sim_controllers_yaml`,
@@ -391,7 +489,7 @@ in `robot_bringup` (see
 
 | File | Edit it? | Contents |
 | --- | --- | --- |
-| `scripts/build_mjcf.py` | yes | Expands `gz_walkie.urdf.xacro` with `ros2_control:=mujoco` from the source tree, then adds what URDF cannot describe |
+| `scripts/build_mjcf.py` | yes | Expands `gz_walkie.urdf.xacro` with `ros2_control:=mujoco` from the source tree, then adds what URDF cannot describe. All other arguments keep their defaults, so the model has no rollers and the lift is mounted at the bottom (`roller:=false`, `lift_at_top:=false`). |
 | `mujoco/walkie.xml` | no, generated | The robot. It has no floor. |
 | `mujoco/scene.xml` | yes | Default world: floor, light, and the four wheel-floor contact pairs |
 
@@ -414,6 +512,8 @@ The full story of the MuJoCo model is in
 | `use_arm` is declared in the xacro but not used. No xacro file declares `use_zed`. | Setting either changes nothing. The arms are always in the model. | None |
 | `launch/rviz.launch.py` defaults to `rviz/turtlebot3_rviz.rviz`, which does not exist in this package | Started alone, RViz cannot load its config | Pass `rviz_config:=<path>`, or use a preview launch |
 | `config/hardware_layout.yaml` uses old joint names (`left_joint1`, ...) | None. No launch file or xacro reads it. | Ignore it. See [ros2_control modes](#ros2_control-modes). |
+| `lift_at_top:=true` is only partly supported | `gazebo` starts `lift_joint` at 0.51, outside its -0.7435 to 0 m range. `lift_homing_node.py` and `robot_preview_lift_rviz.launch.py` still use 0 = bottom and 0.7435 = top. | Keep `lift_at_top:=false` |
+| `roller` and `lift_at_top` are not supported in `mujoco` mode | `walkie.xml` is generated with the defaults, and the `mujoco` ros2_control block has fixed lift limits (0 to 0.743 m, initial 0.51 m). Setting either argument makes the URDF disagree with the MuJoCo model. | Keep both at `false` in `mujoco` mode. `mujoco_omnibot.launch.py` does not pass them. |
 
 ??? info "Causes and test details for these issues"
     - `joint_broad` and `mock`: `joint_broad` in `real_controllers.yaml` asks
@@ -424,3 +524,8 @@ The full story of the MuJoCo model is in
       strict expected failure. See [Tests](../guides/testing.md).
     - `hardware_layout.yaml`: the hardware of each joint is set in the
       ros2_control xacro files instead.
+    - `lift_at_top`: `urdf/walkie/ros2_control.xacro` derives `lift_min`,
+      `lift_max`, and `lift_init` from `lift_at_top`. The `gazebo` block
+      still sets the initial value 0.51, and the `mujoco` block sets fixed
+      values. `bringup/scripts/lift_homing_node.py` homes against the upper
+      hard stop and publishes `lift_max_cm` / 100 (0.7435 m) there.

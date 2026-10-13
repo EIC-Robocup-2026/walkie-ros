@@ -140,9 +140,12 @@ flowchart TD
 ## What changed where
 
 The work spans four commits in the `description/` submodule and four in the superproject.
-The `description/` commits are on its `feat/mujoco` branch, except `13244ae`, which is
-also on `main`. The other ros2_control modes (`gazebo`, `mock`, `topic_base`,
-`real_robot`) expand to the same URDF as before.
+The `description/` commits were made on its `feat/mujoco` branch and are on `main` since
+description pull request #38 (merge commit `90a2243`). That pull request also merged `main`
+into the branch and regenerated `walkie.xml` (`f6649ee`); see
+[Robot Description: Frames and joints](../../reference/robot-description.md#frames-and-joints)
+for the `base_link` change it brought. The other ros2_control modes (`gazebo`, `mock`,
+`topic_base`, `real_robot`) expanded to the same URDF as before this work.
 
 ??? info "Commits, files and changes"
     | Repository | Commit | Files | Change |

@@ -113,6 +113,11 @@ collision geometry around both scanners.
     front lidar is therefore 0.235 m ahead of the robot center and the back lidar
     0.235 m behind it.
 
+    !!! note
+        Since description `main` was merged (description `f6649ee`), `base_link` is
+        aligned with `base_footprint`. The sites are now at (0.235, 0, 0.28232) and
+        (-0.235, 0, 0.28232) in `base_link`. Their positions in the world are unchanged.
+
 ### Evaluate each beam once per scan
 
 Every rangefinder has `interval="0.025 0"`, so MuJoCo casts each beam once per scan
