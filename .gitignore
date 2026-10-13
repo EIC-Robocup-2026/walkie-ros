@@ -222,5 +222,3 @@ tools/twist_stamper/
 .pixi/*
 !.pixi/config.toml
 
-# Local mesh benchmark cache
-tools/collision_mesh_backup/
