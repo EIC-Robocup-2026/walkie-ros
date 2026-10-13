@@ -2,7 +2,7 @@
 
 <img width="2048" height="1365" alt="Walkie" src="docs/assets/walkie-flexing.jpg" />
 
-ROS 2 Jazzy software stack for the Walkie robot (EIC RoboCup 2026): robot description, ros2_control hardware drivers, Gazebo and MuJoCo simulation, Nav2 navigation, MoveIt manipulation for the bimanual OpenArm, perception, and the bringup that ties them together. The workspace is managed with [pixi](https://pixi.sh) and [RoboStack](https://robostack.github.io); no system ROS installation is needed.
+ROS 2 Jazzy software stack for the Walkie robot (EIC RoboCup 2026/2027): robot description, ros2_control hardware drivers, Gazebo, MuJoCo, and NVIDIA Isaac Sim simulation, Nav2 navigation, MoveIt manipulation for the bimanual OpenArm, perception, and the bringup that ties them together. The workspace is managed with [pixi](https://pixi.sh) and [RoboStack](https://robostack.github.io); no system ROS installation is needed.
 
 ## Documentation
 
