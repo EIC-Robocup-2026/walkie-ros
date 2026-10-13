@@ -48,7 +48,7 @@ pixi run ros2 launch robot_bringup lift_homing.launch.py [mock:=true]
 # Mapping & Teleoperation
 pixi run slam                                                      # SLAM Toolbox online sync mapping (real robot)
 pixi run slam use_sim_time:=true                                   # SLAM Toolbox online sync mapping (simulation)
-pixi run save_map <map_name>                                       # save map to navigation/walkie-navigation/map/<map_name>
+pixi run save-map <map_name>                                       # save map to navigation/walkie-navigation/map/<map_name>
 pixi run teleop-key                                                # keyboard teleop (TwistStamped to cmd_vel_key, Shift for strafe)
 
 pixi run mjcf          # regenerate description/mujoco/walkie.xml from the xacro

@@ -233,7 +233,7 @@ description = "Build workspace for initial setup (default: 1 worker; e.g. pixi r
 [tasks.save-map]
 args = [{ arg = "map_name" }]
 cmd = 'mkdir -p "$PIXI_PROJECT_ROOT/navigation/walkie-navigation/map/{{ map_name }}" && ros2 run nav2_map_server map_saver_cli -t /map -f "$PIXI_PROJECT_ROOT/navigation/walkie-navigation/map/{{ map_name }}/map"'
-description = "Alias for save_map"
+description = "Save 2D occupancy grid map to navigation/walkie-navigation/map/<map_name>"
 
 [activation]
 scripts = ["install/setup.bash"]
