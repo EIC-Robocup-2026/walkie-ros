@@ -4,7 +4,7 @@ ROS 2 (Jazzy) software stack for Walkie, the service robot of the EIC RoboCup
 2026 team. New to the workspace? Start with
 [Getting Started](getting-started.md).
 
-![Walkie at RoboCup@Home 2026, Incheon](https://github.com/user-attachments/assets/4141053d-d985-4ba4-ae8d-bf04ddfef6bd)
+![Walkie](assets/walkie-flexing.jpg)
 
 ## Where to start
 
