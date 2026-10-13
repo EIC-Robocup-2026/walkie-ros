@@ -51,10 +51,14 @@ def generate_launch_description():
     use_zed = LaunchConfiguration("use_zed", default="true")
     use_pointclouds = LaunchConfiguration("use_pointclouds", default="true")
     right_joint2_fixed = LaunchConfiguration("right_joint2_fixed", default="false")
+    lift_at_top = LaunchConfiguration("lift_at_top", default="true")
     use_rviz = LaunchConfiguration("use_rviz", default="true")
 
     declare_use_sim_time = DeclareLaunchArgument(
         "use_sim_time", default_value="true", description="Use simulation clock if true"
+    )
+    declare_lift_at_top = DeclareLaunchArgument(
+        "lift_at_top", default_value="true", description="Whether lift travel origin is at top (for O3DE)"
     )
     declare_use_zed = DeclareLaunchArgument(
         "use_zed", default_value="true", description="Whether to use ZED camera"
@@ -131,6 +135,7 @@ def generate_launch_description():
             "use_arm": "true",
             "use_fake_arm_hardware": "true",
             "right_joint2_fixed": right_joint2_fixed,
+            "lift_at_top": lift_at_top,
         }.items(),
     )
 
@@ -392,6 +397,7 @@ def generate_launch_description():
 
     ld = LaunchDescription()
     ld.add_action(declare_use_sim_time)
+    ld.add_action(declare_lift_at_top)
     ld.add_action(declare_use_zed)
     ld.add_action(declare_use_pointclouds)
     ld.add_action(declare_use_rviz)
