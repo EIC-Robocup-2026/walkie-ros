@@ -156,6 +156,12 @@ Then start each step in its own terminal, in this order:
 - Under pixi, step 3 stops with `package not found`. See
   [Packages that pixi does not provide](#packages-that-pixi-does-not-provide).
 
+!!! warning "Step 4 stops during bringup with the current parameter files"
+    No MPPI parameter file in `robot_navigation` sets `FollowPath.Omni.plugin`, so
+    `controller_server` fails to configure and Nav2 stops. Add the key to
+    `nav2_mppi_walkie_real_param.yaml`, as shown in
+    [Navigation: controller_server cannot load the Omni motion model](navigation.md#mppi-omni-motion-model-plugin).
+
 ??? info "Which bringup step needs which"
     ```mermaid
     flowchart LR
@@ -512,6 +518,7 @@ lidar network. The Lakibeam `hostip` in
 | `scripts/setup_device/` still has the older single-device setup scripts. | They and `setup_device.sh` overwrite or uninstall each other's files. | Use only `setup_all_device.sh`. |
 | `scripts/tmux_walkie.sh` and `.tmuxp.yaml` are out of date. | The pane commands run outside pixi and without the Zenoh settings. | Run the commands from [Start the robot](#bringup-order) by hand. |
 | `scripts/bringup/real_slam_nav.sh` launches a file that does not exist. | The script fails. | Use `localization_Nav2_real.launch.py`. See [Navigation](navigation.md). |
+| The MPPI parameter files in `robot_navigation` do not set `FollowPath.Omni.plugin`. | `controller_server` fails to configure, and Nav2 (step 4) stops during bringup. | Add `plugin: "mppi::OmniMotionModel"` under `FollowPath.Omni`. See [Navigation](navigation.md#mppi-omni-motion-model-plugin). |
 | `scripts/setup_env.sh` is an old pixi activation hook. | Nothing uses it. `pixi.toml` activates `install/setup.bash`. | Ignore it. |
 
 ??? info "Why the lift node takes `can2` down"

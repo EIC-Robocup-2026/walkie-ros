@@ -27,7 +27,7 @@ is a git submodule, so commit changes there first (see
 
 ## Entry point and xacro arguments
 
-The Gazebo, real robot, and Isaac launch files expand
+The Gazebo, MuJoCo, real robot, and Isaac launch files expand
 `robots/gz_walkie.urdf.xacro` directly. To expand the model by hand and check
 it:
 
@@ -99,9 +99,9 @@ then has no ros2_control block at all.
 - Wheel CAN IDs in `real_robot` mode: `fl_wheel_joint` 1, `br_wheel_joint` 2,
   `fr_wheel_joint` 3, `bl_wheel_joint` 4.
 
-!!! warning
-    The MuJoCo hardware plugin is installed, but no launch file starts it yet.
-    See [Known issues](#known-issues).
+`bringup/launch/mujoco_omnibot.launch.py` in `robot_bringup` starts the
+`mujoco` mode. See
+[MuJoCo Simulation: Run with ROS 2](../guides/simulation-mujoco.md#run-with-ros-2).
 
 ??? info "Joint limits that differ between modes"
     | Mode | Wheel velocity limit (rad/s) | `lift_joint` command range (m) | `lift_joint` initial (m) | `head_servo_joint` command range (rad) |
@@ -131,7 +131,7 @@ and checks every file against its mode.
 | Mode | Controller file | Loaded by |
 | --- | --- | --- |
 | `gazebo` | `sim_controllers.yaml` | The Gazebo plugin, through the `sim_controllers_yaml` argument. Started from `simulation/gazebo/launch/gzsim_omnibot.launch.py`. |
-| `mujoco` | `mujoco_controllers.yaml` | `ros2_control_node` of `mujoco_ros2_control` (no launch file yet) |
+| `mujoco` | `mujoco_controllers.yaml` | `ros2_control_node` of `mujoco_ros2_control`. Started from `bringup/launch/mujoco_omnibot.launch.py`. |
 | `topic_base` | `isaac_controllers.yaml` | `bringup/launch/isaac_omnibot.launch.py` |
 | `real_robot` | `real_controllers.yaml` | `bringup/launch/real_omnibot.launch.py` |
 | `mock` | `real_controllers.yaml` | `bringup/launch/test_zed.launch.py` |
@@ -173,10 +173,14 @@ A controller is only active after a spawner starts it.
       `lift_joint`. The lift state comes from the lift homing node through a
       `topic_tools` relay in `real_omnibot.launch.py`. The comment in the file
       explains why: a second publisher would make RViz flicker.
+    - `mujoco_omnibot.launch.py` spawns `joint_broad`,
+      `omni_wheel_drive_controller`, `imu_sensor_broadcaster`,
+      `lift_controller`, `head_servo_controller`, the two
+      `*_joint_trajectory_controller`, and the two `*_gripper_controller`.
     - `mujoco_controllers.yaml` has no forward velocity controllers, because
       the MuJoCo arm joints have only a position command interface. Its header
       says that `imu_sensor_broadcaster` publishes on `~/imu`, so a launch file
-      must remap it.
+      must remap it. `mujoco_omnibot.launch.py` remaps it to `/imu`.
     - `sim_controllers.yaml`, `isaac_controllers.yaml`, and
       `real_controllers.yaml` contain parameters for a
       `forward_velocity_controller` that no controller manager entry registers.
@@ -318,14 +322,16 @@ starts `robot_state_publisher`.
 | `use_sim_time` | `false` | no, it is a robot_state_publisher parameter |
 
 It does not pass `mujoco_model`, `mujoco_headless`, or `sim_controllers_yaml`,
-so the xacro defaults apply.
+so the xacro defaults apply. For this reason,
+`bringup/launch/mujoco_omnibot.launch.py` expands the xacro itself.
 
 ??? info "Which launch files include it"
     The Gazebo, real robot, Isaac, `test_zed`, OpenArm joint state reader, Nav2
-    loopback, and the two preview launches include it. Three launches start
+    loopback, and the two preview launches include it. Four launches start
     their own `robot_state_publisher` node instead: `moveit_demo.launch.py`,
-    `moveit_demo_with_commander.launch.py`, and
-    `bringup/launch/openarm.bimanual.launch.py`.
+    `moveit_demo_with_commander.launch.py`,
+    `bringup/launch/openarm.bimanual.launch.py`, and
+    `bringup/launch/mujoco_omnibot.launch.py`.
 
 ### Preview in RViz
 
@@ -373,7 +379,9 @@ pixi run mjcf-view   # open scene.xml in the MuJoCo viewer at the home keyframe
 
 Neither command needs a colcon build. `build_mjcf.py` reads the xacro files
 from the source tree, not from `install/`, so an old install cannot leak into
-the model.
+the model. To run the model with ros2_control, use `mujoco_omnibot.launch.py`
+in `robot_bringup` (see
+[MuJoCo Simulation: Run with ROS 2](../guides/simulation-mujoco.md#run-with-ros-2)).
 
 !!! warning "Regenerate after every description change"
     `walkie.xml` is checked in. `test_generated_model_is_up_to_date` in
@@ -402,7 +410,6 @@ The full story of the MuJoCo model is in
 | Issue | Effect | Workaround |
 | --- | --- | --- |
 | `joint_broad` in `real_controllers.yaml` asks for states the `mock` block does not declare | `test_zed.launch.py` cannot activate `joint_broad` | None yet. When you fix it, remove the entry from `KNOWN_PAIRING_MISMATCHES`. |
-| No launch file starts the `mujoco` mode | `mujoco_ros2_control` 0.1.2 is in the pixi environment, and its `ros2_control_node` runs the `mujoco` mode, but only when started by hand | Start it by hand, see [MuJoCo Simulation: Run with ROS 2](../guides/simulation-mujoco.md#run-with-ros-2). To check the model alone, use `pixi run mjcf-view`. |
 | `use_fake_arm_hardware` defaults to `false` in `robot_state_publisher.launch.py` and to `True` in the xacro | With `ros2_control:=real_robot`, the launch file uses the real OpenArm CAN plugin. A plain `xacro` call uses mock arms. | Always pass `use_fake_arm_hardware` explicitly |
 | `use_arm` is declared in the xacro but not used. No xacro file declares `use_zed`. | Setting either changes nothing. The arms are always in the model. | None |
 | `launch/rviz.launch.py` defaults to `rviz/turtlebot3_rviz.rviz`, which does not exist in this package | Started alone, RViz cannot load its config | Pass `rviz_config:=<path>`, or use a preview launch |
@@ -415,7 +422,5 @@ The full story of the MuJoCo model is in
       `test_zed.launch.py`, which pairs `mock` with `real_controllers.yaml`.
       The pairing is listed in `KNOWN_PAIRING_MISMATCHES`, and its test is a
       strict expected failure. See [Tests](../guides/testing.md).
-    - `mujoco` mode: the xacro expands and is tested in this mode. Only a
-      launch file that starts `mujoco_ros2_control` is missing.
     - `hardware_layout.yaml`: the hardware of each joint is set in the
       ros2_control xacro files instead.

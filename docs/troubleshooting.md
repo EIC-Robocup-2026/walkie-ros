@@ -1,7 +1,7 @@
 # Troubleshooting
 
 Fixes for problems that are not tied to one part of the robot: the
-environment, pixi, Git, the build, Zenoh, tests, and this site. Search for a
+environment, pixi, Git, the build, Zenoh, Nav2 bringup, tests, and this site. Search for a
 distinctive part of your error message to find the right entry.
 
 ## By topic
@@ -13,7 +13,7 @@ Problems with one simulator, launch file, or device are in the guides.
 | pixi, helper scripts, Python venvs | [Working with Pixi: Known issues](guides/pixi.md#known-issues) |
 | Zenoh router and connecting to the robot | [Middleware: Known issues](guides/middleware.md#known-issues), [Troubleshooting](guides/middleware.md#troubleshooting) |
 | Gazebo | [Gazebo Simulation: Known issues](guides/simulation-gazebo.md#known-issues), [Troubleshooting](guides/simulation-gazebo.md#troubleshooting) |
-| MuJoCo model, viewer, custom worlds, and the ROS 2 bringup | [MuJoCo Simulation: Troubleshooting](guides/simulation-mujoco.md#troubleshooting) |
+| MuJoCo model, viewer, custom worlds, and the launch files | [MuJoCo Simulation: Troubleshooting](guides/simulation-mujoco.md#troubleshooting) |
 | Nav2, maps, localization | [Navigation: Known issues](guides/navigation.md#known-issues), [Troubleshooting](guides/navigation.md#troubleshooting) |
 | MoveIt and the arms | [Manipulation: Known issues](guides/manipulation.md#known-issues), [Troubleshooting](guides/manipulation.md#troubleshooting) |
 | Object detection and grasping | [Perception: Known issues](guides/perception.md#known-issues), [Troubleshooting](guides/perception.md#troubleshooting) |
@@ -434,6 +434,30 @@ Set the same `ROS_DOMAIN_ID` everywhere. The team uses domain 23. See
     | No Zenoh router is running | A node using Zenoh prints ``Unable to connect to a Zenoh router. Have you started a router with `ros2 run rmw_zenoh_cpp rmw_zenohd`?`` |
     | `RMW_IMPLEMENTATION` is not set in one terminal | pixi does not set it. Without it, ROS 2 Jazzy uses its default DDS middleware (`rmw_fastrtps_cpp`), which cannot talk to Zenoh nodes |
     | Different `ROS_DOMAIN_ID` values | The team uses domain 23. `scripts/bringup/connect_walkie_zenoh_router.sh` sets it only for its own router process; an unset variable means domain 0 |
+
+## Nav2 and launch files
+
+These problems come from the Nav2 fork in `navigation/navigation2/` and hit
+more than one launch file.
+
+### Nav2 stops with Failed to load motion model plugin 'Omni' { #nav2-fails-to-load-the-omni-motion-model }
+
+`controller_server` fails to configure, Nav2 stops during bringup, and the log
+shows `Can not get 'plugin' param value for FollowPath.Omni` and
+`Failed to load motion model plugin 'Omni'`. Every Nav2 launch except
+`nav_mujoco_omnibot.launch.py` stops this way.
+
+Add `Omni: plugin: "mppi::OmniMotionModel"` under `FollowPath` in the MPPI
+parameter file. See
+[Navigation: controller_server cannot load the Omni motion model](guides/navigation.md#mppi-omni-motion-model-plugin).
+
+### Nav2 waits forever for smoother_server/get_state { #nav2-waits-for-smoother-server }
+
+Nav2 never becomes active, and the log repeats
+`Waiting for service smoother_server/get_state...`.
+
+Pass `use_composition:=False` to `nav2_bringup`'s `bringup_launch.py`. See
+[Navigation: Nav2 bringup hangs at smoother_server/get_state](guides/navigation.md#nav2-composition-deadlock).
 
 ## Tests
 

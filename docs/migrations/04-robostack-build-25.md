@@ -24,8 +24,14 @@ For the steps of a future move, read
   ([Consequences](#consequences)). Do not `pip install` into the environment
   ([pip in the environment](#pip-in-the-environment)).
 - **Result:** the whole workspace builds, and the description, MJCF, and SRDF
-  tests pass. MuJoCo runs headless with `mujoco_ros2_control`, but no launch
-  file starts it yet ([Verification](#verification)).
+  tests pass. MuJoCo runs headless with `mujoco_ros2_control`. At the time of
+  the move, no launch file started it ([Verification](#verification)).
+
+!!! note "Update 2026-10-13: MuJoCo launch files added"
+    `robot_bringup` now starts MuJoCo with `mujoco_omnibot.launch.py`, and
+    MuJoCo with Nav2 with `nav_mujoco_omnibot.launch.py`. See
+    [MuJoCo Simulation: Run with ROS 2](../guides/simulation-mujoco.md#run-with-ros-2)
+    and [2.7 Launch Files and Nav2](02-mujoco/07-launch.md).
 
 ## After pulling this change
 
@@ -278,6 +284,16 @@ Not verified on `_25` yet:
 - the real hardware plugins (only compiled);
 - the RViz and Foxglove user interfaces.
 
+!!! note "Update 2026-10-13: Nav2 in MuJoCo"
+    A headless run of `nav_mujoco_omnibot.launch.py` on `_25` brought up Nav2.
+    `bt_navigator`, on `behaviortree_cpp` 4.10, reported "Goal succeeded" for a
+    goal on the blank map. The run needed two workarounds for the Nav2 fork in
+    `navigation/`, whose `navigation2` was bumped to upstream `main` on
+    2026-10-08; they do not come from the build set. Until the MPPI parameter
+    files in the navigation repository are fixed, the Gazebo and real-robot
+    Nav2 launches fail to configure `controller_server`. See
+    [2.7 Launch Files and Nav2](02-mujoco/07-launch.md).
+
 ## Pre-existing issues found by the trial
 
 The trial found three problems that do not come from the move. This change
@@ -295,8 +311,13 @@ variable to the `lib` folder of the pixi environment.
 
 ## Still open
 
-- A launch file that starts MuJoCo with `mujoco_ros2_control`. See
-  [MuJoCo Simulation](../guides/simulation-mujoco.md#run-with-ros-2).
+!!! note "Update 2026-10-13: launch file done"
+    This list began with "A launch file that starts MuJoCo with
+    `mujoco_ros2_control`". That item is done: `mujoco_omnibot.launch.py` in
+    `robot_bringup`. See
+    [MuJoCo Simulation: Run with ROS 2](../guides/simulation-mujoco.md#run-with-ros-2)
+    and [2.7 Launch Files and Nav2](02-mujoco/07-launch.md).
+
 - The checks listed as not verified under [Verification](#verification).
 - The fixes for the three pre-existing issues above.
 - `laser_proc` could come from the channel now. It is still built from source.
