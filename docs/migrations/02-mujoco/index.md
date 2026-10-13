@@ -124,9 +124,9 @@ flowchart TD
     hw --> ctrl["Controllers<br/>mujoco_controllers.yaml"]
     ctrl --> moveit["MoveIt<br/>hardware_type:=mujoco"]
     ctrl --> nav2["Nav2"]
-    classDef ready fill:#d4edda,stroke:#2e7d32,color:#000
-    classDef configured fill:#fff3cd,stroke:#b58900,color:#000
-    classDef missing fill:#f8d7da,stroke:#c62828,color:#000
+    classDef ready fill:#2e7d3233,stroke:#2e7d32
+    classDef configured fill:#b5890033,stroke:#b58900
+    classDef missing fill:#c6282833,stroke:#c62828
     class xacro,urdf,gen,model,world,tools ready
     class hw,ctrl,moveit configured
     class launch,nav2 missing

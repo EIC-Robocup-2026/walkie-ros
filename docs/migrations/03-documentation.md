@@ -410,6 +410,11 @@ Rules for a collapsible box:
   not whole files.
 - **Commands.** Write ROS commands as `pixi run ros2 ...`, so they work from
   any terminal.
+- **Diagram colors.** The site has a light and a dark theme, and Material
+  sets the Mermaid text color for each. In a `classDef`, use a translucent
+  fill (8-digit hex, such as `fill:#2e7d3233,stroke:#2e7d32`) and do not set
+  `color`. Material overrides `color` for the label text, so an opaque light
+  fill leaves light text on a light box in the dark theme.
 - **Paths.** Write repository files as inline code, such as
   `bringup/launch/real_omnibot.launch.py`.
 - **Links.** Link between pages with relative `.md` paths, such as
