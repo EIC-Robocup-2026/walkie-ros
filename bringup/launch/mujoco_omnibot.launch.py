@@ -131,9 +131,10 @@ def generate_launch_description():
         remappings=[("/cmd_vel_out", "/omni_wheel_drive_controller/cmd_vel")],
     )
 
-    # Same merger parameters as the real robot (dual_lidar_hokuyo_lakibeam.launch.py).
-    # The merger publishes only when both lidars report at least one hit, so the
-    # empty default scene produces no /scan.
+    # Same merger parameters as the real robot (dual_lidar_hokuyo_lakibeam.launch.py),
+    # plus publish_on_empty_cloud: in the empty default scene neither lidar has a
+    # return in range, and without /scan Nav2's collision_monitor stops the robot.
+    # The real robot keeps the default (no scan when a lidar has no valid return).
     dual_laser_merger = Node(
         package="dual_laser_merger",
         executable="dual_laser_merger_node",
@@ -167,6 +168,7 @@ def generate_launch_description():
                 "allowed_radius": 0.45,
                 "enable_shadow_filter": False,
                 "enable_average_filter": False,
+                "publish_on_empty_cloud": True,
             }
         ],
         remappings=[("/merged_lidar", "/scan")],

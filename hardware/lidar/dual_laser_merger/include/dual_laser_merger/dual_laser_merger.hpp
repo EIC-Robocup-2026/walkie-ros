@@ -81,7 +81,7 @@ private:
     laser_1_x_offset, laser_1_y_offset, laser_1_yaw_offset, laser_2_x_offset, laser_2_y_offset,
     laser_2_yaw_offset, allowed_radius_param;
   bool use_inf_param, enable_calibration_param, enable_shadow_filter_param,
-    enable_average_filter_param;
+    enable_average_filter_param, publish_on_empty_cloud_param;
   uint32_t ranges_size;
   double range, angle;
   int index, numNearbyPoints;
