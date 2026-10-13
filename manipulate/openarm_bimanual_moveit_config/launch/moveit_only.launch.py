@@ -43,6 +43,7 @@ _HW_MAPPINGS = {
     "o3de": {
         "ros2_control": "topic_base",
         "add_world_link": "false",
+        "lift_at_top": "true",
     },
     "real_robot": {
         "ros2_control": "real_robot",
@@ -60,15 +61,18 @@ _HW_MAPPINGS = {
 def _make_nodes(context: LaunchContext, hardware_type_lc,
                 point_cloud_topic_lc, octomap_resolution_lc,
                 left_use_fake_arm_hardware_lc, right_use_fake_arm_hardware_lc,
-                right_joint2_fixed_lc, use_rviz_lc):
+                right_joint2_fixed_lc, lift_at_top_lc, use_rviz_lc):
     hardware_type = context.perform_substitution(hardware_type_lc)
     point_cloud_topic = context.perform_substitution(point_cloud_topic_lc)
     octomap_resolution = float(context.perform_substitution(octomap_resolution_lc))
     left_use_fake_arm_hardware = context.perform_substitution(left_use_fake_arm_hardware_lc)
     right_use_fake_arm_hardware = context.perform_substitution(right_use_fake_arm_hardware_lc)
     right_joint2_fixed = context.perform_substitution(right_joint2_fixed_lc)
+    lift_at_top = context.perform_substitution(lift_at_top_lc)
     use_rviz = context.perform_substitution(use_rviz_lc)
     mappings = dict(_HW_MAPPINGS.get(hardware_type, _HW_MAPPINGS["mock_components"]))
+    if lift_at_top:
+        mappings["lift_at_top"] = lift_at_top
     # Arm hardware (mock vs real OpenArm CAN) is selectable per side, independent
     # of hardware_type, which only controls the base/lift/wheels backend.
     mappings["left_use_fake_arm_hardware"] = left_use_fake_arm_hardware
@@ -190,6 +194,11 @@ def generate_launch_description():
                         "planning DOF for the right arm groups.",
         ),
         DeclareLaunchArgument(
+            "lift_at_top",
+            default_value="",
+            description="Whether the lift joint rest pose is at the top (true for O3DE) or bottom (false). Defaults to true for o3de.",
+        ),
+        DeclareLaunchArgument(
             "use_rviz",
             default_value="true",
             description="Launch RViz2 alongside move_group.",
@@ -202,13 +211,14 @@ def generate_launch_description():
     left_use_fake_arm_hardware = LaunchConfiguration("left_use_fake_arm_hardware")
     right_use_fake_arm_hardware = LaunchConfiguration("right_use_fake_arm_hardware")
     right_joint2_fixed = LaunchConfiguration("right_joint2_fixed")
+    lift_at_top = LaunchConfiguration("lift_at_top")
     use_rviz = LaunchConfiguration("use_rviz")
 
     nodes_func = OpaqueFunction(
         function=_make_nodes,
         args=[hardware_type, point_cloud_topic, octomap_resolution,
               left_use_fake_arm_hardware, right_use_fake_arm_hardware,
-              right_joint2_fixed, use_rviz],
+              right_joint2_fixed, lift_at_top, use_rviz],
     )
 
     return LaunchDescription(declared_arguments + [nodes_func])

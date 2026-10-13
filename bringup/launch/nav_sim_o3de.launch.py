@@ -88,6 +88,7 @@ def _launch_setup(context, *args, **kwargs):
                         "hardware_type": "o3de",
                         "use_rviz": launch_moveit_rviz,
                         "right_joint2_fixed": j2_fixed,
+                        "lift_at_top": "true",
                     }.items(),
                 )
             ],

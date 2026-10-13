@@ -88,6 +88,8 @@ def generate_launch_description():
             use_zed,
             " right_joint2_fixed:=",
             right_joint2_fixed,
+            " lift_at_top:=",
+            lift_at_top,
         ]
     )
 
