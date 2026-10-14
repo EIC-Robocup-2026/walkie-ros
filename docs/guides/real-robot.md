@@ -125,14 +125,15 @@ Ensure `/usr/local/cuda-13.2/bin` is in your `PATH` and `/usr/local/cuda-13.2/li
 
 #### 2. Install ZED SDK 5.5
 
-Download the ZED SDK 5.5 installer for Ubuntu 24.04 and CUDA 13.2 from the [Stereolabs Download Page](https://www.stereolabs.com/developers/release):
+Download and run the ZED SDK 5.5 installer (Ubuntu 24.04, CUDA 13, TensorRT 11):
 
 ```bash
-# Make the installer executable
-chmod +x ZED_SDK_Linux_Ubuntu24_cuda13.2_v5.5.0.run
+# Download the installer
+wget https://stereolabs.sfo2.cdn.digitaloceanspaces.com/zedsdk/5.5/ZED_SDK_Ubuntu24_cuda13.0_tensorrt11.0_v5.5.0.zstd.run
 
-# Run the installer (silent mode bypasses interactive prompts)
-./ZED_SDK_Linux_Ubuntu24_cuda13.2_v5.5.0.run -- silent
+# Make executable and run (silent mode bypasses interactive prompts)
+chmod +x ZED_SDK_Ubuntu24_cuda13.0_tensorrt11.0_v5.5.0.zstd.run
+./ZED_SDK_Ubuntu24_cuda13.0_tensorrt11.0_v5.5.0.zstd.run -- silent
 ```
 
 Verify the SDK installation with the ZED Diagnostic tool:
