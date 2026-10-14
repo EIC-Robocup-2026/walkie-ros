@@ -14,11 +14,13 @@ guide to run navigation in simulation or on the robot, and to send goals.
     Nav2 velocity commands pass the velocity smoother and the collision monitor
     before they reach `twist_mux`.
 
-    - The robot slows down near obstacles. It can stop with the front of its
-      footprint at an obstacle, and then Nav2 cannot move it away. Drive it
-      out with the joystick or keyboard.
+    - The robot slows down near obstacles and stops before an obstacle it
+      drives toward. Commands that drive away from the obstacle or along it
+      pass, so Nav2 can move the robot on.
     - The monitor stops every Nav2 command while one of its sources has no
       data.
+    - If Nav2 stays blocked, drive the robot out with the joystick or
+      keyboard. They bypass the monitor.
 
     See [Velocity command path](#velocity-command-path) and
     [Collision monitor](#collision-monitor).
@@ -401,6 +403,10 @@ The chain is `/cmd_vel_controller` (Nav2 servers) to `velocity_smoother`,
     the collision monitor acts on every Nav2 command. Joystick and keyboard
     commands bypass it.
 
+    - **Stop:** the stop polygon follows the direction of the command. A
+      command toward an obstacle within reach (up to 0.35 m from the base
+      center, on the side the robot drives to) is set to zero. A command that
+      drives away from the obstacle or along it passes.
     - **Slow down:** with 4 or more points within 0.55 m of the base center,
       the robot moves at 40 % speed. Narrow passages are slow.
     - **Invalid source:** when a source has no new data for 2 s, or its frame
@@ -410,17 +416,21 @@ The chain is `/cmd_vel_controller` (Nav2 servers) to `velocity_smoother`,
     - **Speed limit:** the velocity smoother caps the output at 0.3 m/s and
       1.0 rad/s, below the MPPI `wz_max` of 1.5 rad/s.
 
-    For the stop and the deadlock after it, see
-    [Collision monitor](#collision-monitor).
+    For the stop polygons, the blind zones, and what can still block Nav2,
+    see [Collision monitor](#collision-monitor).
 
     The real robot runs the Docker image built from `main`, so this behavior
     reaches it only after the change is merged to `main`. It has not been
     tested on the real robot.
 
 To see why the robot stopped or slowed down, check the `collision_monitor` log.
-It logs an INFO line such as `Robot to stop due to PolygonStop polygon` each
-time its action changes. In RViz, add the polygon topics `polygon_stop` and
-`polygon_slowdown`.
+It logs an INFO line each time its action changes, such as
+`Robot to stop due to VelocityPolygonStop polygon`. The line does not name the
+direction band. In RViz, add the polygon topics `velocity_polygon_stop` and
+`polygon_slowdown`. `velocity_polygon_stop` shows only the band selected by
+the current command, and it stays empty until the first Nav2 command arrives.
+`bringup/config/rviz/default.rviz`, which `real_omnibot.launch.py` opens,
+shows both topics. The MuJoCo RViz configurations do not.
 
 ??? info "Velocity topic diagram"
     ```mermaid
@@ -467,100 +477,236 @@ time its action changes. In RViz, add the polygon topics `polygon_stop` and
 
 ### Collision monitor
 
-The collision monitor checks its sources against three zones: `PolygonSlow`
-(circle, 0.55 m), `FootprintApproach` (the local costmap footprint, 2 s ahead),
-and `PolygonStop` (circle, 0.35 m). Both circles are centered on
-`base_footprint`. What the robot does near an obstacle depends on the data
-each source delivers:
+The collision monitor checks its sources against three zones, all in the
+`base_footprint` frame:
+
+- `VelocityPolygonStop`: a direction-aware stop. The monitor picks one stop
+  polygon from the direction of the command. Each polygon covers only the
+  side of the footprint the robot drives to, up to 0.35 m from the base
+  center.
+- `PolygonSlow`: a circle of 0.55 m. With 4 or more points in it, the robot
+  moves at 40 % speed.
+- `FootprintApproach`: the static physical footprint, checked 2 s ahead. It
+  slows the robot down as it approaches an obstacle.
+
+Near an obstacle, the robot behaves like this:
+
+- **Driving toward the obstacle:** the robot slows down and stops before it.
+  In the MuJoCo test, it stopped 0.045 to 0.053 m before a wall in front, and
+  about 0.11 m before a wall at the side.
+- **Driving away from the obstacle or along it:** the command passes, so Nav2
+  can drive the robot on after a stop.
+- **Rotating in place:** blocked only when points are inside the rotation
+  polygon, just outside the circle that the footprint sweeps.
+
+What the stop polygons see depends on the data each source delivers:
 
 - **`/scan` in MuJoCo and on the real robot.** The merged scan has no points
   closer than 0.30 m to the base center: the merger uses `range_min: 0.3` in
-  `merged_lidar_link`, which sits at the base center. The stop circle
-  therefore sees `/scan` points only in the ring 0.30 to 0.35 m from the
-  center. In `nav2_mppi_walkie_sim_params.yaml` and
-  `nav2_mppi_walkie_real_param.yaml`, the footprint front is at x = 0.30 m, so
-  in front the ring is 0 to 5 cm ahead of the footprint. At the sides, the
-  footprint edge is 0.239 m from the center, and obstacles 0.239 to 0.30 m
-  from the center are not in `/scan` at all.
+  `merged_lidar_link`, which sits at the base center. The footprint front is
+  at x = 0.30 m, so in front the stop polygon sees `/scan` points only 0 to
+  5 cm ahead of the footprint. At the sides, the footprint edge is 0.239 m
+  from the center, and obstacles 0.239 to 0.30 m from the center are not in
+  `/scan` at all. The rotation polygon sees `/scan` points only 0.30 to
+  0.31 m (simulation file) or 0.30 to 0.336 m (real and restaurant files)
+  from the center.
+- **The front lidar in MuJoCo.** `front_lidar` sits at x = 0.235 m and has a
+  `range_min` of 0.18 m (`bringup/config/mujoco/mujoco_plugins.yaml`), so
+  straight ahead it sees nothing closer than 0.415 m from the base center. A
+  wall is still detected, because its points off to the side are farther
+  from the lidar. A narrow obstacle dead ahead (narrower than about 0.28 m)
+  closer than 0.415 m is missed. This is a limit of the MuJoCo setup. The
+  minimum ranges of the real Hokuyo and Lakibeam were not checked.
 - **The 3D lidar on the real robot.** The `pointcloud` source
-  (`/unilidar/cloud/filtered`, 0.3 to 1.5 m high) has no such ring limit, so
-  the stop circle also sees closer obstacles at that height. This has not been
-  tested on the robot.
-- **Gazebo.** The simulated lidar has a minimum range of 0.6 m, so `/scan` has
-  no points in either circle, and `PolygonStop` and `PolygonSlow` never
-  trigger. Only `FootprintApproach` acts, on obstacles that are still farther
-  than 0.6 m. This follows from the configuration; Gazebo was not run.
+  (`/unilidar/cloud/filtered`, 0.3 to 1.5 m high) has no 0.30 m limit, so the
+  stop polygons also see closer obstacles at that height, such as tabletops.
+  This has not been tested on the robot.
+- **Gazebo.** The default simulated lidar has a minimum range of 0.6 m, so
+  neither the stop polygons nor `PolygonSlow` trigger. Only
+  `FootprintApproach` acts, on obstacles that are still farther than 0.6 m.
+  This follows from the configuration; Gazebo was not run.
 - **`nav2_mppi_walkie_real_restaurant_param.yaml`** (used by
-  `mapping_Nav2_real.launch.py`). Its local footprint has the padding built in,
-  and its front is at x = 0.40 m. In front, the 0.35 m stop circle lies inside
-  that footprint.
+  `mapping_Nav2_real.launch.py`). Its local footprint has the padding built
+  in: 0.10 m at the front and sides (front at x = 0.40 m, half width
+  0.339 m), 0.02 m at the rear. The stop polygons and `FootprintApproach`
+  use the physical footprint instead, so the monitor no longer enforces this
+  padding. Only the costmaps keep that distance.
 
-In the MuJoCo stop test on 2026-10-14, the robot drove straight at a wall. It
-slowed down from about 0.52 m and stopped with the front of its footprint at
-the wall, with no clearance left.
+All polygons cover the base only, not the arms or anything the robot carries.
 
-!!! warning "After a stop, only the joystick or keyboard can move the robot"
-    While 4 or more points stay in the stop circle, `PolygonStop` sets every
-    Nav2 command to zero, including commands that drive away from the
-    obstacle. Nav2 goals then abort with error 105 (`Failed to make progress`).
-    Drive the robot out with the joystick or keyboard. `twist_mux` gives them
-    priority 100, and they do not pass the collision monitor. The same block
-    happens when a source sees parts of the robot inside the stop circle.
+!!! warning "What can still block Nav2 near an obstacle"
+    The monitor sets the Nav2 commands to zero, and goals abort with error 105
+    (`Failed to make progress`), when:
 
-**Open decision.** The team has not decided how to change the stop circle.
-The options are:
+    - every direction Nav2 tries points at an obstacle in reach, for example
+      when the robot is boxed in
+    - parts of the robot or sensor noise put 4 or more points into the
+      selected band or the rotation polygon
+    - a source is invalid (no new data for 2 s, or no transform)
 
-- Use the direction-aware `VelocityPolygonStop`. It is already defined in the
-  parameter files, but disabled.
-- Remove `PolygonStop` and rely on `FootprintApproach`.
-- Keep the current setup.
+    The behavior tree has no BackUp recovery, so Nav2 does not reverse out by
+    itself. It moves away only when MPPI picks a command away from the
+    obstacle. To free the robot, drive it with the joystick or keyboard.
+    `twist_mux` gives them priority 100, and they bypass the collision
+    monitor. See
+    [Troubleshooting](../troubleshooting.md#nav2-stuck-after-a-stop).
 
-??? info "Stop test and deadlock in MuJoCo (2026-10-14)"
-    The test used a walled test world that is not in the repository: an 8 m by
-    8 m room with a 1.2 m wall whose face is at x = 1.45 m. The robot started
-    at x = 0, and a constant forward command of 0.25 m/s was published on
-    `/cmd_vel_controller`. `velocity_smoother` passed it on unchanged.
+??? info "How the stop polygon is chosen"
+    The monitor picks the sub-polygon from the command that enters it on
+    `/cmd_vel_smoothed`, not from odometry. With `holonomic: true`, it
+    compares the speed hypot(vx, vy) with `linear_min` and `linear_max`, and
+    the direction atan2(vy, vx) with `direction_start_angle` and
+    `direction_end_angle`. It uses the first sub-polygon in
+    `velocity_polygons` that matches. There is no hysteresis.
 
-    | Time | `collision_monitor` output on `/cmd_vel_nav` | Cause |
+    `rotation` is first in the list, so it applies at 0.01 m/s or less. The
+    eight translation bands are 45° wide each and cover any speed up to
+    10 m/s. Angles are in `base_footprint`: 0° is forward (+x), 90° is left
+    (+y).
+
+    | Sub-polygon | Command direction | Polygon in `base_footprint` (m) |
     | --- | --- | --- |
-    | Until about 4 s | 0.25 m/s | No zone active |
-    | From about 4 s | 0.10 m/s (40 %) | `PolygonSlow`, wall about 0.52 m from the base center |
-    | Later | About 0.045 m/s, then 0.0375 m/s | `FootprintApproach` |
-    | About 8.6 s | 0 | `PolygonStop` |
+    | `rotation` | Any, at 0.01 m/s or less (rotation in place or standing still) | 12-gon just outside the footprint's rotation sweep |
+    | `forward` | -22.5° to 22.5° | Rectangle x 0 to 0.35, y -0.26 to 0.26 |
+    | `forward_left` | 22.5° to 67.5° | L-shape: front strip x 0 to 0.35 (y -0.239 to 0.35), plus left strip y 0 to 0.35 (x -0.285 to 0.35) |
+    | `left` | 67.5° to 112.5° | Rectangle y 0 to 0.35, x -0.305 to 0.32 |
+    | `backward_left` | 112.5° to 157.5° | L-shape: rear strip x -0.35 to 0, plus left strip y 0 to 0.35 |
+    | `backward` | 157.5° to -157.5° (through 180°) | Rectangle x -0.35 to 0, y -0.26 to 0.26 |
+    | `backward_right` | -157.5° to -112.5° | L-shape: rear strip plus right strip |
+    | `right` | -112.5° to -67.5° | Rectangle y -0.35 to 0, x -0.305 to 0.32 |
+    | `forward_right` | -67.5° to -22.5° | L-shape: front strip plus right strip |
 
-    The base stopped at x = 1.155 m, 0.295 m from the wall face. The footprint
-    front (x = 0.30 m) was at the wall.
+    Each band polygon covers only the footprint faces that lead in the
+    commanded direction, up to 0.35 m from `base_footprint` (the reach of the
+    former `PolygonStop` circle). The axis bands widen the leading face by
+    0.02 m per side for sideways drift within the band. The diagonal bands
+    cover both leading faces and the corner between them. A command that
+    drives away from an obstacle selects a polygon that does not contain it,
+    so the command passes.
 
-    Two Nav2 goals sent after the stop both aborted with error 105
-    (`Failed to make progress`): one beyond the wall after about 120 s, one
-    back to (-1.0, -0.5) after about 88 s.
+    The bands use the bounding box of the physical footprint (front
+    x = 0.30 m, rear x = -0.285 m, half width 0.239 m), which the simulation
+    and real footprints share. So all three files have the same band
+    polygons. In the restaurant file, they are deliberately based on the
+    physical footprint, not on its padded local footprint.
 
-??? info "Collision monitor and velocity smoother settings"
-    The settings are in the `collision_monitor` and `velocity_smoother`
-    sections of the parameter files in
+    The `rotation` 12-gon has an apothem of the largest footprint radius plus
+    0.01 m:
+
+    | File | Apothem |
+    | --- | --- |
+    | `nav2_mppi_walkie_sim_params.yaml` | 0.30 + 0.01 = 0.31 m |
+    | `nav2_mppi_walkie_real_param.yaml`, `nav2_mppi_walkie_real_restaurant_param.yaml` | 0.326 + 0.01 = 0.336 m |
+
+    Why 8 bands, not 4: a layout with 4 bands (forward, left, backward, right,
+    90° each) left a gap. In MuJoCo, a diagonal command toward a wall closed
+    the gap to 0.001 m, and the commands away from the wall and along it were
+    then blocked completely. With 8 bands, commands within 67.5° of a wall's
+    normal are blocked when the wall is in reach. An offline check of every
+    22.5° direction against walls on each side and in corners found no
+    direction that stayed blocked while pointing away from every wall, and no
+    direction within 45° of a wall's normal that passed. The real and
+    restaurant files gave the same result.
+
+??? info "Stop and direction tests in MuJoCo (2026-10-14)"
+    The tests ran `nav_mujoco_omnibot.launch.py` headless in a walled test
+    world that is not in the repository: an 8 m by 8 m room, and a 1.2 m wall
+    whose face is at x = 1.45 m. At the start (y = 0), the robot's left side
+    was 3.7 m from the north wall. Commands were published on
+    `/cmd_vel_controller`, so they passed the velocity smoother and the
+    collision monitor. Gaps were
+    measured with MuJoCo ground truth, from the footprint bounding box (front
+    x = 0.30 m, half width 0.239 m) to the wall face.
+
+    **Forward stop.** A constant forward command of 0.25 m/s toward the wall
+    face gave this output on `/cmd_vel_nav`:
+
+    | Time | `/cmd_vel_nav` |
+    | --- | --- |
+    | Until about 4 s | 0.25 m/s |
+    | From about 4.2 s | 0.10 m/s (`PolygonSlow`, 40 %) |
+    | Around 6 s | About 0.05 m/s (`FootprintApproach`) |
+    | From about 7.1 s | 0 |
+
+    The base stopped at x = 1.105 m, with the footprint front 0.045 m before
+    the wall face (x = 1.104 m and 0.046 m in a repeat run). From the repeat
+    run's stop, a goal to (1.5, 1.0, 90°), sent as a `navigate_to_pose`
+    action goal, succeeded. The
+    behavior tree reported success 28.8 s after the start, 0.072 m and 4.0°
+    from the goal by ground truth. On the way, `follow_path` aborted twice
+    with error 105 (at 16.5 s and 24.6 s), and the behavior tree retried both
+    times.
+
+    **Direction test.** Each phase published one command for 2 s or until the
+    robot stopped:
+
+    | Command | Result |
+    | --- | --- |
+    | Toward the wall face: forward, then diagonal (+x, +y) | Stopped 0.048 m and 0.053 m before it |
+    | Toward the north wall: left, then diagonal (+x, +y) | Stopped 0.112 m and 0.114 m before it |
+    | Away from a wall, four times (straight and diagonal) | Moved 0.155 to 0.292 m |
+    | Along the wall, with the wall 0.229 m from the side | Moved 0.161 m |
+    | Rotate in place at the wall, +0.5 rad/s, then -0.5 rad/s | Rotated 21.6° in 2 s, then back; not stopped, but slowed to 40 % by `PolygonSlow` |
+
+    Then two goals were sent from beside the north wall. The first,
+    (1.5, 1.0, 90°) on `/goal_pose`, was within tolerance after 17.3 s
+    (0.058 m and 4.6° off by ground truth), after one `follow_path` abort
+    with error 105 during the slow final approach. The second,
+    (-1.0, -0.5, 0°) as an action goal, succeeded in 16.5 s. It was 0.098 m
+    off by odometry and 0.363 m by ground truth, because the odometry drifts
+    and MuJoCo has no AMCL. With an earlier 4-band layout and a 4 s progress
+    allowance, the same goals had 4 to 5 aborts with error 105.
+
+    Before the change, with the 0.35 m `PolygonStop` circle, the robot stopped
+    with its footprint front at the wall (x = 1.155 m), and two goals sent
+    after the stop both aborted with error 105, after about 120 s and 88 s.
+
+??? info "Collision monitor, velocity smoother, and progress checker settings"
+    The settings are in the `collision_monitor`, `velocity_smoother`, and
+    `controller_server` sections of the parameter files in
     `navigation/walkie-navigation/config/nav2/`.
     `nav2_mppi_walkie_sim_params.yaml`, `nav2_mppi_walkie_real_param.yaml`,
     and `nav2_mppi_walkie_real_restaurant_param.yaml` use the same values,
-    except for the observation sources.
+    except for the observation sources, the size of the `rotation` polygon,
+    and the `FootprintApproach` points.
 
     | Component | Setting |
     | --- | --- |
     | `velocity_smoother` | `max_velocity` [0.3, 0.3, 1.0], `max_accel` [2.5, 2.5, 3.2]. Input `cmd_vel` (remapped to `/cmd_vel_controller`), output `cmd_vel_smoothed`. Both topic names are fixed in code. |
     | `collision_monitor` topics | `cmd_vel_in_topic: "cmd_vel_smoothed"`, `cmd_vel_out_topic: "cmd_vel_nav"` |
+    | `polygons` | `["VelocityPolygonStop", "PolygonSlow", "FootprintApproach"]` |
     | Observation sources | Simulation file: `scan`. Real and restaurant files: `scan` and `pointcloud` (`/unilidar/cloud/filtered`, `min_obstacle_height` 0.3 m, `max_obstacle_height` 1.5 m). |
     | `source_timeout` | Not set, so the default of 2.0 s applies |
-    | `PolygonStop` | Circle, radius 0.35 m, `stop`, `min_points: 4` |
-    | `PolygonSlow` | Circle, radius 0.55 m, `slowdown`, `slowdown_ratio: 0.4`, `min_points: 4` |
-    | `FootprintApproach` | `approach` with the local costmap footprint (`/local_costmap/published_footprint`), `time_before_collision: 2.0` s, `min_points: 6` |
-    | `VelocityPolygonStop` | Direction-dependent stop polygons, `holonomic: true`. Defined, but `enabled: False` and not listed in `polygons`. |
+    | `VelocityPolygonStop` | `velocity_polygon`, `stop`, `min_points: 4`, `holonomic: true`. Nine sub-polygons: `rotation` and eight direction bands. Topic `velocity_polygon_stop`. |
+    | `PolygonSlow` | Circle, radius 0.55 m, `slowdown`, `slowdown_ratio: 0.4`, `min_points: 4`. Topic `polygon_slowdown`. |
+    | `FootprintApproach` | `approach` with static `points`: the physical footprint without padding (simulation file: the local footprint points; real and restaurant files: the real footprint with notched rear corners). `time_before_collision: 2.0` s, `min_points: 6`. |
+    | Progress checker | `progress_checker` in `controller_server`: `nav2_controller::SimpleProgressChecker`, `required_movement_radius: 0.5`, `movement_time_allowance: 8.0` (0.5 m within 8 s) |
     | `twist_mux` | `bringup/config/twist_mux/twist_mux.yml`: `cmd_vel_nav` priority 10, `cmd_vel_joy` and `cmd_vel_key` priority 100 |
 
-    Two files differ, and both use `scan` only:
+    `FootprintApproach` does not use the padded
+    `/local_costmap/published_footprint`. With 6 or more points inside its
+    polygon, the approach action computes a collision time of 0 and scales
+    every command to zero, also commands that drive away. With the padded
+    footprint, obstacles inside the padding next to the robot froze Nav2.
 
-    - `nav2_mppi_walkie_loopback_params.yaml`: `PolygonStop` is disabled, and
-      `PolygonSlow` has radius 0.40 m and `slowdown_ratio: 0.5`.
-    - `nav2_mppi_walkie_real_param_hero_10_04_26.yaml`: `PolygonSlow` has
-      radius 0.50 m and `slowdown_ratio: 0.5`.
+    The progress checker allows 8 s, not 4 s: 0.5 m in 4 s needs 0.125 m/s on
+    average, more than the `PolygonSlow` limit of 0.4 x 0.3 = 0.12 m/s, so
+    goals through the slow zone aborted `follow_path` with error 105. The cost
+    is that a robot that is really stuck is detected only after 8 s.
+
+    The other parameter files keep the earlier setup: `PolygonStop`,
+    `FootprintApproach` on `/local_costmap/published_footprint`, and
+    `movement_time_allowance: 10.0`. Their collision monitors use `scan` only.
+
+    - `nav2_mppi_walkie_loopback_params.yaml`: `PolygonStop` (0.35 m) is
+      disabled. `PolygonSlow` has radius 0.40 m and `slowdown_ratio: 0.5`.
+      The progress checker needs 0.2 m within 10 s.
+    - `nav2_mppi_walkie_real_param_hero_10_04_26.yaml`: `PolygonStop`
+      (0.35 m) is active, so after a stop it blocks every Nav2 command, also
+      commands that drive away. `PolygonSlow` has radius 0.50 m and
+      `slowdown_ratio: 0.5`.
+    - `nav2_RPP_*.yaml` (three files, no launch file): `PolygonStop` is
+      active.
 
 ## Nav2 configuration
 
@@ -868,9 +1014,12 @@ empty MuJoCo world, and the loopback and hero configurations.
 
 | Issue | Effect | Workaround |
 | --- | --- | --- |
-| `PolygonStop` zeroes every Nav2 command while 4 or more points are in its circle, including commands that drive away. `/scan` sees only the ring 0.30 to 0.35 m from the base center. | The robot can stop with the front of its footprint at an obstacle and stay there. Goals abort with error 105. | Drive out with the joystick or keyboard. The fix is an open decision ([Collision monitor](#collision-monitor)). |
+| Near an obstacle, the collision monitor can still block every Nav2 command: every direction Nav2 tries points at an obstacle in reach, robot parts or noise are inside the selected stop polygon, or a source is invalid. The behavior tree has no BackUp recovery. | The robot stays next to the obstacle. Goals abort with error 105. | Drive out with the joystick or keyboard ([Collision monitor](#collision-monitor)) |
+| `follow_path` occasionally aborts with error 105 near an obstacle or during the slow final approach | The behavior tree retries. In the MuJoCo tests, the goals were still reached. | None |
+| `/scan` has no points closer than 0.30 m to the base center. In MuJoCo, the front lidar sees nothing closer than 0.415 m straight ahead. The stop polygons cover the base only. | In MuJoCo, a narrow obstacle dead ahead is missed. The arms and carried objects are not protected. | None ([Collision monitor](#collision-monitor)) |
+| `nav2_mppi_walkie_real_param_hero_10_04_26.yaml` and the `nav2_RPP_*.yaml` files keep an active `PolygonStop` circle | With these files, a stop blocks every Nav2 command, also commands that drive away | Drive out with the joystick or keyboard, or use the default parameter files |
 | In `nav2_mppi_walkie_real_param.yaml` and `nav2_mppi_walkie_real_restaurant_param.yaml`, `voxel_layer` and `stvl_layer` both publish `voxel_grid` with different types | Under Fast DDS, `controller_server` fails to configure in `localization_Nav2_real.launch.py` and `mapping_Nav2_real.launch.py` | Use `rmw_zenoh_cpp`, as the team does. Not fixed in the parameter files. |
-| The Gazebo lidar has a minimum range of 0.6 m | The collision monitor's stop and slow-down circles never trigger in Gazebo | None. Only `FootprintApproach` acts. |
+| The Gazebo lidar has a minimum range of 0.6 m | The collision monitor's stop polygons and slow-down circle never trigger in Gazebo | None. Only `FootprintApproach` acts. |
 | `nav_mujoco_omnibot.launch.py` has no AMCL | The pose drifts with the odometry. A goal sent while the robot is already at it by odometry aborts with error 103 (`Resulting plan has 0 poses in it`). | None |
 | `nav2_bringup`'s `bringup_launch.py` runs all Nav2 servers on one thread when composed (its default) | Bringup can hang at `Waiting for service smoother_server/get_state...` | `use_composition:=False`. `localization_Nav2_sim.launch.py` and `nav_mujoco_omnibot.launch.py` set it. ([details](#nav2-composition-deadlock)) |
 | `slam_toolbox.launch.py` ignores the Walkie parameters | SLAM Toolbox runs with its own defaults and `use_sim_time: true` | Run `online_sync_launch.py` with `slam_params_file:=` ([Mapping in simulation](#mapping-in-simulation)) |
@@ -988,8 +1137,8 @@ process. `localization_Nav2_sim.launch.py` (included by
 | Keepout zones from the Arena appear on another map | Only `map` was changed | Also pass `keepout_mask:=` or `use_keepout_zones:=false` |
 | `/scan` stops on the real robot | One lidar stopped publishing, or one lidar has no valid return at all. The merger needs data from both. | Check both `/front_lidar` and `/back_lidar`, and that neither lidar is covered ([Dual 2D lidar](#dual-2d-lidar)) |
 | `/move_robot` returns success but the robot does not move | Nav2 is not running, or the goal failed later | Check the node log and the Nav2 logs |
-| The robot stops or crawls near obstacles, or does not move under Nav2 at all | A collision monitor zone has enough points, possibly from the robot's own parts, or a source has no data | Check the `collision_monitor` log and `polygon_stop` in RViz ([Troubleshooting: The robot stops or slows near obstacles](../troubleshooting.md#nav2-robot-stops-near-obstacles)) |
-| The robot stays next to an obstacle, and every goal aborts with error 105 | `PolygonStop` blocks every Nav2 command, including commands that drive away | Drive out with the joystick or keyboard ([Collision monitor](#collision-monitor)) |
+| The robot stops or crawls near obstacles, or does not move under Nav2 at all | A collision monitor zone has enough points, possibly from the robot's own parts, or a source has no data | Check the `collision_monitor` log, and `velocity_polygon_stop` and `polygon_slowdown` in RViz ([Troubleshooting: The robot stops or slows near obstacles](../troubleshooting.md#nav2-robot-stops-near-obstacles)) |
+| The robot stays next to an obstacle, and every goal aborts with error 105 | Every direction Nav2 tries is blocked (the robot is boxed in), robot parts or noise are inside a stop polygon, or a source is invalid. The progress checker then aborts `follow_path` with error 105, because the robot moves less than 0.5 m within 8 s. | Check the `collision_monitor` log. Drive out with the joystick or keyboard ([Troubleshooting: Stuck near an obstacle](../troubleshooting.md#nav2-stuck-after-a-stop)). |
 | `controller_server` fails with `create_publisher() called for existing topic name rt/local_costmap/voxel_grid with incompatible type` | Fast DDS and the two `voxel_grid` publishers of the real and restaurant files | Use `rmw_zenoh_cpp` ([Known issues](#known-issues)) |
 | `nav2_loopback.launch.py`: Nav2 never finishes activating | The loopback simulator has no initial pose yet, so it publishes no transforms | Set one with **2D Pose Estimate** or on `/initialpose` ([Test goal logic without physics](#test-goal-logic-without-physics)) |
 | Nav2 nodes stay unconfigured, and the log shows `Waiting on external lifecycle transitions to activate` | A launch file includes `navigation_launch.py` or `localization_launch.py` without starting a lifecycle manager | Start `lifecycle_manager_nav2` as the Walkie launch files do ([Localization and mapping on the real robot](#localization-and-mapping-on-the-real-robot)) |

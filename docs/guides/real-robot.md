@@ -172,9 +172,11 @@ Then start each step in its own terminal, in this order:
     both were bypassed.
 
     - **Stop and slow down:** 4 or more points of `/scan` or
-      `/unilidar/cloud/filtered` within 0.35 m of the base center stop the
-      robot; within 0.55 m it moves at 40 %. The stop can leave the robot with no clearance, and then Nav2
-      cannot move it away. Drive it out with the joystick. See
+      `/unilidar/cloud/filtered` in the stop polygon of the commanded
+      direction stop the robot. The polygon covers the footprint faces that
+      lead in that direction, up to 0.35 m from the base center, so Nav2 can
+      still drive away from the obstacle. Within 0.55 m the robot moves at
+      40 %. If it is boxed in, drive it out with the joystick. See
       [Navigation: Collision monitor](navigation.md#collision-monitor).
     - **No `/scan`:** if one lidar stops publishing, or has no valid return in
       any direction (covered, faulty, or nothing within its range), the merger

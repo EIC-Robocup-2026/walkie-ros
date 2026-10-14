@@ -493,7 +493,7 @@ action changes:
 
 | Log line | Cause |
 | --- | --- |
-| `Robot to stop due to PolygonStop polygon` | 4 or more points within 0.35 m of the base center. `/scan` has no points closer than 0.30 m, so only obstacles 0.30 to 0.35 m from the center count; on the real robot, the 3D lidar cloud has no such limit. |
+| `Robot to stop due to VelocityPolygonStop polygon` | 4 or more points in the stop polygon of the commanded direction: the footprint faces that lead in that direction, up to 0.35 m from the base center, or the rotation polygon when the robot turns in place or stands still. The line does not name the direction. `/scan` has no points closer than 0.30 m to the base center; on the real robot, the 3D lidar cloud has no such limit. |
 | `Robot to slowdown for 40.000000 percents due to PolygonSlow polygon` | 4 or more points within 0.55 m |
 | `Robot to approach for 2.000000 seconds away from collision` | At the commanded speed, the footprint would reach 6 or more points within 2 s, so the monitor slows the robot |
 | `Robot to stop due to invalid source` | A source had no new data for 2 s, or its frame cannot be transformed to `base_footprint`. The causes are listed below. |
@@ -515,15 +515,18 @@ The invalid-source stop blocks every Nav2 command. Its causes:
 
 More checks:
 
-- In RViz, add `Polygon` displays for `/polygon_stop` and `/polygon_slowdown`
-  to see the zones, and a `MarkerArray` display for
+- In RViz, add `Polygon` displays for `/velocity_polygon_stop` and
+  `/polygon_slowdown` to see the zones, and a `MarkerArray` display for
   `/collision_monitor/collision_points_marker` to see the points the monitor
-  checks.
-- If the robot does not move and the stop line appears with no obstacle
-  nearby, a source sees parts of the robot within 0.35 m. Check where those
-  points lie in RViz.
-- In Gazebo, the stop and slow-down circles never trigger: the simulated
-  lidar's minimum range is 0.6 m. See
+  checks. `/velocity_polygon_stop` shows only the stop polygon of the current
+  command, and stays empty until the first Nav2 command arrives.
+  `bringup/config/rviz/default.rviz`, which `real_omnibot.launch.py` opens,
+  already has both polygon displays.
+- If the stop line appears with no obstacle nearby, a source sees parts of
+  the robot, or noise, inside a stop polygon. Check where those points lie in
+  RViz.
+- In Gazebo, the stop polygons and the slow-down circle never trigger: the
+  simulated lidar's minimum range is 0.6 m. See
   [Gazebo Simulation: Run Gazebo with Nav2](guides/simulation-gazebo.md#gazebo-with-nav2).
 
 The zones, the sources, and all settings are in
@@ -541,23 +544,42 @@ The zones, the sources, and all settings are in
     While the polygons are off, nothing stops the robot before an obstacle.
     The switch does not affect the invalid-source stop.
 
-### The robot is stuck near an obstacle, and goals abort with error 105 { #nav2-stuck-after-a-stop }
+### The robot stays stuck near an obstacle, and goals abort with error 105 { #nav2-stuck-after-a-stop }
 
-The robot stopped next to an obstacle and does not move under Nav2, in any
-direction. Every goal aborts after a while with error 105
-(`Failed to make progress`). The `collision_monitor` log shows
-`Robot to stop due to PolygonStop polygon`.
+The robot does not move under Nav2 near an obstacle, and goals abort with
+error 105 (`Failed to make progress`). After a normal collision monitor stop,
+Nav2 can drive the robot away: the monitor blocks only commands toward the
+obstacle. If the robot stays stuck, or a goal reports 105, check these causes:
 
-Drive the robot away with the joystick or keyboard. `twist_mux` gives them
-priority 100, and their commands do not pass the collision monitor. Then send
-the goal again.
+- **Boxed in.** Obstacles lie in the stop polygon of every direction Nav2
+  tries. The behavior tree has no back-up recovery, so Nav2 does not reverse
+  out by itself; it relies on MPPI choosing a free direction.
+- **Robot parts or noise.** A source sees 4 or more points of the robot, or
+  noise, inside a direction's stop polygon or the rotation polygon. The
+  monitor then blocks every command that selects that polygon.
+- **Invalid source.** The log shows `Robot to stop due to invalid source`.
+  See [The robot stops or slows near obstacles under Nav2](#nav2-robot-stops-near-obstacles).
+- **Progress checker.** `controller_server` aborts `follow_path` with 105
+  when the robot moves less than 0.5 m within 8 s. An occasional 105 near the
+  goal, during the slow final approach, is expected: the behavior tree
+  retries, and the goal is reached.
 
-??? info "Why Nav2 cannot drive away from the obstacle"
-    While 4 or more points are inside the 0.35 m stop circle, `PolygonStop`
-    sets every Nav2 command to zero, including commands that drive away from
-    the obstacle. In the MuJoCo stop test on 2026-10-14, the robot stopped
-    with the front of its footprint at a wall, and two goals then aborted
-    with error 105. How to change the stop circle is an open decision; see
+To get the robot moving:
+
+1. Check the `collision_monitor` log and the RViz displays listed in
+   [The robot stops or slows near obstacles under Nav2](#nav2-robot-stops-near-obstacles).
+2. Drive the robot away with the joystick or keyboard. `twist_mux` gives them
+   priority 100, and their commands do not pass the collision monitor.
+3. Send the goal again.
+
+??? info "Why Nav2 can drive away after a stop"
+    The stop polygon is chosen from the direction of the commanded velocity.
+    A command that drives away from an obstacle selects a polygon that does
+    not contain it, so the command passes. In a MuJoCo test on 2026-10-14,
+    the robot stopped 0.045 m before a wall, and a Nav2 goal from there
+    succeeded. Before, a fixed 0.35 m stop circle zeroed every Nav2 command
+    while it held points, including commands that drive away, and the goals
+    after a stop aborted with error 105. See
     [Navigation: Collision monitor](guides/navigation.md#collision-monitor).
 
 ### controller_server fails with an incompatible type for voxel_grid { #nav2-voxel-grid-incompatible-type }

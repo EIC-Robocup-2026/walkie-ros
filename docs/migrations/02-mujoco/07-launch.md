@@ -477,7 +477,7 @@ Not verified:
     - **Nav2 log noise.** The errors read
       `inflation radius (0.250000) is smaller than the circumscribed radius (0.313249)`.
       The abort happens on the first `FollowPath` after the initial spin; the progress
-      checker requires 0.5 m within 4 s.
+      checker requires 0.5 m within 4 s ([entry 5](../05-nav2-repair.md) raised the allowance to 8 s).
 
 ## Still open
 

@@ -202,10 +202,11 @@ work here. For example, `map:=<full path>` reaches
 !!! warning "The collision monitor does not stop the robot in Gazebo"
     Nav2 commands pass through the collision monitor, but the simulated lidar
     has a minimum range of 0.6 m. `/scan` therefore has no points within the
-    stop circle (0.35 m) or the slow-down circle (0.55 m), and neither ever
-    triggers. Only `FootprintApproach` slows the robot, and only while an
-    obstacle is still farther than 0.6 m from the lidar. This follows from
-    the configuration; it was not checked in Gazebo. See
+    stop polygons (up to 0.35 m from the base center) or the slow-down circle
+    (0.55 m), and neither ever triggers. Only `FootprintApproach` slows the
+    robot, and only while an obstacle is still farther than 0.6 m from the
+    lidar. This follows from the configuration; it was not checked in
+    Gazebo. See
     [Navigation: Collision monitor](navigation.md#collision-monitor).
 
 Prefer the pixi commands in
@@ -306,8 +307,9 @@ so the collision monitor stops every Nav2 command (see
 
     Both variants publish at 40 Hz with 360 samples per scan.
 
-    The 0.6 m minimum range of the single lidar is larger than both collision
-    monitor circles (0.35 m and 0.55 m). See
+    The 0.6 m minimum range of the single lidar is larger than the reach of
+    the collision monitor's stop polygons (0.35 m) and slow-down circle
+    (0.55 m). See
     [Run Gazebo with Nav2](#gazebo-with-nav2).
 
 ### Bridged topics
@@ -447,7 +449,7 @@ scene is not in this repository.
 | Closing RViz stops Gazebo | `rviz.launch.py` emits a shutdown when RViz exits | Use `use_rviz:=false` and start RViz separately |
 | The robot does not move with `ros2 topic pub` | Message type is `Twist`, or it was published once | Publish `TwistStamped` with `-r 10` |
 | The robot ignores `joy_control.launch.py` while Nav2 runs | `/cmd_vel` has a lower priority than `/cmd_vel_nav` | Use `joy_control_smooth.launch.py` |
-| Under Nav2, the robot slows down before obstacles | `FootprintApproach` in the collision monitor. The stop and slow-down circles never trigger in Gazebo, because the lidar's minimum range is 0.6 m. | Expected. See [Run Gazebo with Nav2](#gazebo-with-nav2). |
+| Under Nav2, the robot slows down before obstacles | `FootprintApproach` in the collision monitor. The stop polygons and the slow-down circle never trigger in Gazebo, because the lidar's minimum range is 0.6 m. | Expected. See [Run Gazebo with Nav2](#gazebo-with-nav2). |
 | Under Nav2, the robot does not move at all | The collision monitor stops on an invalid source, for example with `dual_lidar:=True` (no `/scan`) | See [The robot stops or slows near obstacles under Nav2](../troubleshooting.md#nav2-robot-stops-near-obstacles). |
 | `/bottom_rgb/...` topics have no data | World is not named `default` (for example `obstacle_gz.world`) | Use a world named `default` |
 | No lidar or camera data in `PlainWorld.world` | The world loads no Sensors system | Use another world |
