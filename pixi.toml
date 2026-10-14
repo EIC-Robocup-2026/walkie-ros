@@ -226,9 +226,13 @@ cmd = "colcon build --symlink-install --parallel-workers {{ workers }} --cmake-a
 depends-on = ["setup"]
 description = "Build workspace for initial setup (default: 1 worker; e.g. pixi run build-setup 3)"
 
-# Scripts to source on environment activation, found after first colcon build.
 [activation]
 scripts = ["install/setup.bash"]
+
+[activation.env]
+CUDA_HOME = "/usr/local/cuda"
+PATH = "/usr/local/cuda/bin:$PATH"
+LD_LIBRARY_PATH = "/usr/local/cuda/lib64:$LD_LIBRARY_PATH"
 
 # Documentation site (MkDocs Material). The docs environment excludes the default
 # feature, so it installs without ROS: pixi run docs / pixi run docs-build.
