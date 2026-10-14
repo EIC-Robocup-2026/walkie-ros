@@ -802,13 +802,23 @@ entry.
 
 ??? info "Branches"
     The walkie-ros commits are on `fix/nav2-compat`, stacked on
-    `feat/mujoco-launch`, which is on `feat/Pixi`. The navigation commits are
-    on `fix/nav2-compat` in `EIC-Robocup-2026/navigation`, on `feat/pixi`
-    (`02a697a`). Both are under review in navigation pull request #7 and
-    walkie-ros pull request #44, not merged.
+    `feat/mujoco-launch`, which is on `feat/Pixi`; they are under review in
+    walkie-ros pull request #44. The navigation commits were on
+    `fix/nav2-compat` in `EIC-Robocup-2026/navigation`, branched from
+    `feat/pixi` (`02a697a`). Navigation pull request #7 merged them into
+    `feat/pixi` on 2026-10-14 (`ec6aa14`), after a merge of `feat/pixi` into
+    the branch (`5db60af`). The `navigation` gitlink stays at `6675ae8`, which
+    `feat/pixi` contains.
 
 ## Still open
 
+- **Broken sim launch on navigation `feat/pixi`.** The merge `5db60af`
+  resolved a conflict in `localization_Nav2_sim.launch.py` by mixing both
+  sides. At `ec6aa14`, the launch file fails with
+  `NameError: name 'localization_launch' is not defined`, so
+  `nav_sim_omnibot.launch.py` does not start Nav2. Navigation pull request #8
+  restores the tested version. Do not move the `navigation` gitlink past
+  `6675ae8` without that fix.
 - **Where the lidars cannot see.** `/scan` has no points closer than 0.30 m
   to the base center, so the stop polygons see `/scan` points only from
   0.30 m out. In MuJoCo, the front lidar sees nothing closer than 0.415 m
