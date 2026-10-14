@@ -45,7 +45,14 @@ Output:
 /scan
 ```
 
-### 3. Drive the Robot (Teleop)
+### 3. Visualize LiDAR in RViz2
+
+```bash
+pixi run rviz-scan
+```
+*(Launches RViz2 with simulation time enabled, fixed frame set to `front_lidar_link`, and `/scan` visualization configured).*
+
+### 4. Drive the Robot (Teleop)
 
 In a separate terminal:
 
