@@ -326,9 +326,9 @@ Run the commands from the repository root.
 
 1. Build the workspace with `pixi run build`, as described in
    [Getting Started](../getting-started.md#5-build-the-workspace). The launch files also
-   need `dual_laser_merger`, `walkie_tf`, `robot_navigation` and the Nav2 fork. If your
-   workspace was built before the MuJoCo launch files existed, rebuild the two packages
-   that hold them and the default world:
+   need `dual_laser_merger`, `walkie_tf`, `robot_navigation` and Nav2
+   (`navigation/navigation2`). If your workspace was built before the MuJoCo launch files
+   existed, rebuild the two packages that hold them and the default world:
 
     ```bash
     pixi run build-pkg robot_bringup walkie_description
@@ -386,8 +386,12 @@ Run the commands from the repository root.
        and the real robot. Its output `/cmd_vel_out` is remapped to
        `/omni_wheel_drive_controller/cmd_vel`.
     5. `dual_laser_merger_node` (node name `dual_laser_merger`) with the parameters of the
-       real robot. It merges `/front_lidar` and `/back_lidar` into `/scan`, in the frame
-       `merged_lidar_link`.
+       real robot, plus `publish_on_empty_cloud: True`. It merges `/front_lidar` and
+       `/back_lidar` into `/scan`, in the frame `merged_lidar_link`. With
+       `publish_on_empty_cloud`, it also publishes when a lidar has no return in range,
+       as in the empty default world; that side reads as free space. The real robot keeps
+       the default, `false`. See
+       [5. Repair Nav2 After the navigation2 Bump](../migrations/05-nav2-repair.md#scan-in-the-empty-mujoco-world).
     6. `walkie_tf`'s `tf_server` (node name `walkie_tf_server`).
     7. RViz with `rviz_config`, when `use_rviz` is `true`.
 
@@ -401,14 +405,17 @@ Run the commands from the repository root.
        `use_localization:=False` (no AMCL), `serve_static_map:=True` (`map_server` serves
        `map`), `use_keepout_zones:=False`, `use_speed_zones:=False`, `autostart:=True`
        and `use_composition:=False`. Each Nav2 server runs as its own process.
-       `params_file` passes through `nav2_common`'s `RewrittenYaml`, which adds
-       `controller_server.ros__parameters.FollowPath.Omni.plugin: "mppi::OmniMotionModel"`
-       to a temporary copy.
+       `params_file` is passed through unchanged. The include sits in a `GroupAction`
+       with `SetRemap(src="cmd_vel", dst="cmd_vel_controller")`, so Nav2 commands pass
+       `velocity_smoother` and `collision_monitor` before they reach `twist_mux` on
+       `/cmd_vel_nav`.
 
     `robot_bringup` does not declare `mujoco_ros2_control` in its `package.xml`. The pixi
     environment provides it, and declaring it would make rosdep install MuJoCo into the
     `physical` Docker image. [2.7 Launch Files and Nav2](../migrations/02-mujoco/07-launch.md)
-    explains the Nav2 settings.
+    explains the Nav2 settings, and
+    [5. Repair Nav2 After the navigation2 Bump](../migrations/05-nav2-repair.md) the
+    `cmd_vel` remap.
 
 ??? info "Configuration files of the MuJoCo launch files"
     | Path | Contents |
@@ -453,10 +460,11 @@ priorities and timeouts.
 
 | Topic | Type | Notes |
 | --- | --- | --- |
-| `/cmd_vel` (priority 5), `/cmd_vel_nav` (10, Nav2), `/cmd_vel_joy` and `/cmd_vel_key` (100) | `geometry_msgs/TwistStamped` | Inputs of `twist_mux`. The highest-priority active input wins. |
+| `/cmd_vel` (priority 5), `/cmd_vel_nav` (10, Nav2), `/cmd_vel_joy` and `/cmd_vel_key` (100) | `geometry_msgs/TwistStamped` | Inputs of `twist_mux`. The highest-priority active input wins. `collision_monitor` publishes `/cmd_vel_nav`. |
+| `/cmd_vel_controller`, `/cmd_vel_smoothed` | `geometry_msgs/TwistStamped` | Nav2 only: output of the Nav2 servers, input of `velocity_smoother`; output of `velocity_smoother`, input of `collision_monitor` |
 | `/omni_wheel_drive_controller/cmd_vel` | `geometry_msgs/TwistStamped` | Output of `twist_mux`. Publish here to bypass `twist_mux`. |
 | `/omni_wheel_drive_controller/odom` | `nav_msgs/Odometry` | Wheel odometry in the frame `odom`. The controller also publishes the `odom` to `base_footprint` transform. |
-| `/scan` | `sensor_msgs/LaserScan` | `/front_lidar` and `/back_lidar` merged, frame `merged_lidar_link`. Published only when both lidars hit something. |
+| `/scan` | `sensor_msgs/LaserScan` | `/front_lidar` and `/back_lidar` merged, frame `merged_lidar_link`. Also published in the empty default world: a lidar with no return in range reads as free space. Needs both lidar topics. |
 | `/front_lidar`, `/back_lidar` | `sensor_msgs/LaserScan` | Frames `front_lidar_link` and `back_lidar_link`. About 28 Hz. |
 | `/imu` | `sensor_msgs/Imu` | Frame `top_imu_link` |
 | `/zed_head/zed_node/rgb/color/rect/image`, `/zed_head/zed_node/depth/depth_registered` | `sensor_msgs/Image` | Head camera, color and depth. The topic names of the real ZED camera. |
@@ -483,7 +491,13 @@ priorities and timeouts.
 pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py
 ```
 
-Wait until the log shows `Managed nodes are active`, about 8 s after the start. Then send
+This loads the default world, which has only a floor. Nav2 drives the robot there. Its
+collision monitor needs `/scan`, and the launch publishes `/scan` although the lidars see
+nothing in range (see [Topics](#topics)). To test obstacle avoidance, add
+`mujoco_model:=` with a world that has walls or objects. See
+[Use a custom world with ROS 2](#use-a-custom-world-with-ros-2).
+
+Wait until the log shows `Managed nodes are active`, about 10 s after the start. Then send
 a goal in RViz:
 
 1. Click **2D Goal Pose** in the toolbar.
@@ -496,6 +510,33 @@ action, so they should work; they have not been checked interactively. From a sc
 publish a `geometry_msgs/PoseStamped` on `/goal_pose`, or send a `NavigateToPose` action
 goal.
 
+Nav2 commands pass `velocity_smoother` and `collision_monitor` before `twist_mux`. The
+smoother caps the speed at 0.3 m/s and 1.0 rad/s. The collision monitor slows the robot
+near obstacles and stops it before obstacles in the direction of travel. Commands that
+drive away from the obstacle pass, so Nav2 can move the robot on after a stop. In a
+MuJoCo test, the robot stopped 0.045 to 0.053 m before a wall in front and about 0.11 m
+before a wall at the side.
+[Navigation: Collision monitor](navigation.md#collision-monitor) has the zones and
+settings.
+
+!!! warning "The collision monitor misses narrow obstacles straight ahead"
+    Straight ahead, the front lidar sees nothing closer than 0.415 m to the base center:
+    it sits 0.235 m in front of the center and has a minimum range of 0.18 m. A wall is
+    still detected, because its points off to the side are farther from the lidar. A
+    narrow obstacle dead ahead, narrower than about 0.28 m and closer than 0.415 m, is not
+    in `/scan`, and the collision monitor does not stop for it. This is a limit of the
+    MuJoCo sensor setup; the minimum ranges of the real lidars were not checked.
+
+If the robot is boxed in and Nav2 cannot find a free direction, drive it out on
+`/cmd_vel_key` or `/cmd_vel_joy`: `twist_mux` ranks them above Nav2, and the monitor does
+not check them. This command backs the robot away from an obstacle in front; stop it with
+Ctrl+C:
+
+```bash
+pixi run ros2 topic pub -r 10 /cmd_vel_key geometry_msgs/msg/TwistStamped \
+  "{header: {frame_id: base_footprint}, twist: {linear: {x: -0.2}}}"
+```
+
 !!! warning "Localization is odometry only"
     No AMCL runs. A static identity transform from `map` to `odom` places the robot in the
     map by its wheel odometry alone.
@@ -503,28 +544,47 @@ goal.
     - **The robot must start at the MuJoCo world origin.** The `home` keyframe does.
     - **The map origin must match the world origin.** The default map,
       `empty_floor.yaml`, is a blank 20 m by 20 m map centered on it.
-    - **The pose drifts.** After a 3 m run with turns, the pose in the map was off by
-      0.22 m and 4.7 degrees. RViz can show the robot at the goal while the ground truth
+    - **The pose drifts.** On 2026-10-14, the odometry pose was 0.17 m from the ground
+      truth after two goals in the default world. In a walled test world, it was 0.28 m
+      after one goal and 0.43 m after two. RViz can show the robot at the goal while the ground truth
       on `/mujoco_ground_truth/odom` is off by that much.
 
-!!! note "No `/scan` in the default world"
-    `dual_laser_merger` publishes `/scan` only when both lidars hit something. The default
-    `scene.xml` has only a floor, so `/scan` stays silent. Nav2 still plans and drives,
-    but its obstacle layers see nothing. For obstacles, load a world with geometry in
-    front of and behind the robot, such as a closed room. See
-    [Use a custom world with ROS 2](#use-a-custom-world-with-ros-2).
-
-The Nav2 log shows some errors that come from its parameter file, not from MuJoCo. See
+The Nav2 log can show errors that do not come from MuJoCo. See
 [Troubleshooting](#troubleshooting).
 
+??? info "What the Nav2 tests measured on 2026-10-14"
+    Measured headless, with `rmw_fastrtps_cpp`, on the command path of
+    [5. Repair Nav2 After the navigation2 Bump](../migrations/05-nav2-repair.md):
+    Nav2 servers to `/cmd_vel_controller`, `velocity_smoother`, `/cmd_vel_smoothed`,
+    `collision_monitor`, `/cmd_vel_nav`, `twist_mux`, all `TwistStamped`. Localization is
+    odometry only, so the ground truth error includes the odometry drift.
+
+    | Test | Result |
+    | --- | --- |
+    | Default world, new command path, merger without `publish_on_empty_cloud` (before the merger change) | No `/scan`. `collision_monitor` logged `Robot to stop due to invalid source`, the robot did not move, and goals aborted with error 105 (`Failed to make progress`). |
+    | Default world, an earlier version of the merger change that always published | `/scan` at about 27 Hz. Goal (1.5, 1.0, 90 degrees) on `/goal_pose` reached in 11 s, 0.14 m and 3.7 degrees off in the ground truth. Goal (-1.0, -0.5, 0) as a `NavigateToPose` action goal `SUCCEEDED` in 13 s, 0.39 m off in the ground truth. |
+    | Default world, `publish_on_empty_cloud: True` in `mujoco_omnibot.launch.py` (the current state) | Nav2 active after 10 s. Goal (1.5, 1.0, 90 degrees) on `/goal_pose` reached in 10 s: 0.10 m from the goal by odometry, 0.14 m and 3.8 degrees off in the ground truth. Goal (-1.0, -0.5, 0) as an action goal `SUCCEEDED` in 14 s: 0.02 m from the goal by odometry, 0.15 m and 1.3 degrees off in the ground truth (odometry drift 0.17 m). |
+    | Progress checker, same run, with the earlier 4 s allowance | During the slow final approach to the first goal, `controller_server` aborted `follow_path` once with error 105. The behavior tree retried, and the goal was reached 0.3 s later. |
+    | Progress checker with 8 s allowance, walled test world, two goals from beside the room wall | One abort with error 105, at the end of the slow final approach to the first goal; the goal was then within tolerance. With the 4 s allowance and an earlier stop layout, the same goals had 4 to 5 aborts. |
+    | Walled test world (the room described below), goal (3.0, 0, 0) behind the wall | Reached in 25 s: 0.06 m from the goal by odometry, 0.24 m in the ground truth (drift 0.28 m) |
+    | Walled test world, next goal (-1.0, -0.5, 0) | Aborted with error 103 (`Resulting plan has 0 poses in it`) while the odometry pose was 0.002 m from the goal. The ground truth was 0.43 m away. |
+    | Walled test world, constant 0.25 m/s toward the wall, with the earlier 0.35 m `PolygonStop` circle | The collision monitor stopped the robot with the front of its footprint at the wall face. Two goals after the stop aborted with error 105. |
+    | Walled test world, constant 0.25 m/s toward the wall, with the direction-aware `VelocityPolygonStop` | Stopped with the footprint front 0.045 m before the wall face (repeat run: 0.046 m). From there, goal (1.5, 1.0, 90 degrees) as an action goal `SUCCEEDED` after 28.8 s, 0.072 m and 4.0 degrees off in the ground truth. `follow_path` aborted twice with error 105 on the way; the behavior tree retried both times. |
+    | Walled test world, single commands toward, away from, and along the walls, with `VelocityPolygonStop` | Toward the wall face: stopped 0.048 m before it going forward, 0.053 m going diagonally. Toward the room wall at the robot's left: stopped 0.112 m before it going left, 0.114 m going diagonally. Rotation in place at the wall turned the robot, and every command away from or along a wall moved it. |
+
 ??? info "What the Nav2 tests measured on 2026-10-13"
-    Measured headless, with `rmw_zenoh_cpp`.
+    Measured headless, with `rmw_zenoh_cpp`, before
+    [5. Repair Nav2 After the navigation2 Bump](../migrations/05-nav2-repair.md) put
+    `velocity_smoother` and `collision_monitor` into the command path and raised the local
+    costmap `inflation_radius` to 0.35 m. The results below describe the old command path,
+    on which the collision monitor did not act, so Nav2 also drove in the default world
+    without `/scan`.
 
     | Test | Result |
     | --- | --- |
     | Default world, goal on `/goal_pose` (x 1.5 m, y 1.0 m, yaw 90 degrees), as RViz **2D Goal Pose** sends it | `bt_navigator` logged `Goal succeeded` |
     | Default world, `NavigateToPose` action goal (x -1.0 m, y -0.5 m, yaw 0) | `SUCCEEDED`, 0.04 m from the target in the ground truth |
-    | Wall world: an 8 m by 8 m room with a 1.2 m wall segment at x = 1.5 m, between the start and the goal (3, 0) | `/scan` at about 27.8 Hz. The robot drove around the wall and reached the goal. The wall reaches 0.6 m to each side of the x axis; while passing it, the robot was 0.83 to 0.99 m from the x axis in the ground truth. Same result with `rmw_fastrtps_cpp`. The pose drift after this run is the one in the warning above. |
+    | Wall world: an 8 m by 8 m room with a 1.2 m wall segment at x = 1.5 m, between the start and the goal (3, 0) | `/scan` at about 27.8 Hz. The robot drove around the wall and reached the goal. The wall reaches 0.6 m to each side of the x axis; while passing it, the robot was 0.83 to 0.99 m from the x axis in the ground truth. Same result with `rmw_fastrtps_cpp`. After this run, the pose in the map was off by 0.22 m and 4.7 degrees. |
 
     Odometry against ground truth, with fixed twists on
     `/omni_wheel_drive_controller/cmd_vel`:
@@ -559,13 +619,11 @@ pixi run ros2 launch robot_bringup mujoco_omnibot.launch.py mujoco_model:=$PWD/d
 - The rules of [Build a custom world](#build-a-custom-world) still apply: the file sits in
   a directory directly under `description/`, includes the robot first, has a plane named
   `floor`, and has the four wheel-floor pairs.
-- `/scan` needs returns on both lidars, so the world needs geometry in front of and
-  behind the robot. A closed room works. The table example has geometry only in front of
-  the robot, so on its own it gives no `/scan`. See [Troubleshooting](#troubleshooting).
+- `/scan` is published in any world, also when one lidar sees nothing in range, as
+  behind the robot in the table example. That side reads as free space.
 
-For Nav2, pass the same argument to `nav_mujoco_omnibot.launch.py`. In a world that gives
-`/scan`, the blank default map works, because the costmaps get the obstacles from `/scan`.
-A map of your own, passed with
+For Nav2, pass the same argument to `nav_mujoco_omnibot.launch.py`. The blank default map
+works, because the costmaps get the obstacles from `/scan`. A map of your own, passed with
 `map:=`, must have its origin at the world origin: the robot starts there, and
 localization is odometry only.
 
@@ -675,11 +733,14 @@ pixi run python -m pytest description/test/test_mjcf.py
 | `/front_lidar` and `/back_lidar` do not exist | `ros2_control_node` was started without `bringup/config/mujoco/mujoco_plugins.yaml`, for example by hand | Use `mujoco_omnibot.launch.py`, or pass the file. See [The mujoco_plugins parameter file](#the-mujoco_plugins-parameter-file). |
 | `/front_lidar`, `/back_lidar` and `/scan` publish at about 28 Hz, not 40 Hz | Not known yet. [2.7 Launch Files and Nav2](../migrations/02-mujoco/07-launch.md) records a likely cause. | None yet |
 | Camera topics appear under `/mujoco_camera_plugin/...`, and their frames are not in TF | No `CameraPlugin` is configured, so the cameras register themselves (deprecated) | Use `mujoco_omnibot.launch.py`, or add the `mujoco_camera_plugin` entry of the parameter file |
-| No `/scan`, for example with the default world or the table example | `dual_laser_merger` publishes only when both lidars hit something. `scene.xml` has only a floor, and the table example has geometry only in front of the robot. | Expected. Nav2 still runs. For obstacles, use a world with geometry in front of and behind the robot, such as a closed room. See [Use a custom world with ROS 2](#use-a-custom-world-with-ros-2). |
+| No `/scan` | `dual_laser_merger` pairs `/front_lidar` and `/back_lidar` by time stamp and publishes nothing while one of them is missing. It also publishes nothing when it cannot transform a scan into `merged_lidar_link` (`Transform failure` in its log). A merger started outside `mujoco_omnibot.launch.py` without `publish_on_empty_cloud: True` publishes nothing while a lidar has no return in range, as in the default world. | Check both lidar topics with `pixi run ros2 topic hz /front_lidar` and `/back_lidar`; if one is missing, see the row on missing lidar topics above. Start the merger through `mujoco_omnibot.launch.py`. |
+| The robot does not move under Nav2. `collision_monitor` logs `Robot to stop due to invalid source`, and `controller_server` repeats `Failed to make progress`. | `collision_monitor` stops every Nav2 command while `/scan` has had no data for 2 s or its transform fails | Get `/scan` publishing again. See the row above. |
+| The robot stays stopped next to an obstacle under Nav2. Goals abort with `Failed to make progress`. | The robot is boxed in, so the stop polygon of every direction Nav2 tries holds points, or `/scan` has points of the robot or noise inside a stop polygon | Drive the robot out on `/cmd_vel_key` or `/cmd_vel_joy`. See [Drive with Nav2 and RViz](#drive-with-nav2-and-rviz) and [Troubleshooting](../troubleshooting.md#nav2-stuck-after-a-stop). |
 | With `nav_mujoco_omnibot.launch.py`, Ctrl+C takes about 15 s and prints red `failed to terminate` and `process has died ... exit code -9` lines | `planner_server` and `controller_server`, sometimes `smoother_server`, do not exit on SIGINT or SIGTERM, so launch kills them with SIGKILL. Same with Fast DDS. | Harmless. Wait for the launch to exit. |
 | `walkie_tf_server` prints a traceback with `RCLError` and `rcl_shutdown already called` on Ctrl+C | `tools/walkie_tf/walkie_tf/tf_server_node.py` calls `rclpy.shutdown()` after the context is already shut down | Harmless. The bug predates the MuJoCo launch files. |
 | Nav2 hangs at `Waiting for service smoother_server/get_state...` | The composed Nav2 bringup can deadlock on Jazzy | Use `nav_mujoco_omnibot.launch.py`, which runs each server as its own process. With `nav2_bringup` directly, pass `use_composition:=False`. See [Navigation: Nav2 bringup hangs at smoother_server/get_state](navigation.md#nav2-composition-deadlock). |
-| `controller_server` logs `Can not get 'plugin' param value for FollowPath.Omni` and `Failed to load motion model plugin 'Omni'`, and `lifecycle_manager_nav2` aborts the bringup | The Nav2 fork loads MPPI motion models as plugins. The `robot_navigation` parameter files do not set `FollowPath.Omni.plugin`. | Use `nav_mujoco_omnibot.launch.py`, which adds `FollowPath.Omni.plugin: "mppi::OmniMotionModel"`. The Gazebo and real-robot Nav2 launch files fail the same way until the parameter files are fixed. See [Navigation](navigation.md#known-issues). |
-| Nav2 repeats `inflation radius (0.250000) is smaller than the circumscribed radius (0.313249)` errors | A value in the Nav2 parameter file, not MuJoCo | None needed in MuJoCo: the robot still reaches its goals |
-| The first goal logs `Failed to make progress` after the initial spin | The progress checker wants 0.5 m of movement within 4 s | None needed. The behavior tree recovers. |
-| RViz shows the robot at the goal, but `/mujoco_ground_truth/odom` is off, for example by 0.22 m after a 3 m run | Odometry-only localization drifts | Expected. See [Drive with Nav2 and RViz](#drive-with-nav2-and-rviz). |
+| `controller_server` logs `Can not get 'plugin' param value for FollowPath.Omni` and `Failed to load motion model plugin 'Omni'`, and `lifecycle_manager_nav2` aborts the bringup | The file passed with `params_file:=` sets `motion_model: "Omni"` without `FollowPath.Omni.plugin`. navigation2 (upstream main) loads MPPI motion models as plugins. The `robot_navigation` parameter files set the key. | Add `Omni: plugin: "mppi::OmniMotionModel"` under `FollowPath` in your file. See [Navigation](navigation.md#mppi-omni-motion-model-plugin). |
+| Nav2 repeats `The inflation radius (...) is smaller than the circumscribed radius (...)` errors | The local costmap `inflation_radius` in the file passed with `params_file:=` is smaller than the circumscribed radius of the footprint. Not a MuJoCo issue. | Set it to at least the circumscribed radius. `nav2_mppi_walkie_sim_params.yaml` uses 0.35 m (circumscribed radius 0.313 m). |
+| A goal logs `Failed to make progress` once or twice, for example during the slow final approach, and is still reached | The progress checker wants 0.5 m of movement within 8 s | None needed. The behavior tree retries, and the goal is reached. |
+| A goal aborts with error 103, `Resulting plan has 0 poses in it` | The robot is already at the goal by odometry | None needed. The ground truth pose can still be off by the odometry drift. |
+| RViz shows the robot at the goal, but `/mujoco_ground_truth/odom` is off, for example by 0.17 to 0.43 m after one or two goals | Odometry-only localization drifts | Expected. See [Drive with Nav2 and RViz](#drive-with-nav2-and-rviz). |

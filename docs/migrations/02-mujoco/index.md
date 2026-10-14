@@ -281,7 +281,7 @@ For day-to-day use, see the [MuJoCo Simulation guide](../../guides/simulation-mu
 | Issue | Effect | Workaround |
 | --- | --- | --- |
 | MoveIt with MuJoCo not run | The launch files start the runtime and Nav2 ([2.7](07-launch.md)), but MoveIt with `hardware_type:=mujoco` has not been run against them | Use Gazebo for MoveIt |
-| Launch and Nav2 issues | Odometry drift in the map, no `/scan` on the empty floor, and other issues of the launch files | See [2.7 Launch Files and Nav2: Known issues](07-launch.md#known-issues) |
+| Launch and Nav2 issues | Odometry drift in the map, no `/scan` on the empty floor, and other issues of the launch files. Update 2026-10-14: `/scan` on the empty floor is fixed in [entry 5](../05-nav2-repair.md#scan-in-the-empty-mujoco-world). | See [2.7 Launch Files and Nav2: Known issues](07-launch.md#known-issues) |
 | Wheel radius mismatch | Drives about 1.5 % and turns about 2.4 % slower than commanded | None. The drive test tolerances (3 % and 4 %) allow for it. |
 | `base_footprint` below the floor | It rests at z = -0.0062 m | None |
 | Wheel speed limits disagree | ros2_control: ±3.14 rad/s. MJCF actuators: ±100 rad/s. | Replace the URDF placeholder `velocity="100"` with the real motor limit, then `pixi run mjcf` |

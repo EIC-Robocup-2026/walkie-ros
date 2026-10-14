@@ -22,7 +22,7 @@ first.
       home pose over 5 s after their controllers start. The head goes to
       0.25 rad.
     - **The joystick overrides Nav2.** Priority 100 beats Nav2's 10. Button 0
-      cancels Nav2 goals.
+      cancels Nav2 goals. Joystick commands do not pass the collision monitor.
 
     The lift has more limits that affect safety. See
     [Known issues](#known-issues).
@@ -155,12 +155,45 @@ Then start each step in its own terminal, in this order:
   the same value as in `real_omnibot.launch.py`.
 - Under pixi, step 3 stops with `package not found`. See
   [Packages that pixi does not provide](#packages-that-pixi-does-not-provide).
+- Step 4 is ready when `lifecycle_manager_nav2` logs `Managed nodes are active`.
+  `localization_Nav2_real.launch.py` and `mapping_Nav2_real.launch.py` start
+  this manager themselves, because the `nav2_bringup` files they include no
+  longer do. Without it, every Nav2 node waits with
+  `Waiting on external lifecycle transitions to activate` (see
+  [Troubleshooting](../troubleshooting.md#nav2-nodes-stay-unconfigured)).
+- Step 4 needs the Zenoh settings above. Under Fast DDS, `controller_server`
+  fails to configure (see
+  [Troubleshooting](../troubleshooting.md#nav2-voxel-grid-incompatible-type)).
 
-!!! warning "Step 4 stops during bringup with the current parameter files"
-    No MPPI parameter file in `robot_navigation` sets `FollowPath.Omni.plugin`, so
-    `controller_server` fails to configure and Nav2 stops. Add the key to
-    `nav2_mppi_walkie_real_param.yaml`, as shown in
-    [Navigation: controller_server cannot load the Omni motion model](navigation.md#mppi-omni-motion-model-plugin).
+!!! warning "Step 4: the collision monitor now stops and slows the robot"
+    Nav2 commands now pass the velocity smoother and the collision monitor
+    before `twist_mux`. Before
+    [5. Repair Nav2 After the navigation2 Bump](../migrations/05-nav2-repair.md),
+    both were bypassed.
+
+    - **Stop and slow down:** 4 or more points of `/scan` or
+      `/unilidar/cloud/filtered` in the stop polygon of the commanded
+      direction stop the robot. The polygon covers the footprint faces that
+      lead in that direction, up to 0.35 m from the base center, so Nav2 can
+      still drive away from the obstacle. Within 0.55 m the robot moves at
+      40 %. If it is boxed in, drive it out with the joystick. See
+      [Navigation: Collision monitor](navigation.md#collision-monitor).
+    - **No `/scan`:** if one lidar stops publishing, or has no valid return in
+      any direction (covered, faulty, or nothing within its range), the merger
+      drops `/scan`. The real robot keeps the
+      merger default (`publish_on_empty_cloud: false`) on purpose.
+    - **No 3D lidar:** with `use_unitree_lidar:=false`, the
+      `/unilidar/cloud/filtered` source has no data.
+    - Both missing-data cases stop every Nav2 command after 2 s
+      (`Robot to stop due to invalid source`).
+    - **Speed limit:** the velocity smoother caps Nav2 at 0.3 m/s and 1.0 rad/s.
+
+    None of this has been tested on the real robot. The robot runs the Docker
+    image built from `main`, so it gets this behavior, and the other Nav2
+    fixes on this page, only after they are merged into `main`.
+
+    To find the cause of a stop, see
+    [The robot stops or slows near obstacles under Nav2](../troubleshooting.md#nav2-robot-stops-near-obstacles).
 
 ??? info "Which bringup step needs which"
     ```mermaid
@@ -376,6 +409,9 @@ For the fix under pixi, see
 `bringup/config/twist_mux/twist_mux.yml` as the simulation. The input
 priorities, timeouts, and joystick controls are in
 [Gazebo Simulation: Drive the robot](simulation-gazebo.md#driving-the-robot).
+Nav2 commands reach `/cmd_vel_nav` through the velocity smoother and the
+collision monitor (see
+[Navigation: Velocity command path](navigation.md#velocity-command-path)).
 
 ## ZED watchdog
 
@@ -518,7 +554,6 @@ lidar network. The Lakibeam `hostip` in
 | `scripts/setup_device/` still has the older single-device setup scripts. | They and `setup_device.sh` overwrite or uninstall each other's files. | Use only `setup_all_device.sh`. |
 | `scripts/tmux_walkie.sh` and `.tmuxp.yaml` are out of date. | The pane commands run outside pixi and without the Zenoh settings. | Run the commands from [Start the robot](#bringup-order) by hand. |
 | `scripts/bringup/real_slam_nav.sh` launches a file that does not exist. | The script fails. | Use `localization_Nav2_real.launch.py`. See [Navigation](navigation.md). |
-| The MPPI parameter files in `robot_navigation` do not set `FollowPath.Omni.plugin`. | `controller_server` fails to configure, and Nav2 (step 4) stops during bringup. | Add `plugin: "mppi::OmniMotionModel"` under `FollowPath.Omni`. See [Navigation](navigation.md#mppi-omni-motion-model-plugin). |
 | `scripts/setup_env.sh` is an old pixi activation hook. | Nothing uses it. `pixi.toml` activates `install/setup.bash`. | Ignore it. |
 
 ??? info "Why the lift node takes `can2` down"

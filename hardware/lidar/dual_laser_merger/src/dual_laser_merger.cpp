@@ -84,6 +84,7 @@ void MergerNode::declare_param()
   allowed_radius_param = this->declare_parameter("allowed_radius", 1.0);
   enable_shadow_filter_param = this->declare_parameter("enable_shadow_filter", false);
   enable_average_filter_param = this->declare_parameter("enable_average_filter", false);
+  publish_on_empty_cloud_param = this->declare_parameter("publish_on_empty_cloud", false);
 }
 
 void MergerNode::refresh_param()
@@ -109,6 +110,7 @@ void MergerNode::refresh_param()
   this->get_parameter("allowed_radius", allowed_radius_param);
   this->get_parameter("enable_shadow_filter", enable_shadow_filter_param);
   this->get_parameter("enable_average_filter", enable_average_filter_param);
+  this->get_parameter("publish_on_empty_cloud", publish_on_empty_cloud_param);
 }
 
 void MergerNode::sub_callback(
@@ -207,14 +209,21 @@ void MergerNode::sub_callback(
     pcl::fromROSMsg(cloud_in_1, pcl_cloud_in_1);
     pcl::fromROSMsg(cloud_in_2, pcl_cloud_in_2);
 
-    if (pcl_cloud_in_1.points.empty() || pcl_cloud_in_2.points.empty()) {
+    // A lidar with no valid return gives an empty cloud: either nothing is in
+    // range (open space, an empty simulated world) or the lidar is covered or
+    // faulty. By default no scan is published, so consumers such as Nav2's
+    // collision_monitor see a missing scan and stop the robot. With
+    // publish_on_empty_cloud, the empty side is published as free space.
+    if (!publish_on_empty_cloud_param &&
+      (pcl_cloud_in_1.points.empty() || pcl_cloud_in_2.points.empty()))
+    {
       return;
     }
 
     pcl_cloud_out = pcl_cloud_in_1;
     pcl_cloud_out += pcl_cloud_in_2;
 
-    if(enable_shadow_filter_param) {
+    if(enable_shadow_filter_param && !pcl_cloud_out.points.empty()) {
       allowed_radius_scaled = allowed_radius_param / range_max_param;
       kdtree.setInputCloud(pcl_cloud_out.makeShared());
 

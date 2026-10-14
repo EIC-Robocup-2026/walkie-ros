@@ -30,6 +30,14 @@ read [MuJoCo Simulation: Run with ROS 2](../../guides/simulation-mujoco.md#run-w
     lifecycle manager aborts the bringup. Only the MuJoCo launch adds the key. See
     [MPPI motion models are plugins now](#mppi-motion-models-are-plugins-now).
 
+!!! note "Update 2026-10-14: fixed in entry 5"
+    All MPPI parameter files now set `FollowPath.Omni.plugin`, so the missing key no
+    longer stops the Gazebo and real-robot Nav2 launches. See
+    [5. Repair Nav2 After the navigation2 Bump](../05-nav2-repair.md). Gazebo itself was
+    not run. The real-robot and mapping launches start under `rmw_zenoh_cpp`, but under
+    Fast DDS they still fail on a separate problem
+    ([5. Repair Nav2 After the navigation2 Bump: Still open](../05-nav2-repair.md#still-open)).
+
 ## Start the simulation
 
 ```bash
@@ -60,7 +68,8 @@ All files are new in the `robot_bringup` package, except `package.xml`.
 | `bringup/package.xml` | Run dependencies of the new launch files |
 
 ??? info "Branch, and the dependencies added to package.xml"
-    The work is on the branch `feat/mujoco-launch`, based on `feat/Pixi` at `e8b6e92`.
+    The work is on the branch `feat/mujoco-launch` (pull request #43), based on
+    `feat/Pixi` at `e8b6e92` and rebased onto `feat/Pixi` at `dfc3909` on 2026-10-14.
     `feat/Pixi` already contains the MuJoCo, documentation and RoboStack `_25` pull
     requests (#35, #36 and #38), merged on 2026-10-13.
 
@@ -156,6 +165,13 @@ lists their defaults.
 | `use_keepout_zones`, `use_speed_zones` | `False` | |
 | `autostart` | `True` | |
 | `use_composition` | `False` | Each Nav2 server runs as its own process, see [Composition deadlock](#composition-deadlock) |
+
+!!! note "Update 2026-10-14: changed in entry 5"
+    The `RewrittenYaml` step is gone: the parameter files set the plugin key, so
+    `params_file` is passed straight through. The include is now wrapped in
+    `SetRemap(cmd_vel -> cmd_vel_controller)`, so Nav2 commands pass the velocity
+    smoother and the collision monitor before `twist_mux`. See
+    [5. Repair Nav2 After the navigation2 Bump](../05-nav2-repair.md#velocity-smoother-and-collision-monitor-bypassed).
 
 ## Expand the URDF in the launch file
 
@@ -256,6 +272,13 @@ as on the real robot.
     nothing. To test obstacle avoidance, use a world with walls or objects in front of and
     behind the robot.
 
+!!! note "Update 2026-10-14: changed in entry 5"
+    The merger has a new parameter, `publish_on_empty_cloud` (default `false`), which
+    `mujoco_omnibot.launch.py` sets to `true`. The merger then publishes `/scan` on the
+    empty floor; a lidar with no return in range reads as free space. The real robot keeps
+    the default. See
+    [5. Repair Nav2 After the navigation2 Bump](../05-nav2-repair.md#scan-in-the-empty-mujoco-world).
+
 ??? info "Merger parameters, the same as on the real robot"
     | Parameter | Value |
     | --- | --- |
@@ -304,6 +327,14 @@ from MuJoCo. The MuJoCo launch works around them but does not fix them.
 | --- | --- | --- |
 | [Composition deadlock](#composition-deadlock) | `use_composition: False` | `localization_Nav2_sim.launch.py`, which `nav_sim_omnibot.launch.py` includes for Gazebo, keeps composition and can hit the same race |
 | [MPPI motion models are plugins now](#mppi-motion-models-are-plugins-now) | `RewrittenYaml` adds `FollowPath.Omni.plugin` | The Gazebo and real-robot Nav2 launches fail to configure `controller_server` until the parameter files are fixed |
+
+!!! note "Update 2026-10-14: fixed in entry 5"
+    Both issues are fixed in the navigation repository: the MPPI parameter files set
+    `FollowPath.Omni.plugin`, and `localization_Nav2_sim.launch.py` passes
+    `use_composition:=False`. The same work found a third break from the bump:
+    `nav2_bringup`'s `navigation_launch.py` and `localization_launch.py` no longer start
+    a lifecycle manager. See
+    [5. Repair Nav2 After the navigation2 Bump](../05-nav2-repair.md).
 
 ### Composition deadlock
 
@@ -420,6 +451,13 @@ Not verified:
 | Nav2 log noise | Repeated inflation radius errors, and an occasional `Failed to make progress` abort | None needed. It comes from the parameter files, and the behavior tree recovers. |
 | RViz not checked by a person | The configs may need adjustment in use | Report problems |
 
+!!! note "Update 2026-10-14: fixed in entry 5"
+    The MPPI parameter files set the plugin key. The local inflation radius is no longer
+    below the circumscribed radius, so the inflation radius errors are gone. With
+    `publish_on_empty_cloud`, which `mujoco_omnibot.launch.py` now sets, the merger
+    publishes `/scan` on the empty floor. The `Failed to make progress` abort can still
+    occur. See [5. Repair Nav2 After the navigation2 Bump](../05-nav2-repair.md#scan-in-the-empty-mujoco-world).
+
 ??? info "Causes and measurements behind the known issues"
     - **Odometry scale.** The ratios were measured with fixed twists on
       `/omni_wheel_drive_controller/cmd_vel`. The translation factor equals 0.075 / 0.076. The MJCF wheel capsule radius comes from the URDF collision cylinder
@@ -439,7 +477,7 @@ Not verified:
     - **Nav2 log noise.** The errors read
       `inflation radius (0.250000) is smaller than the circumscribed radius (0.313249)`.
       The abort happens on the first `FollowPath` after the initial spin; the progress
-      checker requires 0.5 m within 4 s.
+      checker requires 0.5 m within 4 s ([entry 5](../05-nav2-repair.md) raised the allowance to 8 s).
 
 ## Still open
 
@@ -449,3 +487,8 @@ Not verified:
 - The composition deadlock in the Gazebo Nav2 launch.
 - MoveIt with MuJoCo, which has not been run.
 - A `right_joint2_fixed` launch argument, with a controller file to match.
+
+!!! note "Update 2026-10-14: done in entry 5"
+    The MPPI parameter files set the plugin key, so the `RewrittenYaml` step is gone,
+    and the Gazebo Nav2 launch runs without composition. See
+    [5. Repair Nav2 After the navigation2 Bump](../05-nav2-repair.md).

@@ -152,8 +152,11 @@ flowchart LR
     M --> W["/omni_wheel_drive_controller/cmd_vel"]
 ```
 
-Nav2 publishes on `/cmd_vel_nav`. A joystick on `/cmd_vel_joy` overrides Nav2.
-A command on `/cmd_vel` loses to Nav2.
+Nav2 commands reach `/cmd_vel_nav` through the velocity smoother and the
+collision monitor (see
+[Navigation: Velocity command path](navigation.md#velocity-command-path)). A
+joystick on `/cmd_vel_joy` overrides Nav2 and does not pass the collision
+monitor. A command on `/cmd_vel` loses to Nav2.
 
 ### With a joystick
 
@@ -184,27 +187,27 @@ keyboard source. A keyboard tool must publish `TwistStamped` on that topic.
 
 ## Run Gazebo with Nav2 { #gazebo-with-nav2 }
 
-!!! warning
-    The default simulation map is missing. Extract it and pass it with `map:=` as shown in [The simulation map](navigation.md#the-simulation-map).
-
-!!! warning "Nav2 stops during bringup with the current parameter files"
-    No MPPI parameter file in `robot_navigation` sets `FollowPath.Omni.plugin`, so
-    `controller_server` fails to configure and Nav2 stops. Add the key to
-    `nav2_mppi_walkie_sim_params.yaml`, as shown in
-    [Navigation: controller_server cannot load the Omni motion model](navigation.md#mppi-omni-motion-model-plugin).
-
-    The composed Nav2 bringup can also hang at
-    `Waiting for service smoother_server/get_state...`. Add `use_composition:=False` to the
-    command below. See
-    [Navigation: Nav2 bringup hangs at smoother_server/get_state](navigation.md#nav2-composition-deadlock).
-
 ```bash
-pixi run ros2 launch robot_bringup nav_sim_omnibot.launch.py map:=/tmp/sim_map/map.yaml
+pixi run ros2 launch robot_bringup nav_sim_omnibot.launch.py
 ```
 
+Nav2 loads the default simulation map. To localize and send goals, see
+[Navigation: Localize and send goals](navigation.md#localize-and-send-goals).
+
 ROS 2 launch arguments are global, so arguments of the included files also
-work here. For example, `map:=...` reaches `localization_Nav2_sim.launch.py`,
-and `use_rviz:=false` reaches `gzsim_omnibot.launch.py`.
+work here. For example, `map:=<full path>` reaches
+`localization_Nav2_sim.launch.py`, and `use_rviz:=false` reaches
+`gzsim_omnibot.launch.py`.
+
+!!! warning "The collision monitor does not stop the robot in Gazebo"
+    Nav2 commands pass through the collision monitor, but the simulated lidar
+    has a minimum range of 0.6 m. `/scan` therefore has no points within the
+    stop polygons (up to 0.35 m from the base center) or the slow-down circle
+    (0.55 m), and neither ever triggers. Only `FootprintApproach` slows the
+    robot, and only while an obstacle is still farther than 0.6 m from the
+    lidar. This follows from the configuration; it was not checked in
+    Gazebo. See
+    [Navigation: Collision monitor](navigation.md#collision-monitor).
 
 Prefer the pixi commands in
 [Middleware (Zenoh)](middleware.md#simulation-on-one-machine) over
@@ -218,7 +221,10 @@ starts a Zenoh router if none is running, but it has problems. See
     - `gzsim_omnibot.launch.py`, with `robot_model`, `ros2_control`, and
       `dual_lidar`
     - `robot_navigation`'s `localization_Nav2_sim.launch.py` (map server,
-      AMCL, and the Nav2 servers)
+      AMCL, and the Nav2 servers). It includes `nav2_bringup`'s
+      `bringup_launch.py` with `use_composition:=False`, so each Nav2 server
+      runs as its own process, and remaps the Nav2 `cmd_vel` output to
+      `/cmd_vel_controller`, the input of the velocity smoother.
     - `rosbridge_server`'s `rosbridge_websocket_launch.xml`
     - `current_pose_publisher.py`, which publishes the `map` to
       `base_footprint` transform on `current_pose` (`nav_msgs/msg/Odometry`)
@@ -229,6 +235,9 @@ starts a Zenoh router if none is running, but it has problems. See
     | `robot_model` | `<walkie_description share>/robots/gz_walkie.urdf.xacro` |
     | `ros2_control` | `gazebo` |
     | `dual_lidar` | `False` |
+
+    [5. Repair Nav2 After the navigation2 Bump](../migrations/05-nav2-repair.md)
+    explains the composition and remap settings.
 
 ## Move the head and other controllers { #controllers }
 
@@ -286,8 +295,9 @@ pixi run ros2 run controller_manager spawner head_servo_controller
 
 Keep the default `dual_lidar:=False`. The simulation then uses one 360° lidar,
 bridged to `/scan`. The real robot has two lidars, but one is faster to
-simulate. With `dual_lidar:=True`, no lidar is bridged and Nav2 has no `/scan`
-(see [Known issues](#known-issues)).
+simulate. With `dual_lidar:=True`, no lidar is bridged and Nav2 has no `/scan`,
+so the collision monitor stops every Nav2 command (see
+[Known issues](#known-issues)).
 
 ??? info "Lidar placement and range"
     | `dual_lidar` | Lidar links | Coverage | Range | Result |
@@ -296,6 +306,11 @@ simulate. With `dual_lidar:=True`, no lidar is bridged and Nav2 has no `/scan`
     | `True` | `front_lidar_link` and `back_lidar_link`, 0.235 m in front of and behind the center | ±120° each | 0.18 to 10 m | Not bridged. No `/scan`. |
 
     Both variants publish at 40 Hz with 360 samples per scan.
+
+    The 0.6 m minimum range of the single lidar is larger than the reach of
+    the collision monitor's stop polygons (0.35 m) and slow-down circle
+    (0.55 m). See
+    [Run Gazebo with Nav2](#gazebo-with-nav2).
 
 ### Bridged topics
 
@@ -377,10 +392,7 @@ scene is not in this repository.
 | Effect | Cause | Workaround |
 | --- | --- | --- |
 | On a computer with a system ROS 2 Jazzy, Gazebo can load a system build of `libgz_ros2_control-system.so` and crash with a segmentation fault | The launch files set the plugin path to `/opt/ros/jazzy/lib/` and replace the value that pixi sets | Remove the `SetEnvironmentVariable` action for `GZ_SIM_SYSTEM_PLUGIN_PATH` from `gzsim_omnibot.launch.py` and `world_preview_gz.launch.py`. See also [Gazebo problems only on computers with a system ROS](../troubleshooting.md#gazebo-problems-only-on-computers-with-a-system-ros). |
-| `nav_sim_omnibot.launch.py` cannot load its map | Default map is missing at the pinned map commit | Pass `map:=`. See [The simulation map](navigation.md#the-simulation-map). |
-| `controller_server` fails to configure, and Nav2 stops during bringup | The MPPI parameter files do not set `FollowPath.Omni.plugin`, which the Nav2 fork requires | Add `plugin: "mppi::OmniMotionModel"` under `FollowPath.Omni`. See [Navigation](navigation.md#mppi-omni-motion-model-plugin). |
-| Nav2 hangs at `Waiting for service smoother_server/get_state...` | `localization_Nav2_sim.launch.py` keeps the composed bringup, which can deadlock on Jazzy | Pass `use_composition:=False`. See [Navigation](navigation.md#nav2-composition-deadlock). |
-| No `/scan` with `dual_lidar:=True`, so Nav2 has no laser data | Bridge entries commented out, no laser merger | Keep the default `dual_lidar:=False` |
+| No `/scan` with `dual_lidar:=True`, so Nav2 has no laser data and the collision monitor stops every Nav2 command | Bridge entries commented out, no laser merger | Keep the default `dual_lidar:=False` |
 | `robot_preview_rviz.launch.py` and `robot_preview_lift_rviz.launch.py` fail with `name 'true' is not defined` | `robot_state_publisher.launch.py` defaults `dual_lidar` to `true`, which the xacro cannot evaluate in `gazebo` mode | Pass `dual_lidar:=False` (or `True`) on the command line |
 | `/gazebo_ground_truth/odom` gets no data | Bridge reads `/model/my_bot/pose`, model is `walkie_bot` | None in the repository |
 | `/bottom_depth/camera_info` gets no data | Bridge reads the wrong Gazebo topic | None in the repository |
@@ -403,8 +415,6 @@ scene is not in this repository.
       in the repository yet. With the value that pixi sets, Gazebo with
       `gz_ros2_control` worked headless on build set `_25`, started by a test
       script rather than these launch files.
-    - **Simulation map.** The default map of `localization_Nav2_sim.launch.py`
-      is missing at the map commit that the `navigation` submodule pins.
     - **Dual lidar.** With `dual_lidar:=True`, the `front_lidar` and
       `back_lidar` entries in `gz_bridge.yaml` are commented out, and no laser
       merger runs in simulation.
@@ -439,5 +449,7 @@ scene is not in this repository.
 | Closing RViz stops Gazebo | `rviz.launch.py` emits a shutdown when RViz exits | Use `use_rviz:=false` and start RViz separately |
 | The robot does not move with `ros2 topic pub` | Message type is `Twist`, or it was published once | Publish `TwistStamped` with `-r 10` |
 | The robot ignores `joy_control.launch.py` while Nav2 runs | `/cmd_vel` has a lower priority than `/cmd_vel_nav` | Use `joy_control_smooth.launch.py` |
+| Under Nav2, the robot slows down before obstacles | `FootprintApproach` in the collision monitor. The stop polygons and the slow-down circle never trigger in Gazebo, because the lidar's minimum range is 0.6 m. | Expected. See [Run Gazebo with Nav2](#gazebo-with-nav2). |
+| Under Nav2, the robot does not move at all | The collision monitor stops on an invalid source, for example with `dual_lidar:=True` (no `/scan`) | See [The robot stops or slows near obstacles under Nav2](../troubleshooting.md#nav2-robot-stops-near-obstacles). |
 | `/bottom_rgb/...` topics have no data | World is not named `default` (for example `obstacle_gz.world`) | Use a world named `default` |
 | No lidar or camera data in `PlainWorld.world` | The world loads no Sensors system | Use another world |
