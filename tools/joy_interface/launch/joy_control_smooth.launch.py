@@ -18,8 +18,8 @@ def generate_launch_description():
 
     declare_dev = DeclareLaunchArgument(
         'dev',
-        default_value='/dev/input/js1',
-        description='Path to joystick device (e.g. /dev/input/js1)'
+        default_value='/dev/input/js2',
+        description='Path to joystick device (e.g. /dev/input/js2'
     )
     declare_max_linear_vel = DeclareLaunchArgument(
         'max_linear_vel',
@@ -76,7 +76,7 @@ def generate_launch_description():
             {'turbo_angular_multiplier': turbo_angular_multiplier},
         ]
     )
-    
+
     return LaunchDescription([
         declare_dev,
         declare_max_linear_vel,
