@@ -31,6 +31,8 @@ pixi run ros2 run rmw_zenoh_cpp rmw_zenohd          # one Zenoh router per machi
 
 pixi run ros2 launch robot_simulation gzsim_omnibot.launch.py     # Gazebo
 pixi run ros2 launch robot_bringup nav_sim_omnibot.launch.py      # Gazebo + Nav2
+pixi run ros2 launch robot_bringup mujoco_omnibot.launch.py       # MuJoCo + controllers + RViz [headless:=true]
+pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py   # MuJoCo + Nav2 (blank map, odometry-only, no AMCL)
 pixi run ros2 launch robot_bringup real_omnibot.launch.py         # real robot
 pixi run ros2 launch robot_bringup lift_homing.launch.py [mock:=true]
 
@@ -79,7 +81,9 @@ New pages must be added to `nav` in `mkdocs.yml`. Admonition bodies are indented
 
 **ros2_control**: All actuators go through ros2_control. The mode is the xacro arg `ros2_control` in `description/robots/gz_walkie.urdf.xacro` (`real_robot`, `mock`, `gazebo`, `topic_base`, `mujoco`); each mode pairs with a YAML in `description/config/ros2_controller/` (`real_controllers.yaml`, `sim_controllers.yaml`, `isaac_controllers.yaml`, `mujoco_controllers.yaml`). The joint state broadcaster is named `joint_broad`. Omni base: `omni_wheel_drive_controller`, `robot_radius` 0.185.
 
-**MuJoCo**: `description/scripts/build_mjcf.py` expands the xacro with `ros2_control:=mujoco` and applies an MjSpec overlay. Omni wheels are capsules with explicit `<pair>` contacts against a plane floor named `floor` (anisotropic friction only works capsule-vs-plane). Collisions are off per geom via contype/conaffinity classes; never use the global `contact="disable"` flag (it also disables the wheel pairs). The ros2_control runtime, `mujoco_ros2_control` 0.1.2, is in the pixi lock (`mujoco = "3.15.*"` must match its `mujoco_vendor`); it runs as its own `ros2_control_node` (package `mujoco_ros2_control`), and no launch file exists yet. See `docs/migrations/02-mujoco/`.
+**MuJoCo**: `description/scripts/build_mjcf.py` expands the xacro with `ros2_control:=mujoco` and applies an MjSpec overlay. Omni wheels are capsules with explicit `<pair>` contacts against a plane floor named `floor` (anisotropic friction only works capsule-vs-plane). Collisions are off per geom via contype/conaffinity classes; never use the global `contact="disable"` flag (it also disables the wheel pairs). The ros2_control runtime, `mujoco_ros2_control` 0.1.2, is in the pixi lock (`mujoco = "3.15.*"` must match its `mujoco_vendor`); it runs as its own `ros2_control_node` (package `mujoco_ros2_control`), started by `bringup/launch/mujoco_omnibot.launch.py` (Nav2: `nav_mujoco_omnibot.launch.py`). Camera and lidar plugin parameters are in `bringup/config/mujoco/mujoco_plugins.yaml`. See `docs/migrations/02-mujoco/`.
+
+**Nav2 fork**: no `robot_navigation` MPPI parameter file sets `FollowPath.Omni.plugin` (`mppi::OmniMotionModel`, required since the navigation2 bump), so every Nav2 launch except `nav_mujoco_omnibot.launch.py` (adds it via `RewrittenYaml`) fails to configure `controller_server`. Composed `bringup_launch.py` can deadlock on Jazzy; use `use_composition:=False`. See `docs/guides/navigation.md`.
 
 **Lift homing**: `bringup/scripts/lift_homing_node.py` homes against the upper hard stop (current spike), then shapes commands with a software trapezoidal trajectory. `lift_homing_mock_node.py` provides the topics without CAN but not the `follow_joint_trajectory` action.
 

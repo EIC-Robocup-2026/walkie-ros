@@ -9,6 +9,13 @@ guide to run navigation in simulation or on the robot, and to send goals.
     `--recurse-submodules`, or run `git submodule update --init --recursive`
     after cloning.
 
+!!! warning "Nav2 stops during bringup with the current parameter files"
+    No MPPI parameter file in `config/nav2/` sets `FollowPath.Omni.plugin`, so
+    `controller_server` fails to configure. This breaks the Gazebo, real robot,
+    mapping, and loopback launches. Only `nav_mujoco_omnibot.launch.py` works
+    around it. See
+    [controller_server cannot load the Omni motion model](#mppi-omni-motion-model-plugin).
+
 ## Navigate in simulation { #localization-and-mapping-in-simulation }
 
 ### The simulation map
@@ -91,6 +98,30 @@ file, so `/navigate_to_object` is not available in loopback mode.
     `nav2_mppi_walkie_loopback_params.yaml`, which uses plain `Twist`
     everywhere. RViz opens by default (`use_rviz:=true`) with `nav2_bringup`'s
     `nav2_default_view.rviz`.
+
+## Navigate in MuJoCo
+
+```bash
+pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py
+```
+
+This starts the MuJoCo simulation and Nav2 on a blank 20 m x 20 m map
+(`bringup/config/map/empty_floor.yaml`). Send a goal with the **2D Goal Pose**
+tool in RViz. The setup, the launch arguments, and custom worlds are in
+[MuJoCo Simulation: Drive with Nav2 and RViz](simulation-mujoco.md#drive-with-nav2-and-rviz).
+
+- There is no AMCL. A static identity transform from `map` to `odom` makes the
+  wheel odometry the robot pose in the map. The robot must start at the world
+  origin, and the map origin must match the world origin. The pose drifts as
+  the odometry drifts.
+- Nav2 uses `nav2_mppi_walkie_sim_params.yaml`, the same file as Gazebo. The
+  launch file works around both Nav2 fork issues in
+  [Known issues](#known-issues): it adds `FollowPath.Omni.plugin` to a
+  temporary copy of the file, and it starts Nav2 with
+  `use_composition:=False`.
+- `nav_commander` is not started, so `/navigate_to_object` and the RViz
+  **Publish Point** tool (`/clicked_point`) have no effect. Send goals with
+  **2D Goal Pose** or as `NavigateToPose` action goals.
 
 ## Localization and mapping on the real robot
 
@@ -175,7 +206,8 @@ explicitly:
 `nav_commander.py` turns an object position (`obj_x`, `obj_y` in the `map`
 frame) into a Nav2 goal in front of the object. It finds the table edge in the
 local costmap and drives to a pose that faces the edge. The localization and
-mapping launch files start it, except the loopback one.
+mapping launch files start it, except the loopback one and
+`nav_mujoco_omnibot.launch.py`.
 
 ```bash
 pixi run ros2 action send_goal /navigate_to_object robot_navigation/action/NavigateToObject \
@@ -249,13 +281,14 @@ Joystick and keyboard topics (priority 100) override Nav2. See
 
 ## Nav2 configuration
 
-To try another parameter file, pass it with `nav2_config:=<full path>`. The
-files are in `navigation/walkie-navigation/config/nav2/`.
+To try another parameter file, pass it with `nav2_config:=<full path>`
+(`params_file:=<full path>` for `nav_mujoco_omnibot.launch.py`). The files are
+in `navigation/walkie-navigation/config/nav2/`.
 
 ??? info "Which launch file uses which parameter file"
     | File in `config/nav2/` | Used by |
     | --- | --- |
-    | `nav2_mppi_walkie_sim_params.yaml` | `localization_Nav2_sim.launch.py` |
+    | `nav2_mppi_walkie_sim_params.yaml` | `localization_Nav2_sim.launch.py`, `nav_mujoco_omnibot.launch.py` |
     | `nav2_mppi_walkie_real_param.yaml` | `localization_Nav2_real.launch.py` |
     | `nav2_mppi_walkie_real_restaurant_param.yaml` | `mapping_Nav2_real.launch.py` |
     | `nav2_mppi_walkie_loopback_params.yaml` | `nav2_loopback.launch.py` |
@@ -387,8 +420,8 @@ footprint of furniture, which helps when drawing keepout zones.
 ??? info "Nav2 on behaviortree_cpp 4.10"
     Since [4. Move to RoboStack Build Set _25](../migrations/04-robostack-build-25.md),
     the pixi environment has `behaviortree_cpp` 4.10.0 (it was 4.9.1). All
-    Nav2 packages build against it. A Nav2 run in simulation, with
-    `bt_navigator` on 4.10.0, has not been tested yet.
+    Nav2 packages build against it. On 2026-10-13, `bt_navigator` on 4.10.0
+    completed navigation goals in MuJoCo (`nav_mujoco_omnibot.launch.py`).
 
 ??? info "Why the Jazzy release of Nav2 is not enough"
     The custom behavior tree plugins in `robot_navigation` need this build.
@@ -436,6 +469,7 @@ launch files are in `launch/`, the Nav2 parameter files and behavior trees in
     | `nav2_loopback.launch.py` | `robot_navigation` | Nav2 with the loopback simulator, no physics |
     | `slam_cartographer.launch.py` | `robot_navigation` | Cartographer. Does not run. |
     | `nav_sim_omnibot.launch.py` | `robot_bringup` | Gazebo plus `localization_Nav2_sim.launch.py` |
+    | `nav_mujoco_omnibot.launch.py` | `robot_bringup` | MuJoCo plus Nav2 on a blank map, with odometry-only localization (no AMCL) |
     | `dual_lidar_hokuyo_lakibeam.launch.py` | `robot_bringup` | Real lidar drivers and merger. Started by `real_omnibot.launch.py`. |
     | `octomap_3d_mapping.launch.py` | `robot_bringup` | 3D OctoMap during mapping. Does not start under pixi. |
 
@@ -496,6 +530,8 @@ launch files are in `launch/`, the Nav2 parameter files and behavior trees in
 
 | Issue | Effect | Workaround |
 | --- | --- | --- |
+| The MPPI parameter files do not set `FollowPath.Omni.plugin` | `controller_server` fails to configure, and Nav2 stops during bringup. Affects every launch except `nav_mujoco_omnibot.launch.py`. | Add the key to the parameter file ([details](#mppi-omni-motion-model-plugin)) |
+| `bringup_launch.py` runs all Nav2 servers on one thread when composed | Bringup can hang at `Waiting for service smoother_server/get_state...` | `use_composition:=False` ([details](#nav2-composition-deadlock)) |
 | Default simulation map is missing | Nav2 in simulation and loopback cannot load its map | Extract the map and pass `map:=` ([The simulation map](#the-simulation-map)) |
 | Collision monitor and velocity smoother are bypassed | The collision monitor's stop and slow-down zones never act | None in the repository. The topic wiring in the parameter files needs a fix. |
 | `slam_toolbox.launch.py` ignores the Walkie parameters | SLAM Toolbox runs with its own defaults and `use_sim_time: true` | Run `online_sync_launch.py` with `slam_params_file:=` ([Mapping in simulation](#mapping-in-simulation)) |
@@ -538,6 +574,78 @@ launch files are in `launch/`, the Nav2 parameter files and behavior trees in
       `_21` and `_25`. `bt_navigator` is not affected, because the behavior
       tree action server always sets `cancel_timeout`. The fix is to set
       `cancel_timeout` in the test fixture of the Nav2 fork.
+
+### controller_server cannot load the Omni motion model { #mppi-omni-motion-model-plugin }
+
+`controller_server` fails to configure, `lifecycle_manager_nav2` aborts the
+bringup, and the log shows:
+
+```text
+Can not get 'plugin' param value for FollowPath.Omni
+Failed to load motion model plugin 'Omni'
+```
+
+Add the plugin key under `FollowPath` in the MPPI parameter file:
+
+```yaml title="config/nav2/nav2_mppi_walkie_sim_params.yaml"
+controller_server:
+  ros__parameters:
+    FollowPath:
+      motion_model: "Omni"
+      Omni:
+        plugin: "mppi::OmniMotionModel"
+```
+
+- Every MPPI file in `config/nav2/` sets `motion_model: "Omni"` without this
+  key. The Gazebo, real robot, mapping, and loopback launches use these
+  files, so all of them fail until the files are fixed.
+- The files are in the `navigation` submodule, so the fix is a commit in the
+  `navigation` repository (see
+  [Project Structure](../reference/project-structure.md#git-submodules)).
+- `nav_mujoco_omnibot.launch.py` works without the fix. It adds the key to a
+  temporary copy of the file with `nav2_common`'s `RewrittenYaml`.
+
+??? info "Why the Omni motion model needs a plugin key"
+    The `navigation` submodule moved its Nav2 fork to upstream `main` on
+    2026-10-08 (`navigation` commit `02a697a`). Since upstream PR
+    [#6076](https://github.com/ros-navigation/navigation2/pull/6076), MPPI
+    loads its motion models as plugins: `motion_model` names a plugin, and
+    `<name>.plugin` gives its class. The parameter files were written before
+    this change and set only `motion_model`.
+
+### Nav2 bringup hangs at smoother_server/get_state { #nav2-composition-deadlock }
+
+Nav2 never becomes active, and the log repeats:
+
+```text
+Waiting for service smoother_server/get_state...
+```
+
+Start Nav2 without composition: pass `use_composition:=False` to
+`nav2_bringup`'s `bringup_launch.py`. Each Nav2 server then runs as its own
+process. `nav_mujoco_omnibot.launch.py` does this.
+
+- `bringup_launch.py` defaults to `use_composition:=True`.
+  `localization_Nav2_sim.launch.py`, which `nav_sim_omnibot.launch.py`
+  includes, does not set it, so Gazebo can hit this hang.
+- The real robot, mapping, and loopback launches are not affected. They
+  include `navigation_launch.py` and `localization_launch.py` instead, which
+  default to `use_composition:=False`.
+- The hang depends on the order in which the container loads the servers, so
+  it does not happen on every start.
+
+??? info "Why the composed bringup hangs"
+    `bringup_launch.py` of the Nav2 fork starts `nav2_container` as
+    `component_container --isolated --executor-type single-threaded`. The
+    Jazzy `component_container` ignores both flags. They belong to a newer
+    `rclcpp_components`; Jazzy has the separate executables
+    `component_container_isolated` and `component_container_mt` instead. All
+    composed servers then share one executor thread.
+
+    `lifecycle_manager_nav2` is loaded by a separate `LoadComposableNodes`
+    action, and it can be loaded before the servers. Its startup blocks that
+    one thread, so the container cannot load the remaining servers, and the
+    lifecycle manager waits for them forever.
 
 ## Troubleshooting
 

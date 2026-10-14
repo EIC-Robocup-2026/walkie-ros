@@ -47,16 +47,22 @@ and scripts, which CMake installs.
 
 | Path | Package | Build type | Purpose |
 | --- | --- | --- | --- |
-| `bringup/` | `robot_bringup` | ament_cmake | Launch files (real robot, Isaac Sim, Gazebo with Nav2, subsystems), Python nodes, config, and a udev rule |
+| `bringup/` | `robot_bringup` | ament_cmake | Launch files (real robot, Isaac Sim, Gazebo with Nav2, MuJoCo with and without Nav2, subsystems), Python nodes, config, and a udev rule |
 
 ??? info "Launch files, nodes, and config in robot_bringup"
     - Launch files: the real robot (`real_omnibot.launch.py`), Isaac Sim
       (`isaac_omnibot.launch.py`), Gazebo with Nav2
-      (`nav_sim_omnibot.launch.py`), lift homing, the dual lidar, OpenArm,
-      octomap mapping, and a ZED test (`test_zed.launch.py`).
+      (`nav_sim_omnibot.launch.py`), MuJoCo (`mujoco_omnibot.launch.py`),
+      MuJoCo with Nav2 (`nav_mujoco_omnibot.launch.py`), lift homing, the dual
+      lidar, OpenArm, octomap mapping, and a ZED test (`test_zed.launch.py`).
     - Python nodes in `scripts/`: lift homing (real and mock), ZED watchdog,
       head touch beep, OpenArm joint state reader.
     - Config in `config/`: cameras, lidars, OpenArm, RViz, and twist_mux.
+    - MuJoCo config: `config/mujoco/mujoco_plugins.yaml` (camera and lidar
+      plugins of `mujoco_ros2_control`), `config/map/empty_floor.yaml` and
+      `empty_floor.pgm` (the blank map for Nav2 in MuJoCo), and
+      `config/rviz/mujoco.rviz` and `mujoco_nav.rviz` (RViz without and with
+      Nav2).
     - `udev/`: a udev rule for ZED USB reset.
 
 The lift motor uses a separate uv environment (TMotorCANControl, python-can),
@@ -155,7 +161,8 @@ grasping (PyTorch, Ultralytics, Open3D). See
 | `simulation/gazebo/` | `robot_simulation` | ament_cmake | Gazebo launch files (`gzsim_omnibot.launch.py`, `world_preview_gz.launch.py`, `rviz.launch.py`) and worlds (`PlainWorld`, `aws_small_house`, `obstacle_gz`, `turtlebot3_world_gz`) |
 
 See [Gazebo Simulation](../guides/simulation-gazebo.md). The MuJoCo model
-lives in `description/mujoco/`, not here.
+lives in `description/mujoco/`, and the MuJoCo launch files in `bringup/`, not
+here.
 
 ### tools/
 

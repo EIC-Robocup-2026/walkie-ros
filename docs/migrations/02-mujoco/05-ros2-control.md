@@ -6,9 +6,20 @@ ros2_control, without any MuJoCo-specific code in the controllers.
 This entry records how the URDF got a `mujoco` ros2_control mode, and what is still
 missing before MuJoCo runs with ROS.
 
-!!! warning "No launch file yet"
-    No launch file starts the simulator yet. See
-    [The launch file still to write](#the-launch-file-still-to-write).
+!!! note "Update 2026-10-13: launch files added"
+    When this entry was written, no launch file started the simulator. Two launch files in
+    `robot_bringup` do now:
+
+    ```bash
+    pixi run ros2 launch robot_bringup mujoco_omnibot.launch.py        # MuJoCo, controllers, RViz
+    pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py    # the same, plus Nav2
+    ```
+
+    [What the launch file needed](#the-launch-file-still-to-write) compares them with the
+    plan of this entry.
+    [MuJoCo Simulation: Run with ROS 2](../../guides/simulation-mujoco.md#run-with-ros-2)
+    has the setup steps and the launch arguments, and
+    [2.7 Launch Files and Nav2](07-launch.md) records the launch files.
 
 !!! note "Update 2026-10-13"
     Since the [move to RoboStack build set `_25`](../04-robostack-build-25.md),
@@ -30,7 +41,8 @@ missing before MuJoCo runs with ROS.
   spawner.
 - Done: the `mujoco` branch, the controller file (both tested) and the MoveIt changes.
   The re-lock to the RoboStack `_25` build set for `mujoco_ros2_control` 0.1.2 followed
-  in [entry 4](../04-robostack-build-25.md). Open: the launch file.
+  in [entry 4](../04-robostack-build-25.md). The launch file followed on 2026-10-13
+  ([2.7 Launch Files and Nav2](07-launch.md)).
 
 ??? info "Commits of this step"
     | Repository | Commit | Change |
@@ -288,7 +300,7 @@ but `wheel_radius` does not match the wheel collision radius (see
 Commit `72359aa` added `mujoco` to the `hardware_type` argument of
 `moveit_demo.launch.py`, `moveit_demo_with_commander.launch.py` and
 `moveit_only.launch.py` in `manipulate/openarm_bimanual_moveit_config/launch/`. The
-command, once the simulator launch exists:
+command, with the simulator launched separately:
 
 ```bash
 pixi run ros2 launch openarm_bimanual_moveit_config moveit_demo.launch.py hardware_type:=mujoco
@@ -297,7 +309,13 @@ pixi run ros2 launch openarm_bimanual_moveit_config moveit_demo.launch.py hardwa
 !!! warning "The spawners wait forever today"
     MoveIt starts no `ros2_control_node` for `mujoco`, and its spawners have no
     `--controller-manager-timeout`. They wait for the simulator's controller manager,
-    which no launch file starts yet. MoveIt with MuJoCo has not been tested.
+    which the MoveIt launch files do not start. MoveIt with MuJoCo has not been tested.
+
+!!! note "Update 2026-10-13: the simulator launch exists"
+    `mujoco_omnibot.launch.py` starts the simulator's controller manager. It also spawns
+    `joint_broad`, `lift_controller` and the trajectory and gripper controllers, the same
+    controllers that the two MoveIt demo launch files spawn. MoveIt with MuJoCo is still
+    untested.
 
 The same commit fixed the Gazebo branch, which spawned `joint_state_broadcaster`
 instead of `joint_broad`. Gazebo and MuJoCo now share `_sim_controller_spawners()`,
@@ -384,7 +402,36 @@ pixi search ros-jazzy-mujoco-ros2-control
     separate environment would therefore hold a second full ROS installation, and the
     workspace would have to be built twice.
 
-## The launch file still to write
+## What the launch file needed { #the-launch-file-still-to-write }
+
+!!! note "Update 2026-10-13: written as mujoco_omnibot.launch.py"
+    `bringup/launch/mujoco_omnibot.launch.py` implements the table below. All nine
+    spawned controllers became active in a headless run. Where it differs from the plan
+    or adds to it:
+
+    - **URDF:** the launch file expands the xacro itself with `ros2_control:=mujoco`,
+      `mujoco_model` and `mujoco_headless`, because `robot_state_publisher.launch.py`
+      still does not forward the two arguments. Its `headless` argument sets
+      `mujoco_headless`.
+    - **Two spawners**, both with `--param-file` and `mujoco_controllers.yaml`. The first
+      spawns `joint_broad`, `omni_wheel_drive_controller` and `imu_sensor_broadcaster`.
+      The second spawns `lift_controller`, `head_servo_controller`,
+      `left/right_joint_trajectory_controller` and `left/right_gripper_controller`.
+    - **IMU remap:** the `ros2_control_node` remaps `/imu_sensor_broadcaster/imu` to
+      `/imu`.
+    - **Sensor plugins:** the `mujoco_plugins` parameter file is
+      `bringup/config/mujoco/mujoco_plugins.yaml`. `dual_laser_merger` builds `/scan`
+      ([2.4 Sensors](04-sensors.md#what-scan-will-need)).
+    - **Shutdown:** the `ros2_control_node` has `on_exit=Shutdown()`, so closing the
+      MuJoCo viewer ends the whole launch.
+    - **Extra nodes:** the `walkie_tf` server, and RViz unless `use_rviz:=false`.
+    - **Not handled:** `right_joint2_fixed`. The launch file has no such argument, so the
+      xacro default `False` applies.
+
+    `nav_mujoco_omnibot.launch.py` includes this launch file and adds Nav2.
+    [MuJoCo Simulation: Launch arguments](../../guides/simulation-mujoco.md#launch-arguments)
+    lists the arguments, and [2.7 Launch Files and Nav2](07-launch.md) records both
+    files.
 
 !!! note "Update 2026-10-13: checked in a manual bringup"
     A headless bringup on build set `_25` started `robot_state_publisher`, the
@@ -403,8 +450,8 @@ pixi search ros-jazzy-mujoco-ros2-control
     [MuJoCo Simulation: Run with ROS 2](../../guides/simulation-mujoco.md#run-with-ros-2)
     has the working setup and parameter file.
 
-No launch file starts MuJoCo with ros2_control yet; the MoveIt comment says it is "not
-wired into this package yet". It needs:
+When this entry was written, no launch file started MuJoCo with ros2_control; the MoveIt
+comment says it is "not wired into this package yet". It needed:
 
 | Part | Details |
 | --- | --- |
@@ -430,8 +477,9 @@ wired into this package yet". It needs:
     - Velocity input: the same `twist_mux` remap as in Gazebo.
     - Lidars: see [2.4 Sensors](04-sensors.md).
 
-??? info "Sketch of the controller node (not in the repository yet)"
-    This follows the upstream demo:
+??? info "Sketch of the controller node, written before the launch file"
+    This follows the upstream demo. The node in `mujoco_omnibot.launch.py` passes the two
+    files as plain paths and adds the IMU remap.
 
     ```python
     control_node = Node(
@@ -452,7 +500,7 @@ wired into this package yet". It needs:
 | --- | --- | --- |
 | Head and lift command limits were copied from the `gazebo` branch | The declared ranges differ from the URDF and MJCF ranges. MuJoCo clamps every control to `ctrlrange`, so the joints stay inside the URDF limits. | Use the URDF limits in the `mujoco` branch of `ros2_control.xacro` |
 | Wheel speed limit and `wheel_radius` disagree with the MJCF model | See [2.2 Omni Wheels](02-omni-wheels.md#known-issues) | See [2.2 Omni Wheels](02-omni-wheels.md#known-issues) |
-| `description/launch/robot_state_publisher.launch.py` does not forward `mujoco_model` or `mujoco_headless` | Through that launch file you always get the default world with a window | Add both arguments to the launch file, or expand the xacro in your own launch file |
+| `description/launch/robot_state_publisher.launch.py` does not forward `mujoco_model` or `mujoco_headless` | Through that launch file you always get the default world with a window | Add both arguments to the launch file, or expand the xacro in your own launch file. `mujoco_omnibot.launch.py` does the latter. |
 
 ??? info "Exact mismatched values"
     | Joint or parameter | Command side (xacro or controller file) | Model side (URDF and MJCF) |

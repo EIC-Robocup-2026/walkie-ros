@@ -51,11 +51,21 @@ Start MoveIt and the controllers for your setup:
 === "MuJoCo"
 
     ```bash
-    pixi run ros2 launch openarm_bimanual_moveit_config moveit_demo.launch.py hardware_type:=mujoco
+    pixi run ros2 launch robot_bringup mujoco_omnibot.launch.py
     ```
 
-    Does not work yet. Nothing in the repository starts a MuJoCo controller
-    manager, see [Known issues](#known-issues).
+    ```bash
+    pixi run ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=mujoco
+    ```
+
+    Not tested: MoveIt has not been run with MuJoCo yet.
+    `mujoco_omnibot.launch.py` starts the simulator, `robot_state_publisher`,
+    and the arm, gripper, and lift controllers, so pair it with
+    `moveit_only.launch.py`, which starts only `move_group` and RViz. Add
+    `use_rviz:=false` to `mujoco_omnibot.launch.py` to keep only the MoveIt
+    RViz window. Do not use `moveit_demo.launch.py hardware_type:=mujoco`
+    here: it starts a second `robot_state_publisher` and its own spawners, and
+    on its own it starts no simulator. See [Known issues](#known-issues).
 
 When MoveIt is up, start the commander:
 
@@ -354,7 +364,7 @@ and the real robot publish the ZED point cloud.
     | --- | --- | --- | --- |
     | `mock_components` (default) | `mock` | `moveit_demo.launch.py` (`ros2_control_node`) | no |
     | `gazebo` | `gazebo` | `gz_ros2_control` inside Gazebo | yes |
-    | `mujoco` | `mujoco` | `mujoco_ros2_control`, which nothing starts yet | yes |
+    | `mujoco` | `mujoco` | `mujoco_ros2_control`, started by `robot_bringup`'s `mujoco_omnibot.launch.py`, not by `moveit_demo.launch.py` | yes |
     | `real_robot` | `real_robot` | `moveit_demo.launch.py`, or `real_omnibot.launch.py` when you use `moveit_only.launch.py` | no |
     | `isaac` | `isaac` | `moveit_demo.launch.py`, but the description has no `isaac` hardware block | yes |
 
@@ -533,7 +543,7 @@ the largest gain.
 | Issue | Effect | Workaround |
 | --- | --- | --- |
 | The TRAC-IK plugin is not in `pixi.toml` | `move_group` cannot load `trac_ik_kinematics_plugin` (set in `config/kinematics.yaml`). Pose goals and Cartesian paths fail; named states and joint goals work | `pixi add ros-jazzy-trac-ik-kinematics-plugin` (on the RoboStack channel), or switch the groups to the commented KDL entries |
-| No launch file starts the MuJoCo simulator (`mujoco_ros2_control`) | With `hardware_type:=mujoco`, `moveit_demo.launch.py` starts no `ros2_control_node`. The spawners have no timeout and wait forever | None yet. You can start the simulator by hand ([MuJoCo Simulation: Run with ROS 2](simulation-mujoco.md#run-with-ros-2)), but MoveIt with MuJoCo has not been tested |
+| MoveIt with `hardware_type:=mujoco` is untested, and `moveit_demo.launch.py` does not start the MuJoCo simulator (`mujoco_ros2_control`) | `moveit_demo.launch.py` starts no `ros2_control_node`. The spawners have no timeout and wait forever | Start `mujoco_omnibot.launch.py` in `robot_bringup` ([MuJoCo Simulation: Run with ROS 2](simulation-mujoco.md#run-with-ros-2)), then `moveit_only.launch.py hardware_type:=mujoco`. Untested. |
 | The description has no `isaac` ros2_control block | With `hardware_type:=isaac` the URDF has no hardware, so no controller starts | None in this repository |
 | `moveit_demo_with_commander.launch.py` passes xacro arguments the description does not declare, and has no `right_joint2_fixed` | With `hardware_type:=real_robot` both arms stay mock, and `right_joint2_fixed` cannot be set | Use `moveit_demo.launch.py` plus `commander.launch.py` |
 | `commander.launch.py` does not set `use_sim_time` | In Gazebo, `move_group` and the controllers use simulation time but the commander does not, so it can fail to get the current robot state | Add `{"use_sim_time": True}` to the commander's `parameters` in `commander.launch.py` |

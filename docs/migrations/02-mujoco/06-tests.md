@@ -84,10 +84,19 @@ launch files load it with. `CONTROLLER_PAIRINGS` records the pairs: `gazebo` wit
     | Mode | Wired by |
     | --- | --- |
     | `gazebo` | `sim_controllers_yaml` default of `gz_walkie.urdf.xacro`; `simulation/gazebo/launch/gzsim_omnibot.launch.py` |
-    | `mujoco` | the `mujoco_ros2_control` controller manager (launch file not written yet) |
+    | `mujoco` | `bringup/launch/mujoco_omnibot.launch.py`, through the `mujoco_ros2_control` controller manager |
     | `topic_base` | `bringup/launch/isaac_omnibot.launch.py` |
     | `real_robot` | `bringup/launch/real_omnibot.launch.py` |
     | `mock` | `bringup/launch/test_zed.launch.py` |
+
+!!! note "Update 2026-10-13: MuJoCo launch file added"
+    When this entry was written, no launch file wired the `mujoco` pairing.
+    `bringup/launch/mujoco_omnibot.launch.py` now expands the xacro with
+    `ros2_control:=mujoco` and loads `mujoco_controllers.yaml` into the
+    `mujoco_ros2_control` controller manager. No automated test starts the launch file.
+    It was verified by a headless run, in which all nine spawned controllers became
+    active. See [2.7 Launch Files and Nav2](07-launch.md) and
+    [MuJoCo Simulation: Run with ROS 2](../../guides/simulation-mujoco.md#run-with-ros-2).
 
 ??? info "What the two pairing tests check"
     | Test | What it checks |

@@ -48,6 +48,12 @@ radially outward. In the `base_footprint` frame (x forward, y left):
     `description/urdf/walkie/omni_wheel/gz_omni_wheel.urdf.xacro` (radius 0.075 m, thickness
     0.05 m).
 
+    !!! note
+        Since description `main` was merged (description `f6649ee`), `base_link` is aligned
+        with `base_footprint`, so the wheel origins in `base_link` match the table above. The
+        wheel positions in the world are unchanged. See
+        [Robot Description: Frames and joints](../../reference/robot-description.md#frames-and-joints).
+
 ## Why the friction must follow the axle
 
 An omni wheel grips in its rolling direction and slides almost freely along its axle, because
