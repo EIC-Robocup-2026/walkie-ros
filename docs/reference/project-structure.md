@@ -35,7 +35,7 @@ the root, so colcon finds every package below it. See
     | --- | --- | --- |
     | `build/`, `install/`, `log/` | colcon | `pixi run clean` deletes all three |
     | `.pixi/` | pixi | The environment with ROS 2 and every dependency |
-    | `hardware/camera/zed-ros2-wrapper/` | `pixi run setup-real` | See [Real-robot hardware repositories](#real-robot-hardware-repositories) |
+    | `hardware/camera/zed-ros2-wrapper/` | `pixi run setup-real` | See [Real-robot hardware repositories](#external-repositories) |
 
 ## Packages
 
@@ -269,7 +269,7 @@ access to the EIC-Robocup-2026 organization to clone them.
     moves the submodule to the newest commit of that branch. A plain
     `git submodule update` always checks out the commit pinned by the parent.
 
-## Real-robot hardware repositories
+## Real-robot hardware repositories { #external-repositories }
 
 `walkie_real.repos` lists hardware packages that are cloned with vcstool (the `vcs`
 command) when preparing a physical robot. `pixi run setup-real` runs

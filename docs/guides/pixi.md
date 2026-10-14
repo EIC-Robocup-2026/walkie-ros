@@ -278,7 +278,7 @@ then `pixi run clean && pixi run build`.
     | `linguist-generated=true` | GitHub collapses the file in pull request diffs. |
     | `linguist-language=YAML` | GitHub treats the file as YAML. |
 
-### Real-robot hardware repositories
+### Real-robot hardware repositories { #packages-that-are-not-on-the-channels }
 
 Some packages (such as camera and sensor drivers requiring CUDA or specific vendor SDKs) are only needed when working on the physical robot. `walkie_real.repos` lists them in the [vcstool](https://github.com/dirk-thomas/vcstool) format.
 
