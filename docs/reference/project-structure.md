@@ -28,14 +28,14 @@ the root, so colcon finds every package below it. See
 | `perception/` | `walkie_perception`: object detection and grasp pose services |
 | `scripts/` | Shell and Python helpers: bringup shortcuts, device setup, mapping |
 | `simulation/gazebo/` | `robot_simulation`: Gazebo worlds and launch files |
-| `tools/` | Teleoperation, a TF lookup service, and one imported tool |
+| `tools/` | Teleoperation and TF lookup service |
 
 ??? info "Folders created by tools (not in git)"
     | Path | Created by | Notes |
     | --- | --- | --- |
     | `build/`, `install/`, `log/` | colcon | `pixi run clean` deletes all three |
     | `.pixi/` | pixi | The environment with ROS 2 and every dependency |
-    | `hardware/lidar/laser_proc/`, `tools/twist_stamper/` | `pixi run import` | See [External repositories](#external-repositories) |
+    | `hardware/camera/zed-ros2-wrapper/` | `pixi run setup-real` | See [Real-robot hardware repositories](#real-robot-hardware-repositories) |
 
 ## Packages
 
@@ -88,7 +88,6 @@ the pixi environment. See [Real Robot](../guides/real-robot.md).
 | `hardware/lidar/robot_self_filter/` | `robot_self_filter` | ament_cmake | Removes the robot body from point clouds |
 | `hardware/lidar/unilidar_sdk2/unitree_lidar_ros2/src/unitree_lidar_ros2/` | `unitree_lidar_ros2` | ament_cmake | Unitree lidar driver (GPLv3) |
 | `hardware/lidar/unilidar_sdk2/unitree_lidar_sdk/` | `unitree_lidar_sdk` | cmake (no `package.xml`) | Unitree SDK example programs, linked against the prebuilt `libunilidar_sdk2.a` |
-| `hardware/lidar/laser_proc/` | `laser_proc` | ament_cmake | Not in git. Imported by `pixi run import`. `urg_node2` depends on it. |
 | `hardware/camera/realsense/config/` | none | none | One RealSense JSON preset. No package. |
 
 ??? info "Front and back lidar topics and frames"
@@ -165,7 +164,6 @@ lives in `description/mujoco/`, not here.
 | `tools/joy_interface/` | `joy_interface` | ament_python | Joystick teleoperation: executables `joy_teleop` and `joy_teleop_smooth` |
 | `tools/walkie_tf/` | `walkie_tf` | ament_python | TF lookup service node: executable `tf_server` |
 | `tools/walkie_tf_interfaces/` | `walkie_tf_interfaces` | ament_cmake | The `GetTransform` service used by `walkie_tf` |
-| `tools/twist_stamper/` | `twist_stamper` | ament_python | Not in git. Imported by `pixi run import`. |
 
 `tf_server` answers the `get_transform` service with the latest pose of
 `target_frame` expressed in `source_frame`. Scripts that do not keep a TF
@@ -271,21 +269,21 @@ access to the EIC-Robocup-2026 organization to clone them.
     moves the submodule to the newest commit of that branch. A plain
     `git submodule update` always checks out the commit pinned by the parent.
 
-## External repositories
+## Real-robot hardware repositories
 
-`walkie_external.repos` lists packages that are cloned with vcstool (the `vcs`
-command) instead of being stored in the repository. `pixi run import` runs
-`vcs import < walkie_external.repos`. `pixi run build` runs `import` first.
-`pixi run build-pkg` does not.
+`walkie_real.repos` lists hardware packages that are cloned with vcstool (the `vcs`
+command) when preparing a physical robot. `pixi run setup-real` runs
+`vcs import < walkie_real.repos`.
 
 | Path | URL | Version | Why it is imported |
 | --- | --- | --- | --- |
-| `hardware/lidar/laser_proc` | `https://github.com/ros-perception/laser_proc.git` | commit `4acb5601383d1fb25690377a683603ba35a4973c` | Needed by `urg_node2` |
-| `tools/twist_stamper` | `https://github.com/joshnewans/twist_stamper.git` | tag `0.0.5` | `ros-jazzy-twist-stamper` is not built on the robostack-jazzy channel |
+| `hardware/camera/zed-ros2-wrapper` | `https://github.com/stereolabs/zed-ros2-wrapper.git` | tag `v5.5.0` | Real robot ZED camera driver |
+| `hardware/camera/zed-ros2-wrapper/zed-ros2-interfaces` | `https://github.com/stereolabs/zed-ros2-interfaces.git` | tag `5.5.0` | ZED ROS 2 message definitions |
+| `hardware/camera/zed-ros2-wrapper/zed-ros2-description` | `https://github.com/stereolabs/zed-ros2-description.git` | tag `0.2.0` | ZED URDF and meshes |
+| `hardware/camera/zed-ros2-wrapper/zed-ros2-examples` | `https://github.com/stereolabs/zed-ros2-examples.git` | tag `v5.5.0` | ZED examples |
 
 !!! warning "Do not commit changes inside imported folders"
-    Both paths are in `.gitignore`. They are overwritten the next time someone
-    runs `pixi run import`.
+    `hardware/camera/zed-ros2-wrapper/` is in `.gitignore`. It is kept outside the git repository so non-CUDA machines can build the workspace without CUDA or ZED SDK dependencies.
 
 ## Key top-level files
 
@@ -293,7 +291,7 @@ command) instead of being stored in the repository. `pixi run import` runs
 | --- | --- |
 | `pixi.toml` | Workspace manifest: conda channels, dependencies, tasks, and activation. See [Working with Pixi](../guides/pixi.md). |
 | `pixi.lock` | Exact versions of every package in the environment. Commit it together with `pixi.toml`. |
-| `walkie_external.repos` | vcstool list for `pixi run import` |
+| `walkie_real.repos` | vcstool list for `pixi run setup-real` |
 | `.gitmodules` | Submodule paths and URLs |
 | `.gitattributes` | Marks `pixi.lock` as generated and merges it as a binary file, so git does not try a line-by-line merge |
 | `.gitignore` | Ignores build output, `.pixi/`, and the imported repositories |

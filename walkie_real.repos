@@ -1,0 +1,17 @@
+repositories:
+  hardware/camera/zed-ros2-wrapper:
+    type: git
+    url: https://github.com/stereolabs/zed-ros2-wrapper.git
+    version: v5.5.0
+  hardware/camera/zed-ros2-wrapper/zed-ros2-interfaces:
+    type: git
+    url: https://github.com/stereolabs/zed-ros2-interfaces.git
+    version: 5.5.0
+  hardware/camera/zed-ros2-wrapper/zed-ros2-description:
+    type: git
+    url: https://github.com/stereolabs/zed-ros2-description.git
+    version: 0.2.0
+  hardware/camera/zed-ros2-wrapper/zed-ros2-examples:
+    type: git
+    url: https://github.com/stereolabs/zed-ros2-examples.git
+    version: v5.5.0
