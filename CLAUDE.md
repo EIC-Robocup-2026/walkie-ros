@@ -15,12 +15,13 @@ The workspace is managed by pixi + RoboStack Jazzy (`pixi.toml`, `pixi.lock`). T
 ```bash
 pixi install                          # create .pixi/envs/default from pixi.lock
 pixi run build-setup [workers]        # initial setup build (default: 1 worker; e.g. pixi run build-setup 3)
-pixi run build                        # setup + import (walkie_external.repos) + colcon build --symlink-install
+pixi run build                        # setup + colcon build --symlink-install
+pixi run setup-real                   # pull real-robot hardware repos (ZED wrapper) from walkie_real.repos
 pixi run build-pkg <pkg> [<pkg>...]   # rebuild selected packages
 pixi run clean                        # remove build/ install/ log/
 ```
 
-Add dependencies with `pixi add ros-jazzy-<name>` and commit `pixi.toml` and `pixi.lock` together. `pixi.lock` is `merge=binary`: resolve lock conflicts by re-locking, not by hand. Packages missing from the channels go in `walkie_external.repos`.
+Add dependencies with `pixi add ros-jazzy-<name>` and commit `pixi.toml` and `pixi.lock` together. `pixi.lock` is `merge=binary`: resolve lock conflicts by re-locking, not by hand. Real-robot hardware packages (e.g. ZED wrapper) are managed via `walkie_real.repos` (`pixi run setup-real`).
 
 ## Running
 
@@ -67,12 +68,12 @@ New pages must be added to `nav` in `mkdocs.yml`. Admonition bodies are indented
 | `bringup/` | `robot_bringup` | Top-level launch files and config; lift homing node (TMotorCANControl), ZED watchdog |
 | `description/` (submodule) | `walkie_description` | URDF/Xacro, meshes (Git LFS), ros2_control controller YAMLs, MuJoCo model and generator |
 | `hardware/actuator/` | `cubemars_hardware`, `dynamixel_hardware_interface`, `dynamixel_interfaces`, `dynamixel_sdk`, `openarm_hardware`, `openarm_can` (submodule), `topic_based_ros2_control` (submodule) | ros2_control hardware plugins and drivers |
-| `hardware/lidar/` | `urg_node2`, `lakibeam1`, `dual_laser_merger`, `robot_self_filter`, `unitree_lidar_ros2`, `laser_proc` (imported) | Hokuyo (front) + Lakibeam (rear) merged into `/scan`; point cloud self-filter |
+| `hardware/lidar/` | `urg_node2`, `lakibeam1`, `dual_laser_merger`, `robot_self_filter`, `unitree_lidar_ros2` | Hokuyo (front) + Lakibeam (rear) merged into `/scan`; point cloud self-filter |
 | `manipulate/` | `openarm_bimanual_moveit_config`, `openarm_bimanual_commander_cpp`, `my_robot_interfaces` | MoveIt for the bimanual OpenArm + lift; commander action/service node |
 | `navigation/` (submodule) | `robot_navigation`, Nav2 fork (`navigation/navigation2`), `spatio_temporal_voxel_layer`, `openvdb_vendor` | Nav2 config, localization, SLAM, maps |
 | `perception/` | `walkie_perception` | Detection, 3D pose and grasp services on the ZED camera (own venv, see `perception/README.md`) |
 | `simulation/gazebo/` | `robot_simulation` | Gazebo worlds, launch, ros_gz bridge config |
-| `tools/` | `joy_interface`, `walkie_tf`, `walkie_tf_interfaces`, `twist_stamper` (imported) | Joystick teleop, TF lookup service, twist stamping |
+| `tools/` | `joy_interface`, `walkie_tf`, `walkie_tf_interfaces` | Joystick teleop, TF lookup service |
 
 ### Key design points
 

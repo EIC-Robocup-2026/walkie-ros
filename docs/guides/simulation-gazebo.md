@@ -176,12 +176,6 @@ The repository has no keyboard teleop package, and `pixi.toml` does not
 install `teleop_twist_keyboard`. `twist_mux` reserves `/cmd_vel_key` for a
 keyboard source. A keyboard tool must publish `TwistStamped` on that topic.
 
-??? info "About `twist_stamper`"
-    `tools/twist_stamper` is fetched by `pixi run import` from
-    `walkie_external.repos`, because RoboStack does not build it. It converts
-    `Twist` to `TwistStamped`. Only the Isaac Sim launch file uses it. The
-    Gazebo launch files do not.
-
 ## Run Gazebo with Nav2 { #gazebo-with-nav2 }
 
 !!! warning

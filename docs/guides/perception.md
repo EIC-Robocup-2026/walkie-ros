@@ -47,8 +47,9 @@ All nodes read the ZED stereo camera on the robot's head, under the namespace
 - **Real robot**: the ZED ROS wrapper (`zed_wrapper`) publishes the topics
   below, except `.../cloud_registered/filtered`, which comes from the self
   filter in `real_omnibot.launch.py`. `real_omnibot.launch.py` starts the
-  wrapper when `use_zed:=true` (the default). The wrapper needs the ZED SDK
-  and CUDA, which the physical Docker image provides and pixi does not.
+  wrapper when `use_zed:=true` (the default). Running the camera on the robot
+  requires ZED SDK 5.5 and CUDA 13.2, with the wrapper fetched via `pixi run setup-real`
+  (see [Real Robot: Set up the ZED camera](real-robot.md#zed-setup)).
 - **Gazebo**: `simulation/gazebo/config/gazebo/gz_bridge.yaml` bridges a
   simulated head camera to the same names, except where the table says no.
 

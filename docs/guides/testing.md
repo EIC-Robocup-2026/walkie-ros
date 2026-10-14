@@ -135,7 +135,6 @@ The four suites below are in `walkie_description` and
     | `topic_based_ros2_control` | Lint tests, the gtest `topic_based_system_test`, and the launch test `test/ros2_control.test.py` (`TIMEOUT 120`) | Its `CMakeLists.txt` (submodule) |
     | `urg_node2` | gtest `urg_node2_test` (`TIMEOUT 200`) | Its `CMakeLists.txt`. Needs a real lidar. |
     | `joy_interface` | `test_flake8.py`, `test_pep257.py`, and `test_copyright.py` (always skipped) | ament_python: colcon runs pytest on `test/` |
-    | `laser_proc`, `twist_stamper` (imported by `pixi run import`) | Upstream lint tests | Upstream |
     | Nav2 packages in `navigation/navigation2/` | Upstream Nav2 tests, including `nav2_system_tests` | Upstream |
 
     `walkie_perception`, `my_robot_interfaces`, `walkie_tf_interfaces`,
