@@ -106,7 +106,7 @@ def generate_launch_description():
     default_aws_map = os.path.join(
         pkg_robot_navigation,
         "map",
-        "08_23102025_SimWalkie_awssmallhouse_slam_toolbox",
+        "29_14102026_o3de_warehouse",
         "map.yaml",
     )
 
