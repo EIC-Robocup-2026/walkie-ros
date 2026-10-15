@@ -142,7 +142,7 @@ WARN Could not find activation scripts: .../install/setup.bash
     | Task | What it does |
     | --- | --- |
     | `setup` | Adds a `libpthread.so` symlink that the conda compiler sysroot is missing. |
-    | `import` | Runs `vcs import < walkie_external.repos`. This clones `hardware/lidar/laser_proc` and `tools/twist_stamper`, two source packages that are not installed from the pixi channels. |
+    | `setup-real` | Runs `vcs import < walkie_real.repos` to clone physical hardware packages (e.g. ZED camera wrapper and submodules) on real robot machines. |
     | `build-setup` | Runs `colcon build --symlink-install --parallel-workers 1` (or custom workers, e.g. `pixi run build-setup 3`). |
     | `build` | Runs `colcon build --symlink-install` against the pixi environment with default parallel workers. |
 

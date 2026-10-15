@@ -122,3 +122,33 @@ ros2 topic pub --once /forward_position_controller/commands \
 | `lift_min_cm`            | `0.0`          | Lower position limit (cm) — matches URDF lower limit                  |
 | `lift_max_cm`            | `74.35`        | Upper position limit (cm) — matches URDF upper limit (= top, homed)   |
 | `joint_name`             | `lift_joint`   | Joint name used in published `JointState`                             |
+
+---
+
+# OpenArm Joint Error Monitor
+
+Real-time monitoring and error calculation between commanded and achieved joint states for the OpenArm bimanual arms.
+
+Source: [`openarm_joint_error_monitor.py`](file:///home/eic/Project/robocup_ros_ws/walkie-ros/bringup/scripts/openarm_joint_error_monitor.py)
+
+### Capabilities:
+- Tracks actual measured joint angles from `/joint_states` (or custom topic).
+- Captures commanded setpoints dynamically from `JointTrajectoryControllerState`, `JointTrajectory`, or `ForwardCommandController`.
+- Calculates instantaneous error ($e = \text{command} - \text{actual}$) in both radians and degrees.
+- Computes aggregate metrics: Root Mean Square Error (RMSE), Mean Absolute Error (MAE), and Maximum Error.
+- Displays an ANSI color dashboard in the terminal with warning/fail thresholds and session peak tracking.
+- Optionally logs time-series data to CSV (`--csv <path>`) and publishes error to `/openarm/joint_error` (`sensor_msgs/JointState`).
+
+### Quick Start:
+
+```bash
+# Monitor both arms in real-time
+pixi run python3 bringup/scripts/openarm_joint_error_monitor.py
+
+# Monitor right arm only, log time-series to CSV
+pixi run python3 bringup/scripts/openarm_joint_error_monitor.py --arm right --csv right_arm_error.csv
+
+# Publish error state topic for rqt_plot / PlotJuggler
+pixi run python3 bringup/scripts/openarm_joint_error_monitor.py --publish-error
+```
+

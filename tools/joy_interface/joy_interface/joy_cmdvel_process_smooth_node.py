@@ -45,6 +45,12 @@ class JoyToTwist(Node):
         # Button index for "cancel navigation" (0 = A on Xbox / X on PlayStation)
         self.declare_parameter('cancel_nav_button', 0)
 
+        # Turbo Mode: R1 button (5 on DualSense / RB on Xbox) scales velocities
+        self.declare_parameter('turbo_button', 5)
+        self.declare_parameter('turbo_linear_multiplier', 2.0)
+        self.declare_parameter('turbo_angular_multiplier', 1.5)
+        self.declare_parameter('turbo_accel_multiplier', 2.0)
+
         # New: Separate Acceleration and Deceleration limits (max change per second)
         # Linear motion (m/s^2)
         self.declare_parameter('accel_linear_rate', 0.2)
@@ -63,6 +69,11 @@ class JoyToTwist(Node):
         self.strafe_axis = self.get_parameter('strafe_axis').get_parameter_value().integer_value
         self.cancel_nav_button = self.get_parameter('cancel_nav_button').get_parameter_value().integer_value
 
+        self.turbo_button = self.get_parameter('turbo_button').get_parameter_value().integer_value
+        self.turbo_linear_multiplier = self.get_parameter('turbo_linear_multiplier').get_parameter_value().double_value
+        self.turbo_angular_multiplier = self.get_parameter('turbo_angular_multiplier').get_parameter_value().double_value
+        self.turbo_accel_multiplier = self.get_parameter('turbo_accel_multiplier').get_parameter_value().double_value
+
         self.accel_linear_rate = self.get_parameter('accel_linear_rate').get_parameter_value().double_value
         self.decel_linear_rate = self.get_parameter('decel_linear_rate').get_parameter_value().double_value
         self.accel_angular_rate = self.get_parameter('accel_angular_rate').get_parameter_value().double_value
@@ -79,8 +90,9 @@ class JoyToTwist(Node):
         self.last_twist = Twist()
         # Stores the timestamp of the last update
         self.last_time = self.get_clock().now()
-        # Edge-detection: last known state of the cancel button (avoid repeat calls on hold)
+        # Edge-detection: last known state of buttons (avoid repeat calls on hold)
         self._prev_cancel_btn = 0
+        self._prev_turbo_btn = 0
 
     def _cancel_all_nav_goals(self):
         """Send cancel-all-goals to every known Nav2 action server."""
@@ -115,6 +127,32 @@ class JoyToTwist(Node):
                 self._cancel_all_nav_goals()
             self._prev_cancel_btn = current_btn
 
+        # --- Turbo Mode: R1 button held down ---
+        is_turbo = False
+        if self.turbo_button < len(msg.buttons):
+            current_turbo_btn = msg.buttons[self.turbo_button]
+            is_turbo = bool(current_turbo_btn == 1)
+            if current_turbo_btn == 1 and self._prev_turbo_btn == 0:
+                self.get_logger().info(
+                    f'[turbo] R1 pressed — TURBO ACTIVE '
+                    f'(max_lin: {self.max_linear_vel * self.turbo_linear_multiplier:.2f} m/s, '
+                    f'max_ang: {self.max_angular_vel * self.turbo_angular_multiplier:.2f} rad/s)'
+                )
+            elif current_turbo_btn == 0 and self._prev_turbo_btn == 1:
+                self.get_logger().info(
+                    f'[turbo] R1 released — Normal speed '
+                    f'(max_lin: {self.max_linear_vel:.2f} m/s, '
+                    f'max_ang: {self.max_angular_vel:.2f} rad/s)'
+                )
+            self._prev_turbo_btn = current_turbo_btn
+
+        eff_max_linear_vel = self.max_linear_vel * (self.turbo_linear_multiplier if is_turbo else 1.0)
+        eff_max_angular_vel = self.max_angular_vel * (self.turbo_angular_multiplier if is_turbo else 1.0)
+        eff_accel_linear_rate = self.accel_linear_rate * (self.turbo_accel_multiplier if is_turbo else 1.0)
+        eff_decel_linear_rate = self.decel_linear_rate * (self.turbo_accel_multiplier if is_turbo else 1.0)
+        eff_accel_angular_rate = self.accel_angular_rate * (self.turbo_accel_multiplier if is_turbo else 1.0)
+        eff_decel_angular_rate = self.decel_angular_rate * (self.turbo_accel_multiplier if is_turbo else 1.0)
+
         # 0. Calculate Time Elapsed (dt)
         current_time = self.get_clock().now()
         # Time in seconds (T_current - T_last)
@@ -129,14 +167,19 @@ class JoyToTwist(Node):
         def apply_deadzone(value, dz):
             return value if abs(value) > dz else 0.0
 
-        raw_linear_x = apply_deadzone(msg.axes[self.linear_axis], self.deadzone)
-        raw_linear_y = apply_deadzone(msg.axes[self.strafe_axis], self.deadzone)
-        raw_angular_z = apply_deadzone(msg.axes[self.angular_axis], self.deadzone)
+        def get_axis(axis_idx):
+            if axis_idx < len(msg.axes):
+                return apply_deadzone(msg.axes[axis_idx], self.deadzone)
+            return 0.0
+
+        raw_linear_x = get_axis(self.linear_axis)
+        raw_linear_y = get_axis(self.strafe_axis)
+        raw_angular_z = get_axis(self.angular_axis)
 
         # Apply Max Velocity Constraints to get the full-speed target
-        target_twist.linear.x = raw_linear_x * self.max_linear_vel
-        target_twist.linear.y = raw_linear_y * self.max_linear_vel
-        target_twist.angular.z = raw_angular_z * self.max_angular_vel
+        target_twist.linear.x = raw_linear_x * eff_max_linear_vel
+        target_twist.linear.y = raw_linear_y * eff_max_linear_vel
+        target_twist.angular.z = raw_angular_z * eff_max_angular_vel
 
         # 2. Apply Acceleration/Deceleration Limiting
         new_twist = Twist()
@@ -146,8 +189,8 @@ class JoyToTwist(Node):
             current_vel=self.last_twist.linear.x,
             target_vel=target_twist.linear.x,
             dt=dt,
-            accel_rate=self.accel_linear_rate,
-            decel_rate=self.decel_linear_rate
+            accel_rate=eff_accel_linear_rate,
+            decel_rate=eff_decel_linear_rate
         )
 
         # --- Linear Y (Strafe) ---
@@ -155,8 +198,8 @@ class JoyToTwist(Node):
             current_vel=self.last_twist.linear.y,
             target_vel=target_twist.linear.y,
             dt=dt,
-            accel_rate=self.accel_linear_rate,
-            decel_rate=self.decel_linear_rate
+            accel_rate=eff_accel_linear_rate,
+            decel_rate=eff_decel_linear_rate
         )
 
         # --- Angular Z (Yaw) ---
@@ -164,8 +207,8 @@ class JoyToTwist(Node):
             current_vel=self.last_twist.angular.z,
             target_vel=target_twist.angular.z,
             dt=dt,
-            accel_rate=self.accel_angular_rate,
-            decel_rate=self.decel_angular_rate
+            accel_rate=eff_accel_angular_rate,
+            decel_rate=eff_decel_angular_rate
         )
 
         is_input_zero = (
