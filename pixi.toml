@@ -192,6 +192,9 @@ ros-jazzy-rmw-zenoh-cpp = ">=0.2.11,<0.3"
 # Must match the libmujoco that ros-jazzy-mujoco-vendor is built against (3.15.0 in _25).
 mujoco = "3.15.*"
 ros-jazzy-mujoco-ros2-control = ">=0.1.2"
+# MuJoCo extension "mujoco.plugin.lidar": the head 3D lidar in description/mujoco/walkie.xml,
+# published by Mujoco3dLidarPlugin. Every MuJoCo model load needs it.
+ros-jazzy-mujoco-3d-lidar = ">=0.1.2,<0.2"
 # `ros2 control view_controller_chains` imports graphviz; RoboStack does not map python3-graphviz.
 python-graphviz = "*"
 
