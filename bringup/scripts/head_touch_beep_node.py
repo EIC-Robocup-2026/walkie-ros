@@ -71,6 +71,8 @@ class HeadTouchBeepNode(Node):
         self.declare_parameter("commands_topic", "/head_servo_controller/commands")
 
         # Detection thresholds
+        self.declare_parameter("position_only", False)
+        self.declare_parameter("use_effort", True)
         self.declare_parameter("position_error_threshold", 0.06)  # rad (~3.4 deg)
         self.declare_parameter("effort_delta_threshold", 60.0)  # raw load counts (6 % stall)
         self.declare_parameter("trigger_duration", 0.08)  # s the signal must persist
@@ -80,11 +82,15 @@ class HeadTouchBeepNode(Node):
 
         # Sound
         self.declare_parameter("audio_device", "default")
-        self.declare_parameter("volume", 0.8)  # 0..1 output amplitude
+        self.declare_parameter("volume", 0.6)  # 0..1 output amplitude (lowered from 0.8)
         self.declare_parameter("sample_rate", 24000)
         self.declare_parameter("startup_beep", True)  # confirms the audio path
+        self.declare_parameter("min_freq", 250.0)  # Lower frequency limit (Hz)
+        self.declare_parameter("max_freq", 1200.0)  # Upper frequency limit (Hz, was 3400Hz)
 
         self.joint_name = self.get_parameter("joint_name").value
+        self.position_only = bool(self.get_parameter("position_only").value)
+        self.use_effort = bool(self.get_parameter("use_effort").value) and not self.position_only
         self.pos_err_thresh = self.get_parameter("position_error_threshold").value
         self.effort_thresh = self.get_parameter("effort_delta_threshold").value
         self.trigger_duration = self.get_parameter("trigger_duration").value
@@ -94,6 +100,8 @@ class HeadTouchBeepNode(Node):
         self.audio_device = self.get_parameter("audio_device").value
         self.volume = float(self.get_parameter("volume").value)
         self.sample_rate = int(self.get_parameter("sample_rate").value)
+        self.min_freq = float(self.get_parameter("min_freq").value)
+        self.max_freq = float(self.get_parameter("max_freq").value)
 
         # Detection state
         self.goal = None  # last commanded position (rad)
@@ -124,14 +132,53 @@ class HeadTouchBeepNode(Node):
             10,
         )
 
+        self.add_on_set_parameters_callback(self.on_set_parameters)
+
+        mode_str = "POSITION ONLY" if (self.position_only or not self.use_effort) else f"pos_err or load delta > {self.effort_thresh:.0f}"
         self.get_logger().info(
-            f"watching '{self.joint_name}' "
-            f"(pos_err > {self.pos_err_thresh:.3f} rad or "
-            f"load delta > {self.effort_thresh:.0f} counts)"
+            f"watching '{self.joint_name}' (mode: {mode_str}, pos_err > {self.pos_err_thresh:.3f} rad, trigger_duration={self.trigger_duration:.2f}s)"
         )
 
         if self.get_parameter("startup_beep").value:
             self.play_async(self.synth_phrase(n_syllables=2))
+
+    def on_set_parameters(self, params):
+        for param in params:
+            if param.name == "position_only":
+                self.position_only = bool(param.value)
+                self.use_effort = not self.position_only
+                self.get_logger().info(f"Updated position_only: {self.position_only} (use_effort={self.use_effort})")
+            elif param.name == "use_effort":
+                self.use_effort = bool(param.value)
+                self.position_only = not self.use_effort
+                self.get_logger().info(f"Updated use_effort: {self.use_effort} (position_only={self.position_only})")
+            elif param.name == "position_error_threshold":
+                self.pos_err_thresh = float(param.value)
+                self.get_logger().info(f"Updated position_error_threshold: {self.pos_err_thresh:.4f} rad")
+            elif param.name == "effort_delta_threshold":
+                self.effort_thresh = float(param.value)
+                self.get_logger().info(f"Updated effort_delta_threshold: {self.effort_thresh:.1f}")
+            elif param.name == "trigger_duration":
+                self.trigger_duration = float(param.value)
+                self.get_logger().info(f"Updated trigger_duration: {self.trigger_duration:.3f} s")
+            elif param.name == "cooldown":
+                self.cooldown = float(param.value)
+                self.get_logger().info(f"Updated cooldown: {self.cooldown:.2f} s")
+            elif param.name == "volume":
+                self.volume = float(param.value)
+                self.get_logger().info(f"Updated volume: {self.volume:.2f}")
+            elif param.name == "min_freq":
+                self.min_freq = float(param.value)
+                self.get_logger().info(f"Updated min_freq: {self.min_freq:.1f} Hz")
+            elif param.name == "max_freq":
+                self.max_freq = float(param.value)
+                self.get_logger().info(f"Updated max_freq: {self.max_freq:.1f} Hz")
+            elif param.name == "debug":
+                self.debug = bool(param.value)
+                if self.debug and self.debug_pub is None:
+                    self.debug_pub = self.create_publisher(Float64MultiArray, "~/debug", 10)
+        from rcl_interfaces.msg import SetParametersResult
+        return SetParametersResult(successful=True)
 
     # ------------------------------------------------------------------ time
     def now(self) -> float:
@@ -148,6 +195,14 @@ class HeadTouchBeepNode(Node):
             self.rebaseline_on_unmute = True
             self.condition_since = None
 
+    def _to_signed_effort(self, effort_val) -> float:
+        if effort_val is None:
+            return 0.0
+        val = float(effort_val)
+        if val > 32767:
+            val -= 65536
+        return val
+
     def on_joint_states(self, msg: JointState):
         try:
             i = msg.name.index(self.joint_name)
@@ -159,6 +214,7 @@ class HeadTouchBeepNode(Node):
             return
 
         t = self.now()
+        signed_effort = self._to_signed_effort(effort) if effort is not None else None
 
         # Before any command arrives, treat the current pose as the goal so a
         # stationary head can't false-trigger on startup.
@@ -175,20 +231,20 @@ class HeadTouchBeepNode(Node):
         # so gravity/pose offsets don't read as a touch.
         if self.rebaseline_on_unmute:
             self.rebaseline_on_unmute = False
-            self.effort_baseline = effort
+            self.effort_baseline = signed_effort
 
         pos_err = abs(pos - self.goal)
         pressed = pos_err > self.pos_err_thresh
 
         effort_delta = 0.0
-        if effort is not None:
+        if self.use_effort and signed_effort is not None:
             if self.effort_baseline is None:
-                self.effort_baseline = effort
-            effort_delta = abs(effort - self.effort_baseline)
-            pressed = pressed or effort_delta > self.effort_thresh
+                self.effort_baseline = signed_effort
+            effort_delta = abs(signed_effort - self.effort_baseline)
+            pressed = pressed or (effort_delta > self.effort_thresh)
             if not pressed:
                 # Slow EMA tracks drift (temperature, friction) while quiet.
-                self.effort_baseline += 0.02 * (effort - self.effort_baseline)
+                self.effort_baseline += 0.02 * (signed_effort - self.effort_baseline)
 
         triggered = False
         if pressed:
@@ -201,9 +257,11 @@ class HeadTouchBeepNode(Node):
                 triggered = True
                 self.cooldown_until = t + self.cooldown
                 self.condition_since = None
+                trigger_str = f"pos_err={pos_err:.3f} rad"
+                if self.use_effort:
+                    trigger_str += f", load_delta={effort_delta:.0f}"
                 self.get_logger().info(
-                    f"head touch detected (pos_err={pos_err:.3f} rad, "
-                    f"load_delta={effort_delta:.0f}) — beeping"
+                    f"head touch detected ({trigger_str}) — beeping"
                 )
                 self.touched_pub.publish(Empty())
                 self.play_async(self.synth_phrase())
@@ -216,11 +274,10 @@ class HeadTouchBeepNode(Node):
         if self.debug_pub is None:
             return
         pos_err = abs(pos - self.goal) if self.goal is not None else 0.0
-        effort_delta = (
-            abs(effort - self.effort_baseline)
-            if effort is not None and self.effort_baseline is not None
-            else 0.0
-        )
+        effort_delta = 0.0
+        if effort is not None and self.effort_baseline is not None:
+            raw_effort = self._to_signed_effort(effort)
+            effort_delta = abs(raw_effort - self.effort_baseline)
         m = Float64MultiArray()
         m.data = [pos_err, effort_delta, float(muted), float(triggered)]
         self.debug_pub.publish(m)
@@ -233,30 +290,34 @@ class HeadTouchBeepNode(Node):
     # ------------------------------------------------------------- synthesis
     def _syllable(self, kind: str, rng: random.Random) -> np.ndarray:
         fs = self.sample_rate
-        dur = rng.uniform(0.06, 0.22)
+        dur = rng.uniform(0.08, 0.24)
         n = max(1, int(dur * fs))
         t = np.arange(n) / fs
         tn = t / dur  # 0..1
 
-        f0 = math.exp(rng.uniform(math.log(350.0), math.log(2200.0)))
+        min_f = self.min_freq
+        max_f = self.max_freq
+        f0 = math.exp(rng.uniform(math.log(min_f), math.log(max_f * 0.7)))
         if kind == "chirp_up":
-            f1 = min(f0 * rng.uniform(1.5, 3.0), 3200.0)
+            f1 = min(f0 * rng.uniform(1.3, 1.8), max_f)
             f = f0 * (f1 / f0) ** tn
         elif kind == "chirp_down":
-            f1 = max(f0 / rng.uniform(1.5, 3.0), 300.0)
+            f1 = max(f0 / rng.uniform(1.3, 1.8), min_f)
             f = f0 * (f1 / f0) ** tn
         elif kind == "warble":
-            rate = rng.uniform(15.0, 35.0)
-            depth = rng.uniform(0.05, 0.25)
+            rate = rng.uniform(8.0, 20.0)
+            depth = rng.uniform(0.05, 0.15)
             f = f0 * (1.0 + depth * np.sin(2 * np.pi * rate * t))
         elif kind == "trill":
-            f = f0 * (1.0 + 0.3 * tn)
-        else:  # squeak: up-and-back-down bend
-            fpeak = min(f0 * rng.uniform(1.8, 2.8), 3400.0)
+            f = f0 * (1.0 + 0.2 * tn)
+        else:  # squeak / bend: gentle up-and-down arc
+            fpeak = min(f0 * rng.uniform(1.3, 1.6), max_f)
             f = f0 + (fpeak - f0) * np.sin(np.pi * tn)
 
+        f = np.clip(f, min_f, max_f)
         phase = 2 * np.pi * np.cumsum(f) / fs
-        x = np.sin(phase) + 0.35 * np.sin(2 * phase)  # classic synth timbre
+        # Softer timbre: subtle 2nd harmonic (0.12 instead of 0.35) so it is not sharp/harsh to ears
+        x = np.sin(phase) + 0.12 * np.sin(2 * phase)
 
         if kind == "trill":
             gate_rate = rng.uniform(20.0, 35.0)

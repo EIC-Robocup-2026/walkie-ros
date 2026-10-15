@@ -212,3 +212,12 @@ install/
 
 # AI
 .claude/
+hardware/lidar/unilidar_sdk2/unitree_lidar_sdk/bin/
+
+# Cloned by `pixi run setup-real` from walkie_real.repos
+hardware/camera/zed-ros2-wrapper/
+
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+

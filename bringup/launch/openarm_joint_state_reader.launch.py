@@ -92,7 +92,12 @@ def generate_launch_description():
     # hardware plugin out of the URDF (no controller_manager runs here).
     robot_state_publisher = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(bringup_dir, 'launch', 'robot_state_publisher.launch.py')),
+            os.path.join(
+                get_package_share_directory('walkie_description'),
+                'launch',
+                'robot_state_publisher.launch.py',
+            )
+        ),
         launch_arguments={
             'robot_model': robot_model,
             'ros2_control': 'mock',

@@ -1,0 +1,105 @@
+site_name: Walkie ROS
+site_description: Documentation for the Walkie robot ROS 2 workspace (EIC RoboCup 2026)
+site_url: https://eic-robocup-2026.github.io/walkie-ros/
+repo_url: https://github.com/EIC-Robocup-2026/walkie-ros
+repo_name: EIC-Robocup-2026/walkie-ros
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.action.edit
+
+plugins:
+  - search
+
+# Report broken links and anchors as warnings, so `mkdocs build --strict` fails on them.
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Guides:
+      - guides/index.md
+      - Working with Pixi: guides/pixi.md
+      - Middleware (Zenoh): guides/middleware.md
+      - Gazebo Simulation: guides/simulation-gazebo.md
+      - MuJoCo Simulation: guides/simulation-mujoco.md
+      - Navigation: guides/navigation.md
+      - Manipulation: guides/manipulation.md
+      - Perception: guides/perception.md
+      - Real Robot: guides/real-robot.md
+      - Tests: guides/testing.md
+      - Docker Images: guides/docker.md
+  - Reference:
+      - Project Structure: reference/project-structure.md
+      - Robot Description: reference/robot-description.md
+  - Migration Log:
+      - migrations/index.md
+      - 1. Move to Pixi: migrations/01-pixi.md
+      - 2. Add MuJoCo Simulation:
+          - migrations/02-mujoco/index.md
+          - 2.1 Generate the Model: migrations/02-mujoco/01-model-generation.md
+          - 2.2 Omni Wheels: migrations/02-mujoco/02-omni-wheels.md
+          - 2.3 Collisions: migrations/02-mujoco/03-collisions.md
+          - 2.4 Sensors: migrations/02-mujoco/04-sensors.md
+          - 2.5 ros2_control: migrations/02-mujoco/05-ros2-control.md
+          - 2.6 Tests: migrations/02-mujoco/06-tests.md
+          - 2.7 Launch Files and Nav2: migrations/02-mujoco/07-launch.md
+      - 3. Add the Documentation Site: migrations/03-documentation.md
+      - 4. Move to RoboStack Build Set _25: migrations/04-robostack-build-25.md
+  - Troubleshooting: troubleshooting.md

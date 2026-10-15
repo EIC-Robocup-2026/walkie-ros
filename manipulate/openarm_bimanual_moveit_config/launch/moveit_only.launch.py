@@ -26,7 +26,7 @@ from launch_ros.actions import Node
 from moveit_configs_utils import MoveItConfigsBuilder
 
 
-# hardware_type -> xacro mappings (must match demo2.launch.py)
+# hardware_type -> xacro mappings (must match moveit_demo.launch.py)
 _HW_MAPPINGS = {
     "mock_components": {
         "ros2_control": "mock",
@@ -42,6 +42,12 @@ _HW_MAPPINGS = {
     },
     "real_robot": {
         "ros2_control": "real_robot",
+        "add_world_link": "false",
+    },
+    # MuJoCo owns ros2_control through mujoco_ros2_control, as Gazebo does
+    # through gz_ros2_control.
+    "mujoco": {
+        "ros2_control": "mujoco",
         "add_world_link": "false",
     },
 }
@@ -67,7 +73,7 @@ def _make_nodes(context: LaunchContext, hardware_type_lc,
 
     pkg_moveit = get_package_share_directory("openarm_bimanual_moveit_config")
 
-    use_sim_time = hardware_type in ("gazebo", "isaac")
+    use_sim_time = hardware_type in ("gazebo", "isaac", "mujoco")
 
     moveit_config = (
         MoveItConfigsBuilder("openarm", package_name="openarm_bimanual_moveit_config")
@@ -86,6 +92,8 @@ def _make_nodes(context: LaunchContext, hardware_type_lc,
     )
     moveit_params = moveit_config.to_dict()
     moveit_params["use_sim_time"] = use_sim_time
+    # Octomap needs the ZED point cloud, which only Gazebo and the real robot
+    # publish (no point cloud source is wired for mock/isaac/mujoco).
     if hardware_type not in ("gazebo", "real_robot"):
         moveit_params.pop("sensors_3d", None)
         moveit_params["octomap_resolution"] = 0.0
@@ -144,7 +152,8 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "hardware_type",
             default_value="mock_components",
-            description="Hardware backend: mock_components | gazebo | isaac | real_robot",
+            description="Hardware backend: mock_components | gazebo | isaac | "
+                        "real_robot | mujoco",
         ),
         DeclareLaunchArgument(
             "point_cloud_topic",

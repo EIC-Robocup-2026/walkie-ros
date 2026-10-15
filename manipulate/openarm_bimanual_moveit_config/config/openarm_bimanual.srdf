@@ -611,7 +611,6 @@
 
     <!--DISABLE COLLISIONS-->
     <!-- ===== Walkie base chain: adjacent / rigid-body pairs ===== -->
-    <disable_collisions link1="world"          link2="base_footprint"            reason="Adjacent"/>
     <disable_collisions link1="base_footprint" link2="base_link"                  reason="Adjacent"/>
     <disable_collisions link1="base_link"      link2="lift_link"                  reason="Adjacent"/>
     <disable_collisions link1="base_link"      link2="bl_wheel_link"              reason="Adjacent"/>
@@ -621,11 +620,8 @@
     <disable_collisions link1="base_link"      link2="front_lidar_link"           reason="Adjacent"/>
     <disable_collisions link1="base_link"      link2="back_lidar_link"            reason="Adjacent"/>
     <disable_collisions link1="base_link"      link2="top_imu_link"               reason="Adjacent"/>
-    <disable_collisions link1="base_link"      link2="bottombase"                reason="Adjacent"/>
     <disable_collisions link1="base_link"      link2="bottom_bottom_screw_frame" reason="Adjacent"/>
     <disable_collisions link1="base_link"      link2="bottom_link"               reason="Never"/>
-    <disable_collisions link1="bottombase"     link2="bottom_bottom_screw_frame" reason="Never"/>
-    <disable_collisions link1="bottombase"     link2="bottom_link"               reason="Never"/>
     <disable_collisions link1="bottom_bottom_screw_frame" link2="bottom_link"    reason="Adjacent"/>
     <disable_collisions link1="bottom_link"    link2="bottom_depth_frame"        reason="Adjacent"/>
     <disable_collisions link1="lift_link"      link2="head_servo_link"            reason="Adjacent"/>
@@ -640,30 +636,23 @@
     <disable_collisions link1="bl_wheel_link" link2="front_lidar_link" reason="Never"/>
     <disable_collisions link1="bl_wheel_link" link2="back_lidar_link"  reason="Never"/>
     <disable_collisions link1="bl_wheel_link" link2="top_imu_link"     reason="Never"/>
-    <disable_collisions link1="bl_wheel_link" link2="bottombase"       reason="Never"/>
     <disable_collisions link1="br_wheel_link" link2="front_lidar_link" reason="Never"/>
     <disable_collisions link1="br_wheel_link" link2="back_lidar_link"  reason="Never"/>
     <disable_collisions link1="br_wheel_link" link2="top_imu_link"     reason="Never"/>
-    <disable_collisions link1="br_wheel_link" link2="bottombase"       reason="Never"/>
     <disable_collisions link1="fl_wheel_link" link2="front_lidar_link" reason="Never"/>
     <disable_collisions link1="fl_wheel_link" link2="back_lidar_link"  reason="Never"/>
     <disable_collisions link1="fl_wheel_link" link2="top_imu_link"     reason="Never"/>
-    <disable_collisions link1="fl_wheel_link" link2="bottombase"       reason="Never"/>
     <disable_collisions link1="fr_wheel_link" link2="front_lidar_link" reason="Never"/>
     <disable_collisions link1="fr_wheel_link" link2="back_lidar_link"  reason="Never"/>
     <disable_collisions link1="fr_wheel_link" link2="top_imu_link"     reason="Never"/>
-    <disable_collisions link1="fr_wheel_link" link2="bottombase"       reason="Never"/>
     <!-- ===== Sensors vs sensors ===== -->
     <disable_collisions link1="front_lidar_link" link2="back_lidar_link"          reason="Never"/>
     <disable_collisions link1="front_lidar_link" link2="top_imu_link"             reason="Never"/>
-    <disable_collisions link1="front_lidar_link" link2="bottombase"               reason="Never"/>
     <disable_collisions link1="front_lidar_link" link2="bottom_bottom_screw_frame" reason="Never"/>
     <disable_collisions link1="front_lidar_link" link2="bottom_link"              reason="Never"/>
     <disable_collisions link1="back_lidar_link"  link2="top_imu_link"             reason="Never"/>
-    <disable_collisions link1="back_lidar_link"  link2="bottombase"               reason="Never"/>
     <disable_collisions link1="back_lidar_link"  link2="bottom_bottom_screw_frame" reason="Never"/>
     <disable_collisions link1="back_lidar_link"  link2="bottom_link"              reason="Never"/>
-    <disable_collisions link1="top_imu_link"     link2="bottombase"               reason="Never"/>
     <disable_collisions link1="top_imu_link"     link2="bottom_bottom_screw_frame" reason="Never"/>
     <disable_collisions link1="top_imu_link"     link2="bottom_link"              reason="Never"/>
     <!-- ===== Head servo vs arm link0 (both children of lift_link) ===== -->
@@ -884,6 +873,7 @@
     <disable_collisions link1="openarm_left_link4" link2="openarm_right_link5" reason="Never"/>
     <disable_collisions link1="openarm_left_link4" link2="openarm_right_link6" reason="Never"/>
     <disable_collisions link1="openarm_left_link5" link2="openarm_left_link6" reason="Adjacent"/>
+    <disable_collisions link1="openarm_left_link5" link2="openarm_left_link7" reason="Never"/>
     <disable_collisions link1="openarm_left_link5" link2="openarm_left_right_finger" reason="Never"/>
     <disable_collisions link1="openarm_left_link5" link2="openarm_right_link1" reason="Never"/>
     <disable_collisions link1="openarm_left_link5" link2="openarm_right_link2" reason="Never"/>
@@ -956,6 +946,5 @@
 
     <disable_collisions link1="zed_head_camera_center" link2="base_link" reason="Never"/>
     <disable_collisions link1="zed_head_camera_center" link2="bottom_link" reason="Never"/>
-    <disable_collisions link1="zed_head_camera_center" link2="bottombase" reason="Never"/>
     <disable_collisions link1="zed_head_camera_center" link2="top_imu_link" reason="Never"/>
 </robot>

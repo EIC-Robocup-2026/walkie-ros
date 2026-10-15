@@ -50,7 +50,35 @@ _HW_MAPPINGS = {
         "ros2_control": "real_robot",
         "add_world_link": "false",
     },
+    # MuJoCo owns ros2_control through mujoco_ros2_control, as Gazebo does
+    # through gz_ros2_control.
+    "mujoco": {
+        "ros2_control": "mujoco",
+        "add_world_link": "false",
+    },
 }
+
+
+def _sim_controller_spawners():
+    """Spawners for a controller manager that runs inside the simulator.
+
+    No --controller-manager-timeout is passed, so each spawner waits until the
+    simulator's controller manager is available. Controller names follow
+    walkie_description/config/ros2_controller/sim_controllers.yaml, which
+    declares the joint state broadcaster as joint_broad.
+    """
+    return [
+        Node(package="controller_manager", executable="spawner",
+             arguments=["joint_broad"]),
+        Node(package="controller_manager", executable="spawner",
+             arguments=["left_joint_trajectory_controller",
+                        "right_joint_trajectory_controller"]),
+        Node(package="controller_manager", executable="spawner",
+             arguments=["left_gripper_controller",
+                        "right_gripper_controller"]),
+        Node(package="controller_manager", executable="spawner",
+             arguments=["lift_controller"]),
+    ]
 
 
 def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc,
@@ -109,7 +137,7 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc,
         xacro_path, mappings=mappings
     ).toprettyxml(indent="  ")
 
-    use_sim_time = hardware_type in ("gazebo", "isaac")
+    use_sim_time = hardware_type in ("gazebo", "isaac", "mujoco")
 
     moveit_config = (
         MoveItConfigsBuilder("openarm", package_name="openarm_bimanual_moveit_config")
@@ -128,7 +156,7 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc,
     )
     moveit_params = moveit_config.to_dict()
     moveit_params["use_sim_time"] = use_sim_time
-    # Disable octomap when no real 3D sensors are configured (mock/isaac)
+    # Disable octomap when no real 3D sensors are configured (mock/isaac/mujoco)
     if hardware_type not in ("gazebo", "real_robot"):
         moveit_params.pop("sensors_3d", None)
         moveit_params["octomap_resolution"] = 0.0
@@ -223,18 +251,7 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc,
         gz_spawners = RegisterEventHandler(
             event_handler=OnProcessExit(
                 target_action=spawn,
-                on_exit=[
-                    Node(package="controller_manager", executable="spawner",
-                         arguments=["joint_state_broadcaster"]),
-                    Node(package="controller_manager", executable="spawner",
-                         arguments=["left_joint_trajectory_controller",
-                                    "right_joint_trajectory_controller"]),
-                    Node(package="controller_manager", executable="spawner",
-                         arguments=["left_gripper_controller",
-                                    "right_gripper_controller"]),
-                    Node(package="controller_manager", executable="spawner",
-                         arguments=["lift_controller"]),
-                ],
+                on_exit=_sim_controller_spawners(),
             )
         )
         move_group = Node(
@@ -244,7 +261,23 @@ def _make_nodes(context: LaunchContext, hardware_type_lc, controllers_file_lc,
         )
         return [rsp, gazebo, bridge, spawn, gz_spawners, move_group, rviz]
 
-    # non-Gazebo: mock_components / isaac / real_robot
+    if hardware_type == "mujoco":
+        # As with Gazebo, the simulator owns ros2_control: mujoco_ros2_control
+        # ships its own ros2_control_node, so none is started here. That node
+        # is launched separately (not wired into this package yet) and reads
+        # robot_description from the topic published by rsp; the spawners wait
+        # until its controller manager is available. With right_joint2_fixed:=true
+        # the published ros2_control block omits openarm_right_joint2, so the
+        # controllers file of that separate launch must drop the joint from
+        # right_joint_trajectory_controller, as the branches below do.
+        move_group = Node(
+            package="moveit_ros_move_group", executable="move_group",
+            output="screen",
+            parameters=[moveit_params],
+        )
+        return [rsp, *_sim_controller_spawners(), move_group, rviz]
+
+    # mock_components / isaac / real_robot: this launch runs ros2_control_node.
     # Jazzy ros2_control_node reads robot_description from /robot_description topic.
     # RSP is returned first so it starts and publishes before control_node subscribes.
     if right_joint2_fixed == "true":
@@ -322,7 +355,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "hardware_type",
             default_value="mock_components",
-            description="Hardware backend: mock_components | gazebo | isaac | real_robot",
+            description="Hardware backend: mock_components | gazebo | isaac | "
+                        "real_robot | mujoco. mujoco expects the MuJoCo "
+                        "simulator (mujoco_ros2_control) to be started separately.",
         ),
         DeclareLaunchArgument(
             "controllers_file",

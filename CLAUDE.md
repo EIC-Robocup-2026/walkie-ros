@@ -2,114 +2,104 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Full documentation lives in `docs/` (MkDocs, published at https://eic-robocup-2026.github.io/walkie-ros/). Read the relevant page before changing a subsystem; the Migration Log (`docs/migrations/`) records why things are the way they are. When behavior or commands change, update the matching docs page in the same change.
+
+## Environment
+
+The workspace is managed by pixi + RoboStack Jazzy (`pixi.toml`, `pixi.lock`). The repository root is the colcon workspace. Never source `/opt/ros/*/setup.bash`: it shadows the pixi environment. Run ROS commands through `pixi run` (or inside `pixi shell`); activation sources `install/setup.bash`.
+
+`pixi.toml` pins `ros2-distro-mutex = "0.19.*"` (RoboStack build set `_25`) so that `pixi add`/`pixi update` cannot move every ROS package to another build set. Changing the pin requires `pixi install` and `pixi run clean && pixi run build` (`build-pkg` is not enough); see `docs/guides/pixi.md`. Do not `pip install` into the pixi env.
+
 ## Build
 
 ```bash
-# Full build (use --symlink-install so edits to Python/launch files take effect without rebuilding)
-colcon build --symlink-install
-
-# Single package rebuild
-colcon build --packages-select <package_name> --symlink-install
-
-# Source after build
-source install/setup.bash
+pixi install                          # create .pixi/envs/default from pixi.lock
+pixi run build-setup [workers]        # initial setup build (default: 1 worker; e.g. pixi run build-setup 3)
+pixi run build                        # setup + colcon build --symlink-install
+pixi run setup-real                   # pull real-robot hardware repos (ZED wrapper) from walkie_real.repos
+pixi run build-pkg <pkg> [<pkg>...]   # rebuild selected packages
+pixi run clean                        # remove build/ install/ log/
 ```
+
+Add dependencies with `pixi add ros-jazzy-<name>` and commit `pixi.toml` and `pixi.lock` together. `pixi.lock` is `merge=binary`: resolve lock conflicts by re-locking, not by hand. Real-robot hardware packages (e.g. ZED wrapper) are managed via `walkie_real.repos` (`pixi run setup-real`).
 
 ## Running
 
 ```bash
-# Gazebo simulation + Nav2 (one command, handles sourcing and zenoh router)
-./scripts/sim_nav_gazebo.sh
+export RMW_IMPLEMENTATION=rmw_zenoh_cpp            # every shell that runs nodes
+pixi run ros2 run rmw_zenoh_cpp rmw_zenohd          # one Zenoh router per machine
 
-# Gazebo only
-ros2 launch robot_simulation gzsim_omnibot.launch.py
+pixi run ros2 launch robot_simulation gzsim_omnibot.launch.py     # Gazebo
+pixi run ros2 launch robot_bringup nav_sim_omnibot.launch.py      # Gazebo + Nav2
+pixi run ros2 launch robot_bringup mujoco_omnibot.launch.py       # MuJoCo + controllers + RViz [headless:=true]
+pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py   # MuJoCo + Nav2 (blank map, odometry-only, no AMCL)
+pixi run ros2 launch robot_bringup real_omnibot.launch.py         # real robot
+pixi run ros2 launch robot_bringup lift_homing.launch.py [mock:=true]
 
-# Full hardware bringup
-ros2 launch robot_bringup real_omnibot.launch.py
-
-# Lift homing (hardware)
-ros2 launch robot_bringup lift_homing.launch.py
-
-# Lift homing (no hardware — instant, no CAN bus)
-ros2 launch robot_bringup lift_homing.launch.py mock:=true
+pixi run mjcf          # regenerate description/mujoco/walkie.xml from the xacro
+pixi run mjcf-view     # open description/mujoco/scene.xml in the MuJoCo viewer
 ```
 
-## CAN bus (real robot)
-
-```bash
-# Bring CAN interface up (required before any TMotor/CubeMars hardware)
-./scripts/can_setup.sh up can0 1000000
-
-# Bring down
-./scripts/can_setup.sh down
-```
-
-## Python venv (bringup package)
-
-The `bringup` package has extra Python dependencies (TMotorCANControl, python-can, etc.) managed by `uv`. The venv must exist before running on real hardware; the launch file injects it into `PYTHONPATH` automatically via `additional_env` so no manual sourcing is needed.
-
-```bash
-cd bringup
-uv venv --python python3.12 --system-site-packages
-uv sync
-```
-
-`--system-site-packages` keeps `/opt/ros/jazzy` visible inside the venv.
+Real robot CAN interfaces are set up persistently by `scripts/setup_device/` (udev rules + systemd units): `can2` = CubeMars wheels and the lift motor, `can0`/`can1` = OpenArm (CAN FD). The lift node needs the uv venv in `bringup/` (`pixi run uv venv --python python3.12 --system-site-packages && pixi run uv sync`); `lift_homing.launch.py` adds it to `PYTHONPATH`.
 
 ## Tests
 
 ```bash
-# Run all tests
-colcon test
-colcon test-result --verbose
-
-# Single package
-colcon test --packages-select <package_name>
+pixi run test --packages-select <pkg>
+pixi run colcon test-result --verbose
+pixi run python -m pytest description/test/test_description.py description/test/test_mjcf.py   # after a build
 ```
 
-Notable test files:
-- `description/test/test_xacro.py` — validates all URDF/Xacro files
-- `manipulate/walkie_ik_servo/test/` — IK and self-collision tests
+pytest is pinned below 9 (pytest 9 rejects the Jazzy launch_testing plugins). `description/test/test_mjcf.py` fails when `walkie.xml` is stale: rerun `pixi run mjcf` after changing the xacro and commit the regenerated file. `test_description.py` checks every ros2_control mode against its controller YAML (`CONTROLLER_PAIRINGS`); known mismatches are strict xfails.
+
+## Docs
+
+```bash
+pixi run docs          # serve http://127.0.0.1:8000 (separate `docs` environment, no ROS)
+pixi run docs-build    # mkdocs build --strict; broken links and anchors fail
+```
+
+New pages must be added to `nav` in `mkdocs.yml`. Admonition bodies are indented 4 spaces. Pages are answer-first: commands, required steps, and breaking warnings stay visible; background, internals, and long tables go in closed `??? info "Descriptive title"` blocks (see "Writing conventions" in `docs/migrations/03-documentation.md`). Keep linked headings outside collapsibles; when renaming one, keep its anchor with `{ #old-anchor }`.
 
 ## Architecture
 
 ### Packages
 
-| Directory | Package(s) | Language | Role |
-|-----------|-----------|----------|------|
-| `bringup/` | `robot_bringup` | Python | Top-level launch files and config; lift homing node with TMotorCANControl |
-| `description/` | `walkie_description` | Xacro/URDF | Robot model (submodule) |
-| `hardware/actuator/` | `cubemars_hardware`, `dynamixel_hardware_interface`, `dynamixel_interfaces` | C++ | ros2_control hardware plugins for wheel and arm actuators |
-| `hardware/lidar/` | `dual_laser_merger`, `urg_node2`, `Lakibeam_ROS2_Driver` | C++ | Hokuyo (rear) + Lakibeam (front) drivers, merged into `/scan` |
-| `manipulate/` | `left_arm_commander_cpp`, `left_arm_moveit_config`, `walkie_ik_servo`, `my_robot_interfaces` | C++/Python | MoveIt arm planning, Pinocchio-based IK with self-collision |
-| `navigation/` | `robot_navigation` + nav2 submodule | C++/Python | Nav2 config, SLAM, human follower, pose publisher |
-| `perception/` | `walkie_perception` | C++/Python | YOLOv8 object detection on ZED RGB-D, `GetObPose` service |
-| `simulation/gazebo/` | `robot_simulation` | Python | Gazebo worlds, ros_gz bridge config |
-| `tools/` | `joy_interface`, `keyboard_teleop` | Python/C++ | Joystick and keyboard teleoperation |
+| Directory | Package(s) | Role |
+|-----------|-----------|------|
+| `bringup/` | `robot_bringup` | Top-level launch files and config; lift homing node (TMotorCANControl), ZED watchdog |
+| `description/` (submodule) | `walkie_description` | URDF/Xacro, meshes (Git LFS), ros2_control controller YAMLs, MuJoCo model and generator |
+| `hardware/actuator/` | `cubemars_hardware`, `dynamixel_hardware_interface`, `dynamixel_interfaces`, `dynamixel_sdk`, `openarm_hardware`, `openarm_can` (submodule), `topic_based_ros2_control` (submodule) | ros2_control hardware plugins and drivers |
+| `hardware/lidar/` | `urg_node2`, `lakibeam1`, `dual_laser_merger`, `robot_self_filter`, `unitree_lidar_ros2` | Hokuyo (front) + Lakibeam (rear) merged into `/scan`; point cloud self-filter |
+| `manipulate/` | `openarm_bimanual_moveit_config`, `openarm_bimanual_commander_cpp`, `my_robot_interfaces` | MoveIt for the bimanual OpenArm + lift; commander action/service node |
+| `navigation/` (submodule) | `robot_navigation`, Nav2 fork (`navigation/navigation2`), `spatio_temporal_voxel_layer`, `openvdb_vendor` | Nav2 config, localization, SLAM, maps |
+| `perception/` | `walkie_perception` | Detection, 3D pose and grasp services on the ZED camera (own venv, see `perception/README.md`) |
+| `simulation/gazebo/` | `robot_simulation` | Gazebo worlds, launch, ros_gz bridge config |
+| `tools/` | `joy_interface`, `walkie_tf`, `walkie_tf_interfaces` | Joystick teleop, TF lookup service |
 
 ### Key design points
 
-**ros2_control**: All actuators go through ros2_control. Controller configs live in `description/config/ros2_controller/`. Real robot uses `cubemars_hardware` and `dynamixel_hardware_interface` plugins; simulation uses `gz_ros2_control`.
+**ros2_control**: All actuators go through ros2_control. The mode is the xacro arg `ros2_control` in `description/robots/gz_walkie.urdf.xacro` (`real_robot`, `mock`, `gazebo`, `topic_base`, `mujoco`); each mode pairs with a YAML in `description/config/ros2_controller/` (`real_controllers.yaml`, `sim_controllers.yaml`, `isaac_controllers.yaml`, `mujoco_controllers.yaml`). The joint state broadcaster is named `joint_broad`. Omni base: `omni_wheel_drive_controller`, `robot_radius` 0.185.
 
-**Dual lidar**: Two physical sensors (Hokuyo URG rear, Lakibeam front) are merged by `dual_laser_merger` into a single `/scan` topic for Nav2.
+**MuJoCo**: `description/scripts/build_mjcf.py` expands the xacro with `ros2_control:=mujoco` and applies an MjSpec overlay. Omni wheels are capsules with explicit `<pair>` contacts against a plane floor named `floor` (anisotropic friction only works capsule-vs-plane). Collisions are off per geom via contype/conaffinity classes; never use the global `contact="disable"` flag (it also disables the wheel pairs). The ros2_control runtime, `mujoco_ros2_control` 0.1.2, is in the pixi lock (`mujoco = "3.15.*"` must match its `mujoco_vendor`); it runs as its own `ros2_control_node` (package `mujoco_ros2_control`), started by `bringup/launch/mujoco_omnibot.launch.py` (Nav2: `nav_mujoco_omnibot.launch.py`). Camera and lidar plugin parameters are in `bringup/config/mujoco/mujoco_plugins.yaml`. See `docs/migrations/02-mujoco/`.
 
-**Lift homing**: `bringup/scripts/lift_homing_node.py` runs a blocking homing sequence on init (drives to upper hard stop, detects current spike, sets origin), then switches to position-velocity control. A software trapezoidal trajectory shapes motion commands to avoid overwhelming the motor. `lift_homing_mock_node.py` provides the same ROS interface without CAN.
+**Nav2 fork**: no `robot_navigation` MPPI parameter file sets `FollowPath.Omni.plugin` (`mppi::OmniMotionModel`, required since the navigation2 bump), so every Nav2 launch except `nav_mujoco_omnibot.launch.py` (adds it via `RewrittenYaml`) fails to configure `controller_server`. Composed `bringup_launch.py` can deadlock on Jazzy; use `use_composition:=False`. See `docs/guides/navigation.md`.
 
-**Middleware**: Uses `rmw_zenoh_cpp` instead of the default DDS. The `sim_nav_gazebo.sh` script auto-starts `rmw_zenohd` if not running. The Zenoh router config is at `scripts/WALKIE_RMW_ZENOH_ROUTER_CONFIG.json5`.
+**Lift homing**: `bringup/scripts/lift_homing_node.py` homes against the upper hard stop (current spike), then shapes commands with a software trapezoidal trajectory. `lift_homing_mock_node.py` provides the topics without CAN but not the `follow_joint_trajectory` action.
 
-**Submodules**: `description/` and `navigation/` are separate git submodules. Always clone with `--recurse-submodules`.
+**Middleware**: `rmw_zenoh_cpp`. Team router config: `scripts/bringup/WALKIE_RMW_ZENOH_ROUTER_CONFIG.json5`, started by `scripts/bringup/connect_walkie_zenoh_router.sh`.
 
-**Docker/CI**: GitHub Actions builds two Docker images (`simulation` and `physical`) on push to `main`, published to `ghcr.io/eic-robocup-2026/walkie-ros`. Local compose files are in `docker/`.
+**Submodules**: `description/` and `navigation/` (with nested `navigation2` and `map`) use SSH URLs. Clone with `--recurse-submodules`, then `git submodule foreach --recursive git lfs pull`.
+
+**Docker/CI**: `.github/workflows/build-docker.yml` builds the `simulation` and `physical` images (apt/rosdep/colcon, not pixi) to `ghcr.io/eic-robocup-2026/walkie-ros`. `.github/workflows/docs.yml` publishes the docs site from `main`.
 
 ### Lift homing launch arguments
-
-`lift_homing.launch.py` exposes all tuning parameters as arguments. Key ones:
 
 | Argument | Default | Notes |
 |----------|---------|-------|
 | `mock` | `false` | `true` = no CAN, instant homing |
 | `motor_id` | `16` | CAN node ID |
 | `homing_erpm` | `-8500` | ERPM toward upper hard stop |
-| `lift_m_per_rad` | `-0.00012406` | Signed kinematic ratio, must be set correctly |
-| `topic_position_commands` | `lift/cmd` | Input command topic (`Float64MultiArray`: `[pos_cm, vel_cm_s, acc_cm_s2]`) |
+| `lift_m_per_rad` | `-0.00012406` | Signed kinematic ratio, must match the hardware |
+| `topic_position_commands` | `lift/cmd` | Input (`Float64MultiArray`: `[pos_cm, vel_cm_s, acc_cm_s2]`) |
 | `topic_joint_states` | `lift/joint_states` | Output state topic |
