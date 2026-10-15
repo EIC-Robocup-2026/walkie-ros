@@ -89,10 +89,12 @@ jobs:
 
       # The first pass builds every package without tests, which skips the test targets of Nav2.
       # The second pass configures the tested packages again with their tests.
+      # The restored ccache keeps the statistics of earlier runs, so they are reset first.
       - name: Build
         id: build
         shell: pixi run bash -e {0}
         run: |
+          ccache --zero-stats
           colcon build --symlink-install --parallel-workers 2 \
             --cmake-args -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" -DBUILD_TESTING=OFF \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
