@@ -188,9 +188,7 @@ Then start each step in its own terminal, in this order:
       (`Robot to stop due to invalid source`).
     - **Speed limit:** the velocity smoother caps Nav2 at 0.3 m/s and 1.0 rad/s.
 
-    None of this has been tested on the real robot. The robot runs the Docker
-    image built from `main`, so it gets this behavior, and the other Nav2
-    fixes on this page, only after they are merged into `main`.
+    None of this has been tested on the real robot.
 
     To find the cause of a stop, see
     [The robot stops or slows near obstacles under Nav2](../troubleshooting.md#nav2-robot-stops-near-obstacles).

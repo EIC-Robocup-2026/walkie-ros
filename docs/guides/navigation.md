@@ -419,9 +419,7 @@ The chain is `/cmd_vel_controller` (Nav2 servers) to `velocity_smoother`,
     For the stop polygons, the blind zones, and what can still block Nav2,
     see [Collision monitor](#collision-monitor).
 
-    The real robot runs the Docker image built from `main`, so this behavior
-    reaches it only after the change is merged to `main`. It has not been
-    tested on the real robot.
+    It has not been tested on the real robot.
 
 To see why the robot stopped or slowed down, check the `collision_monitor` log.
 It logs an INFO line each time its action changes, such as

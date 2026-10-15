@@ -90,7 +90,7 @@ New pages must be added to `nav` in `mkdocs.yml`. Admonition bodies are indented
 
 **Submodules**: `description/` and `navigation/` (with nested `navigation2` and `map`) use SSH URLs. Clone with `--recurse-submodules`, then `git submodule foreach --recursive git lfs pull`.
 
-**Docker/CI**: `.github/workflows/build-docker.yml` builds the `simulation` and `physical` images (apt/rosdep/colcon, not pixi) to `ghcr.io/eic-robocup-2026/walkie-ros`. `.github/workflows/docs.yml` builds the docs site and publishes it on pushes to `main` and `feat/Pixi`.
+**Docker/CI**: `.github/workflows/build-docker.yml` builds the `simulation` and `physical` images (apt/rosdep/colcon, not pixi) to `ghcr.io/eic-robocup-2026/walkie-ros`. `.github/workflows/docs.yml` publishes the docs site from `main`.
 
 ### Lift homing launch arguments
 

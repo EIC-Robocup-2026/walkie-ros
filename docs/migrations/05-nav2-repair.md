@@ -651,9 +651,8 @@ publishes the stop polygon selected by the current command on
 arrives, and the slow-down circle on `polygon_slowdown`. `default.rviz`
 ([Stop polygon in RViz](#stop-polygon-in-rviz)) shows both.
 
-!!! warning "The real robot does not have these changes yet"
-    The robot runs the Docker image built from `main`. None of these changes
-    reach it until they are merged there.
+!!! warning "Not tested on the real robot"
+    No hardware run was made with these changes.
 
 ??? info "Where the lidars cannot see, and the stop test before the fix"
     **`/scan`.** `dual_laser_merger` publishes `/scan` in `merged_lidar_link`,
@@ -801,9 +800,12 @@ documentation for this entry is in separate walkie-ros commits. `c26237a`
 entry.
 
 ??? info "Branches"
-    The walkie-ros commits are on `fix/nav2-compat`, stacked on
-    `feat/mujoco-launch`, which is on `feat/Pixi`; they are under review in
-    walkie-ros pull request #44. The navigation commits were on
+    The walkie-ros commits were on `fix/nav2-compat`, stacked on
+    `feat/mujoco-launch`. Walkie-ros pull request #44 merged them into
+    `feat/mujoco-launch` on 2026-10-14, 9 s after pull request #43 had merged
+    `feat/mujoco-launch` into `feat/Pixi`, so `feat/Pixi` did not get them.
+    They reach `main`, into which `feat/Pixi` was merged on 2026-10-15
+    (pull request #50), through pull request #48. The navigation commits were on
     `fix/nav2-compat` in `EIC-Robocup-2026/navigation`, branched from
     `feat/pixi` (`02a697a`). Navigation pull request #7 merged them into
     `feat/pixi` on 2026-10-14 (`ec6aa14`), after a merge of `feat/pixi` into
@@ -870,5 +872,3 @@ entry.
   the controller uses 0.076 m. The odometry scale error is about 1.5 %.
 - The smoother caps rotation at 1.0 rad/s, while MPPI's `wz_max` is 1.5 rad/s.
 - **Real robot not verified.** No hardware run was made with these changes.
-  The Docker images build from `main`, so the robot gets these changes only
-  after the merge.
