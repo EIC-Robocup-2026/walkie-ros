@@ -624,6 +624,72 @@ pixi run ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovariance
     behavior. See
     [Navigation: Test goal logic without physics](guides/navigation.md#test-goal-logic-without-physics).
 
+### bt_navigator says "map" does not exist, and goals fail with error 9002 { #nav2-map-frame-does-not-exist }
+
+`bt_navigator` rejects `NavigateToPose` goals, and its log shows:
+
+```text
+Failed to get transform: "map" passed to lookupTransform argument target_frame does not exist.
+Setting internal error error_code:9002, error_msg:Initial robot pose is not available.
+```
+
+`bt_navigator` has no transform from `map` to `odom`, so it cannot place the
+robot in the map. Other nodes can still have it: the costmaps work, and a new
+`pixi run ros2 run tf2_ros tf2_echo map base_footprint` prints the transform.
+
+`nav_mujoco_omnibot.launch.py` publishes `map` to `odom` again every second
+(`map_to_odom_publisher.py` in `robot_bringup`), so a node that missed it has
+it within a second. If your launch file publishes `map` to `odom` once with
+`static_transform_publisher`, start a second publisher. Running nodes receive
+its transform:
+
+```bash
+pixi run ros2 run tf2_ros static_transform_publisher --frame-id map --child-frame-id odom \
+  --ros-args -r __node:=map_to_odom_2
+```
+
+Never start one next to AMCL or SLAM Toolbox: they publish `map` to `odom`
+themselves, and a second source overrides the localization.
+
+!!! warning "A later goal can report the old error 9002"
+    After such a rejection, the next `NavigateToPose` goal that `bt_navigator`
+    accepts carries error 9002 in its result, even when it succeeds. Judge a
+    goal by its status. In an accepted goal, an `error_code` of 9002 can be left
+    over.
+
+??? info "Why a later goal reports the old error"
+    - This is upstream navigation2 behavior. A goal rejected in `handle_goal`
+      never reaches `executeCallback`, which clears the error after each goal
+      it runs
+      (`navigation/navigation2/nav2_behavior_tree/include/nav2_behavior_tree/bt_action_server_impl.hpp`).
+    - Each action keeps its own error. A `NavigateThroughPoses` goal in
+      between does not clear it, and a rejected `NavigateThroughPoses` goal
+      leaves its error, 9102, in the same way.
+    - On 2026-10-15, a goal ended `SUCCEEDED` with `error_code` 9002 from a
+      goal rejected 12 minutes earlier.
+
+??? info "Why a node can miss a transform that is published once"
+    - `static_transform_publisher` publishes on `/tf_static` once. A node that
+      subscribes later gets the copy the middleware stores for late
+      subscribers (transient local durability).
+    - `bt_navigator` creates its TF listener when the lifecycle manager
+      configures it, after `static_transform_publisher` has sent its one
+      message, so it depends on that stored copy.
+    - On 2026-10-15, with `rmw_zenoh_cpp` and a `static_transform_publisher`
+      for `map` to `odom`, `bt_navigator` had no `map` frame 4 minutes after
+      the start, while the costmaps had it. 12 minutes later it had the frame.
+      The ROS logs show no other `map` to `odom` publisher in between, so it is
+      not known why the frame was missing or how it arrived.
+    - A test did not reproduce it: 90 late subscribers under `rmw_zenoh_cpp`
+      0.2.11 and 90 under `rmw_fastrtps_cpp`, 16 processes started at once,
+      all got the stored copy within 0.26 s.
+    - Publishing again does not depend on the cause: every connected
+      subscriber gets a new copy within one period.
+    - On the real robot, AMCL publishes `map` to `odom` on `/tf` continuously,
+      so this case does not apply there. `robot_state_publisher` publishes the
+      fixed robot frames once, in the same way; no node has been seen missing
+      them.
+
 ## Tests
 
 ### Every Python test aborts at start-up

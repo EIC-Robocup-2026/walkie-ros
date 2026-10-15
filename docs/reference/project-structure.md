@@ -56,7 +56,8 @@ and scripts, which CMake installs.
       MuJoCo with Nav2 (`nav_mujoco_omnibot.launch.py`), lift homing, the dual
       lidar, OpenArm, octomap mapping, and a ZED test (`test_zed.launch.py`).
     - Python nodes in `scripts/`: lift homing (real and mock), ZED watchdog,
-      head touch beep, OpenArm joint state reader.
+      head touch beep, OpenArm joint state reader, and the `map` to `odom`
+      publisher of `nav_mujoco_omnibot.launch.py`.
     - Config in `config/`: cameras, lidars, OpenArm, RViz, and twist_mux.
     - MuJoCo config: `config/mujoco/mujoco_plugins.yaml` (camera and lidar
       plugins of `mujoco_ros2_control`), `config/map/empty_floor.yaml` and
