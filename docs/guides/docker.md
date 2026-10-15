@@ -1,7 +1,12 @@
 # Docker Images
 
 Run the Walkie simulation or the physical robot stack in Docker with the
-compose files in `docker/`, and pull the images that CI publishes.
+compose files in `docker/`, and pull the images that CI published.
+
+!!! warning "CI no longer builds the images"
+    `.github/workflows/build-docker.yml` was removed on 2026-10-15. The images
+    on GHCR are the last ones it published and do not follow `main`. CI now
+    builds the workspace with pixi instead (see [Tests: CI](testing.md#ci)).
 
 !!! note "The images do not use pixi"
     The images install ROS 2 Jazzy from apt, resolve dependencies with
@@ -46,12 +51,14 @@ The container builds the workspace and launches `gzsim_omnibot.launch.py`
 (Gazebo). Stop it with `just stop-sim`.
 
 `compose.simulation.yml` pulls the old tag `feat-github_action_ci-cd`, an
-April 2026 build. For the current build, change the tag to `main` in a local
-copy of the file ([Known issues](#known-issues)).
+April 2026 build. For a newer image, change the tag to `main` in a local copy
+of the file ([Known issues](#known-issues)). That tag is the last build of
+`main` before the Docker workflow was removed.
 
 ??? info "What `compose.simulation.yml` configures"
     - Pulls the simulation image with the tag `feat-github_action_ci-cd`. That
-      tag comes from an old CI branch. CI on `main` publishes the tag `main`.
+      tag comes from an old CI branch. The removed Docker workflow published
+      the tag `main` from `main`.
     - Uses the host network and host IPC, and passes `/dev/dri` for graphics.
     - Mounts the X11 socket (see [X11 access](#x11-access)).
     - Mounts the repository at `/ros2_ws/src`. The build, install, and log
@@ -189,46 +196,21 @@ pixi run ros2 run rmw_zenoh_cpp rmw_zenohd
     | `just shell <container>` | `sudo docker exec -it <container> /bin/bash` |
     | `just run-topic-list` (alias `just list-topics`) | `ros2 topic list` inside `robot-simulation` |
 
-## Pull the images that CI publishes
+## Pull the published images
 
-`.github/workflows/build-docker.yml` builds and pushes both images. The
-images on GHCR are public. CI on `main` publishes the tag `main`:
+The images on GHCR are public. Until 2026-10-15,
+`.github/workflows/build-docker.yml` built them on every push to `main` and
+pushed the tag `main`:
 
 ```bash
 docker pull ghcr.io/eic-robocup-2026/walkie-ros/walkie-simulation:main
 ```
 
 !!! warning
-    The physical image does not build in CI, so `walkie-physical:main` is out
-    of date (see [Known issues](#known-issues)). Build it locally with
-    `just run-real`.
-
-??? info "CI workflow triggers, tags, and steps"
-    | Item | Value |
-    | --- | --- |
-    | Triggers | Push to `main`, push to `feat/github_action_CI/CD`, manual run (`workflow_dispatch`) |
-    | Jobs | `build-sim-image` and `build-physical-image`, in parallel on `ubuntu-latest` |
-    | Images | `ghcr.io/eic-robocup-2026/walkie-ros/walkie-simulation` and `ghcr.io/eic-robocup-2026/walkie-ros/walkie-physical` |
-    | Tags | From `docker/metadata-action`. A branch push is tagged with the branch name, for example `main`. |
-    | Build context | The repository root (`.`) |
-    | Cache | Registry cache at the `:buildcache` tag of each image, `mode=max` |
-
-    Each job has these steps:
-
-    1. Check out the repository with `submodules: recursive` and `lfs: true`.
-    2. Run `git submodule foreach --recursive git lfs pull`.
-    3. Set up Docker Buildx and log in to `ghcr.io` with `GITHUB_TOKEN`.
-    4. Compute the tags with `docker/metadata-action`.
-    5. Build and push with `docker/build-push-action`.
-
-??? info "Why CI pulls Git LFS files in every submodule"
-    `actions/checkout` fetches Git LFS files only for the main repository, not
-    for submodules. The `.dae` meshes in the `description/` submodule are
-    stored in Git LFS. Without step 2, the image would contain small LFS
-    pointer files instead of the meshes.
-
-    `git submodule foreach --recursive` runs the command in every submodule,
-    including nested ones.
+    No workflow updates these tags anymore, so they fall behind `main`.
+    `walkie-physical:main` is older still: the physical job always failed
+    (see [Known issues](#known-issues)), and the image dates from May 2026.
+    Build the physical image locally with `just run-real`.
 
 ## How the images are built
 
@@ -282,7 +264,7 @@ docker pull ghcr.io/eic-robocup-2026/walkie-ros/walkie-simulation:main
 
 | Issue | Effect | Workaround |
 | --- | --- | --- |
-| The physical CI job uses the repository root as context | The job fails. `walkie-physical:main` on GHCR dates from May 2026. | Build locally with `just run-real` |
+| The removed physical CI job used the repository root as context | The job failed, so `walkie-physical:main` on GHCR dates from May 2026 | Build locally with `just run-real` |
 | `just build-real` uses the repository root as context | Fails at `COPY ./src` | Use `just run-real` |
 | `build-sim` and `build-real` both tag `eic-robocup2026-development:latest`, which no compose file uses | The second build replaces the first. `run-sim` still pulls from GHCR. | Use `run-sim` and `run-real` |
 | `compose.simulation.yml` uses the tag `feat-github_action_ci-cd` | Pulls an April 2026 image, not the current `main` build | Change the tag to `main` in a local copy |
@@ -296,8 +278,8 @@ docker pull ghcr.io/eic-robocup-2026/walkie-ros/walkie-simulation:main
 
 ??? info "Known issue details"
     - **Physical CI job:** `COPY ./src` in `Dockerfile.physical` needs the
-      workspace root as context, so the job fails with `"/src": not found`.
-      In the latest run on `main` (October 2026), the simulation job
+      workspace root as context, so the job failed with `"/src": not found`.
+      In the last runs on `main` (October 2026), the simulation job
       succeeded and the physical job failed.
     - **No `.dockerignore`:** the local build sends the whole repository
       folder to Docker, and `Dockerfile.simulation` copies all of it into the

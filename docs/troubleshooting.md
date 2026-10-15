@@ -18,7 +18,8 @@ Problems with one simulator, launch file, or device are in the guides.
 | MoveIt and the arms | [Manipulation: Known issues](guides/manipulation.md#known-issues), [Troubleshooting](guides/manipulation.md#troubleshooting) |
 | Object detection and grasping | [Perception: Known issues](guides/perception.md#known-issues), [Troubleshooting](guides/perception.md#troubleshooting) |
 | Devices, lift, bringup | [Real Robot: Known issues](guides/real-robot.md#known-issues) |
-| Docker images and CI | [Docker Images: Known issues](guides/docker.md#known-issues) |
+| Docker images | [Docker Images: Known issues](guides/docker.md#known-issues) |
+| CI | [Tests: CI](guides/testing.md#ci) |
 | Single test failures | [Tests: Known issues](guides/testing.md#known-issues), [Troubleshooting](guides/testing.md#troubleshooting) |
 
 ## Environment and pixi
@@ -294,12 +295,12 @@ git submodule update --init --recursive -- description navigation \
     hardware/actuator/topic_based_ros2_control hardware/actuator/openarm/openarm_can
 ```
 
-`tools/twist_stamper` itself comes from `pixi run import`.
+`tools/twist_stamper` was an obsolete package and has been removed from the repository.
 
 ??? info "Why Git cannot clone tools/twist_stamper"
     On `feat/Pixi` and on branches made from it before commit `8ead77e`,
     `tools/twist_stamper` was committed as a gitlink: a submodule entry with
-    no line in `.gitmodules`. Git cannot clone it. `8ead77e` removes the
+    no line in `.gitmodules`. Git cannot clone it. `8ead77e` removed the
     gitlink.
 
 ## Build
@@ -327,15 +328,14 @@ Building `urg_node2` fails with
 `Could not find a package configuration file provided by "laser_proc"`.
 
 ```bash
-pixi run import
-pixi run build-pkg laser_proc urg_node2
+pixi install
+pixi run build-pkg urg_node2
 ```
 
-??? info "Why build-pkg does not find laser_proc"
-    `laser_proc` is not installed from the channels. `pixi run import` clones
-    it into `hardware/lidar/laser_proc`, and colcon builds it with the
-    workspace. `pixi run build` runs the import first. `pixi run build-pkg`
-    does not, and it builds only the packages you name.
+??? info "Why CMake cannot find laser_proc"
+    `ros-jazzy-laser-proc` is installed as a conda package via pixi. Run `pixi install`
+    to ensure the package is present in `.pixi/envs/default/`. If you previously had
+    a source clone in `hardware/lidar/laser_proc`, remove it.
 
 ### The build runs out of memory or crashes during initial setup
 

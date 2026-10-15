@@ -809,10 +809,77 @@ entry.
     `fix/nav2-compat` in `EIC-Robocup-2026/navigation`, branched from
     `feat/pixi` (`02a697a`). Navigation pull request #7 merged them into
     `feat/pixi` on 2026-10-14 (`ec6aa14`), after a merge of `feat/pixi` into
-    the branch (`5db60af`). The `navigation` gitlink stays at `6675ae8`, which
-    `feat/pixi` contains.
+    the branch (`5db60af`). The `navigation` gitlink stayed at `6675ae8`, which
+    `feat/pixi` contains, until it moved to `b6bb293` on navigation `main` (see
+    [Still open](#still-open)).
 
 ## Still open
+
+!!! note "Update 2026-10-15: navigation main has the sim launch fix"
+    The broken sim launch, the first item below, is fixed. Navigation pull
+    request #8 merged the tested `localization_Nav2_sim.launch.py` back into
+    `feat/pixi` on 2026-10-14 (`4d898c4`). Navigation pull request #9 merged
+    `feat/pixi` into navigation `main` on 2026-10-15 (`b6bb293`, the same files
+    as `4d898c4`). The `navigation` gitlink moved from `6675ae8` to `b6bb293`.
+
+    After pulling, rebuild the whole workspace, not only `robot_navigation`.
+    The nested `navigation2` moved too, and its new commits change C++ code in
+    `nav2_util`, `nav2_costmap_2d`, `nav2_collision_monitor` and other Nav2
+    packages:
+
+    ```bash
+    git submodule update --init --recursive
+    pixi run build
+    ```
+
+    The runs in [Tests](#tests) used `navigation2` `e48c3296`. On `3286119`,
+    two launches were repeated on 2026-10-15 and passed:
+    `nav_mujoco_omnibot.launch.py` in the default scene (Nav2 active after
+    7.6 s, three goals reached) and `nav2_loopback.launch.py` (14 of 14 goals
+    reached in 7 runs). Two upstream Nav2 unit tests fail on `3286119`, and the
+    loopback launch stops slowly. None of the three comes from the bump: each
+    behaves the same on `e48c3296`.
+
+    ??? info "Upstream test failures and the slow shutdown on 3286119"
+        | Problem | Cause | Effect on Walkie |
+        | --- | --- | --- |
+        | `nav2_costmap_2d` `static_layer_test`: `StaticLayerRollingTest.FailedTransformMarksLayerNotCurrentAndRecovers` fails every time | The test expects `tf2`'s `clear()` to drop static transforms. Rolling does since ros2/geometry2#908; Jazzy's `tf2` 0.36.23 keeps them, so the lookup the test wants to fail succeeds. | None. The static layer code is correct, and with a dynamic transform the case passes. |
+        | `nav2_collision_monitor` `collision_monitor_node_test` sometimes hangs until the ctest timeout (2 of 30 runs of `testIncorrectSourceType`) | A lost-wakeup race in Jazzy `rclcpp` 28.1.22: a `cancel()` of the executor that runs before its `spin()` starts is lost. `tf2_ros::TransformListener` with its own spin thread hits it when it is destroyed right after it is created. It reproduces without Nav2. | A test-only hang; the collision monitor creates its listener once |
+        | `nav2_loopback.launch.py` takes about 15 s to stop after Ctrl+C | Since navigation2 #6063, the costmap update loop sleeps on the ROS clock. On Ctrl+C, deactivating the costmap waits for `/clock` to advance, but the node that publishes `/clock` has stopped too. `ros2 launch` ends the servers with SIGKILL after its timeout. | The same 15 s on Ctrl+C in every simulated-time Nav2 launch. Harmless; see [MuJoCo Simulation: Troubleshooting](../guides/simulation-mujoco.md#troubleshooting). |
+
+    ??? info "What changed from navigation 6675ae8 to 4d898c4"
+        The Nav2 parameter files and the other launch files did not change.
+
+        - **`navigation2`** moved from `e48c3296` to `3286119` with navigation
+          `e6185d6`: 10 upstream `main` commits from 2026-10-09 and
+          2026-10-10, listed in the table below.
+        - **`slam_toolbox.launch.py`** (`b37184b`) passes its parameter file
+          as `slam_params_file`, which `online_sync_launch.py` reads, and
+          declares `use_sim_time` (default `false`). Before, it passed the
+          file as `params_file`, so SLAM Toolbox ran with its own defaults and
+          `use_sim_time: true`. See
+          [Navigation: Mapping in simulation](../guides/navigation.md#mapping-in-simulation).
+        - **The map submodule** moved from `c22354c` to `06acca0`, which adds
+          `29_14102026_o3de_warehouse`. The default simulation map,
+          `08_23102025_SimWalkie_awssmallhouse_slam_toolbox`, did not change.
+        - **`localization_Nav2_sim.launch.py`** differs from `6675ae8` only in
+          building the same default map path with `os.path.join`. It still
+          includes `bringup_launch.py` with `use_composition:=False`, and
+          `lifecycle_manager_nav2` still comes from `bringup_launch.py`. The
+          split lifecycle managers of `e6185d6` are not in it: `7de42e9` (#8)
+          restored the tested file after the merge `5db60af`.
+
+        | Upstream pull request | Change |
+        | --- | --- |
+        | [#6514](https://github.com/ros-navigation/navigation2/pull/6514) | TF staleness check in the collision monitor and collision detector |
+        | [#6391](https://github.com/ros-navigation/navigation2/pull/6391) | TF staleness check in the asymmetric inflation and static layers and the docking and following servers |
+        | [#6500](https://github.com/ros-navigation/navigation2/pull/6500) | TF staleness check for charging docks and costmap filters |
+        | [#6529](https://github.com/ros-navigation/navigation2/pull/6529) | TF staleness check for vector objects and the route server |
+        | [#6559](https://github.com/ros-navigation/navigation2/pull/6559), [#6635](https://github.com/ros-navigation/navigation2/pull/6635) | The default behavior trees back up through a new `BackupWithReset` subtree instead of `BackUp`. The Walkie MPPI parameter files set their own behavior trees, so they are not affected. |
+        | [#6641](https://github.com/ros-navigation/navigation2/pull/6641) | The obstacle and voxel layers skip empty observation clouds |
+        | [#6437](https://github.com/ros-navigation/navigation2/pull/6437) | Fewer allocations when loading maps |
+        | [#6634](https://github.com/ros-navigation/navigation2/pull/6634) | RViz Nav2 panel: goal handle lifetime and result matching |
+        | [#6605](https://github.com/ros-navigation/navigation2/pull/6605) | DWB: trajectory pose and time offset alignment |
 
 - **Broken sim launch on navigation `feat/pixi`.** The merge `5db60af`
   resolved a conflict in `localization_Nav2_sim.launch.py` by mixing both

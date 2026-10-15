@@ -212,11 +212,10 @@ install/
 
 # AI
 .claude/
-hardware/lidar/laser_proc/
 hardware/lidar/unilidar_sdk2/unitree_lidar_sdk/bin/
 
-# Cloned by `pixi run import` from walkie_external.repos
-tools/twist_stamper/
+# Cloned by `pixi run setup-real` from walkie_real.repos
+hardware/camera/zed-ros2-wrapper/
 
 # pixi environments
 .pixi/*
