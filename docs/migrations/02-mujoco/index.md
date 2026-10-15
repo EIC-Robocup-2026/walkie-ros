@@ -20,7 +20,8 @@ This entry records what the team built, why, and what is still missing. The
   blocked because `mujoco_ros2_control` was not in `pixi.lock`. Since
   [entry 4](../04-robostack-build-25.md) it is installed. Since
   [2.7](07-launch.md), `mujoco_omnibot.launch.py` starts it, and
-  `nav_mujoco_omnibot.launch.py` adds Nav2. MoveIt with MuJoCo has not been run yet
+  `nav_mujoco_omnibot.launch.py` adds Nav2. Since [2.8](08-3d-lidar.md), the head 3D lidar
+  publishes `/unilidar/cloud`. MoveIt with MuJoCo has not been run yet
   ([Current status](#current-status)).
 
 ## Why MuJoCo
@@ -191,8 +192,9 @@ What works today, with no colcon build:
 | Open the scene in the MuJoCo viewer | `pixi run mjcf-view` |
 | Run the MJCF tests | `pixi run python -m pytest description/test/test_mjcf.py` |
 
-With ROS 2, after `pixi run build` (on a workspace built before the launch files existed,
-`pixi run build-pkg robot_bringup walkie_description` is enough):
+With ROS 2, after `pixi run build` (on a workspace built before the launch files or the
+head 3D lidar existed, `pixi install` and
+`pixi run build-pkg robot_bringup walkie_description robot_self_filter` are enough):
 
 | Task | Command |
 | --- | --- |
@@ -229,6 +231,14 @@ What did not work when this entry was written: the ros2_control runtime.
     MuJoCo has still not been run. See
     [2.7 Launch Files and Nav2](07-launch.md) and
     [MuJoCo Simulation: Run with ROS 2](../../guides/simulation-mujoco.md#run-with-ros-2).
+
+!!! note "Update 2026-10-16: head 3D lidar"
+    `walkie.xml` now has the Unitree 4D L2 at the top of the robot, as a sensor of the
+    MuJoCo extension `mujoco.plugin.lidar` (`ros-jazzy-mujoco-3d-lidar`). Both launch files
+    publish its cloud on `/unilidar/cloud` and the self-filtered cloud on
+    `/unilidar/cloud/filtered`. Nav2 does not use it in simulation yet. Every load of
+    `walkie.xml` now needs the extension, which the pixi environment provides. See
+    [2.8 Head 3D Lidar](08-3d-lidar.md).
 
 ## Next steps
 
@@ -273,6 +283,7 @@ What did not work when this entry was written: the ros2_control runtime.
 | [2.5 ros2_control](05-ros2-control.md) | The `mujoco` hardware branch, the controller file, MoveIt support, packaging status |
 | [2.6 Tests](06-tests.md) | What the description, MJCF and SRDF contract tests check |
 | [2.7 Launch Files and Nav2](07-launch.md) | The MuJoCo and Nav2 launch files, the plugin parameter file, two Nav2 fork issues, test results |
+| [2.8 Head 3D Lidar](08-3d-lidar.md) | The Unitree 4D L2 as a MuJoCo extension sensor, its cloud next to the real one, the self filter fix |
 
 For day-to-day use, see the [MuJoCo Simulation guide](../../guides/simulation-mujoco.md).
 

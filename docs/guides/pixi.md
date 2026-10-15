@@ -378,6 +378,7 @@ environment: version 0.19.0, build `jazzy_25`.
 | `ros2-distro-mutex = "0.19.*"` | Keeps the environment in build set `_25` |
 | `mujoco = "3.15.*"` | Must match the libmujoco 3.15.0 that `ros-jazzy-mujoco-vendor` 0.1.0 is built against |
 | `ros-jazzy-mujoco-ros2-control = ">=0.1.2"` | The MuJoCo ros2_control runtime. Version 0.1.x exists only in build set `_25`. See [MuJoCo Simulation](simulation-mujoco.md#run-with-ros-2). |
+| `ros-jazzy-mujoco-3d-lidar = ">=0.1.2,<0.2"` | The MuJoCo extension of the simulated head 3D lidar, which every load of `walkie.xml` needs. Version 0.1.2 exists only in build set `_25` and is built against libmujoco 3.15.0. See [2.8 Head 3D Lidar](../migrations/02-mujoco/08-3d-lidar.md#packaged-extension). |
 | `ros-jazzy-rmw-zenoh-cpp = ">=0.2.11,<0.3"` | 0.2.11 fixes a lost-wakeup bug of 0.2.10. See [Middleware (Zenoh)](middleware.md#turn-on-zenoh-in-every-terminal). |
 | `python-graphviz = "*"` | Provides the Python `graphviz` module for `ros2 control view_controller_chains`. Without it, the verb fails with `KeyError: 'view_controller_chains'`. A build does not catch this. See [One break and its fix](../migrations/04-robostack-build-25.md#one-break-and-its-fix). |
 

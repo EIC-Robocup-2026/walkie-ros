@@ -238,6 +238,13 @@ same name in group 4. Enable site group 4 in the viewer to see these frames.
 The script adds an IMU, two cameras and one rangefinder per lidar beam.
 [2.4 Sensors](04-sensors.md) covers them in detail.
 
+!!! note "Update 2026-10-16: head 3D lidar"
+    The script also adds one instance of the MuJoCo extension `mujoco.plugin.lidar`
+    (`ros-jazzy-mujoco-3d-lidar`) and its sensor `unitree_l2` on the site
+    `unitree4d_l2_imu_initial`. It adds them last, after the keyframe, and stops with an
+    error if the extension is not loaded. The model now has 486 sensors (`nsensor=486` in
+    the output below) and one plugin. See [2.8 Head 3D Lidar](08-3d-lidar.md#in-walkie-xml).
+
 ??? info "Sensor elements in walkie.xml"
     | Sensor | MJCF elements |
     | --- | --- |

@@ -129,7 +129,8 @@ without ROS 2. Press ++f1++ for the full list of shortcuts.
     [Troubleshooting](#troubleshooting).
 
     Always run the generator through pixi. Another MuJoCo version writes a different
-    `walkie.xml`.
+    `walkie.xml`, and a MuJoCo without the head 3D lidar extension
+    (`ros-jazzy-mujoco-3d-lidar`) cannot write it at all.
 
 3. Look at the result with `pixi run mjcf-view`, then run
    `pixi run python -m pytest description/test/test_mjcf.py`.
@@ -294,9 +295,10 @@ pixi run python -c "import mujoco, mujoco.viewer; m = mujoco.MjModel.from_xml_pa
 
 ## Script the model without the viewer
 
-The MuJoCo Python bindings are in the pixi environment. This script loads the example
-world, starts from `home`, simulates 2 s and prints the base position, the cube position
-and the front lidar's center beam:
+The MuJoCo Python bindings are in the pixi environment. They load the head 3D lidar
+extension on `import mujoco`, so use them and not a MuJoCo from `pip`. This script loads
+the example world, starts from `home`, simulates 2 s and prints the base position, the
+cube position and the front lidar's center beam:
 
 ```python
 import mujoco
@@ -326,12 +328,14 @@ Run the commands from the repository root.
 
 1. Build the workspace with `pixi run build`, as described in
    [Getting Started](../getting-started.md#5-build-the-workspace). The launch files also
-   need `dual_laser_merger`, `walkie_tf`, `robot_navigation` and Nav2
+   need `dual_laser_merger`, `walkie_tf`, `robot_self_filter`, `robot_navigation` and Nav2
    (`navigation/navigation2`). If your workspace was built before the MuJoCo launch files
-   existed, rebuild the two packages that hold them and the default world:
+   or the head 3D lidar existed, run `pixi install` (it adds the lidar extension), then
+   rebuild the packages that hold the launch files, the default world and the self filter:
 
     ```bash
-    pixi run build-pkg robot_bringup walkie_description
+    pixi install
+    pixi run build-pkg robot_bringup walkie_description robot_self_filter
     ```
 
     The default world loads from the installed `walkie_description`. Build again after you
@@ -392,8 +396,12 @@ Run the commands from the repository root.
        as in the empty default world; that side reads as free space. The real robot keeps
        the default, `false`. See
        [5. Repair Nav2 After the navigation2 Bump](../migrations/05-nav2-repair.md#scan-in-the-empty-mujoco-world).
-    6. `walkie_tf`'s `tf_server` (node name `walkie_tf_server`).
-    7. RViz with `rviz_config`, when `use_rviz` is `true`.
+    6. `robot_self_filter`'s `self_filter.launch.py` (node name `self_filter`) with
+       `bringup/config/lidar/unitree_self_filter.yaml`, the configuration of the real
+       robot. It reads the head 3D lidar cloud `/unilidar/cloud` and publishes
+       `/unilidar/cloud/filtered` without the points on the robot.
+    7. `walkie_tf`'s `tf_server` (node name `walkie_tf_server`).
+    8. RViz with `rviz_config`, when `use_rviz` is `true`.
 
     `bringup/launch/nav_mujoco_omnibot.launch.py` starts:
 
@@ -412,9 +420,9 @@ Run the commands from the repository root.
        `velocity_smoother` and `collision_monitor` before they reach `twist_mux` on
        `/cmd_vel_nav`.
 
-    `robot_bringup` does not declare `mujoco_ros2_control` in its `package.xml`. The pixi
-    environment provides it, and declaring it would make rosdep install MuJoCo into the
-    `physical` Docker image. [2.7 Launch Files and Nav2](../migrations/02-mujoco/07-launch.md)
+    `robot_bringup` does not declare `mujoco_ros2_control` or `mujoco_3d_lidar` in its
+    `package.xml`. The pixi environment provides them, and declaring them would make rosdep
+    install MuJoCo into the `physical` Docker image. [2.7 Launch Files and Nav2](../migrations/02-mujoco/07-launch.md)
     explains the Nav2 settings, and
     [5. Repair Nav2 After the navigation2 Bump](../migrations/05-nav2-repair.md) the
     `cmd_vel` remap.
@@ -423,9 +431,10 @@ Run the commands from the repository root.
     | Path | Contents |
     | --- | --- |
     | `bringup/config/mujoco/mujoco_plugins.yaml` | Cameras and lidars. See [The mujoco_plugins parameter file](#the-mujoco_plugins-parameter-file). |
+    | `bringup/config/lidar/unitree_self_filter.yaml` | Self filter of the head 3D lidar cloud, shared with the real robot |
     | `bringup/config/map/empty_floor.yaml`, `empty_floor.pgm` | Blank map for Nav2: 20 m by 20 m, 0.05 m cells (400 by 400 pixels, all free), origin `[-10, -10, 0]`, so it is centered on the world origin |
-    | `bringup/config/rviz/mujoco.rviz` | Fixed frame `odom`, orbit view around `base_footprint`. Shows the robot model, `/scan` and the head camera image. The front lidar, back lidar, bottom camera and TF displays exist but are off. |
-    | `bringup/config/rviz/mujoco_nav.rviz` | Fixed frame `map`, top-down view. **Navigation 2** panel. Shows the map, the global and local costmaps, the robot model, the footprint, the global plan `/plan` and `/scan`. Tools include **2D Goal Pose** and **Nav2 Goal**. |
+    | `bringup/config/rviz/mujoco.rviz` | Fixed frame `odom`, orbit view around `base_footprint`. Shows the robot model, `/scan`, the filtered head 3D lidar cloud (**Head 3D lidar**, colored by height) and the head camera image. The front lidar, back lidar, raw 3D lidar cloud, bottom camera and TF displays exist but are off. |
+    | `bringup/config/rviz/mujoco_nav.rviz` | Fixed frame `map`, top-down view. **Navigation 2** panel. Shows the map, the global and local costmaps, the robot model, the footprint, the global plan `/plan`, `/scan` and the filtered head 3D lidar cloud. Tools include **2D Goal Pose** and **Nav2 Goal**. |
     | `bringup/config/twist_mux/twist_mux.yml` | Velocity input priorities |
     | `description/config/ros2_controller/mujoco_controllers.yaml` | Controller manager and controller parameters |
 
@@ -468,13 +477,15 @@ priorities and timeouts.
 | `/omni_wheel_drive_controller/odom` | `nav_msgs/Odometry` | Wheel odometry in the frame `odom`. The controller also publishes the `odom` to `base_footprint` transform. |
 | `/scan` | `sensor_msgs/LaserScan` | `/front_lidar` and `/back_lidar` merged, frame `merged_lidar_link`. Also published in the empty default world: a lidar with no return in range reads as free space. Needs both lidar topics. |
 | `/front_lidar`, `/back_lidar` | `sensor_msgs/LaserScan` | Frames `front_lidar_link` and `back_lidar_link`. About 28 Hz. |
+| `/unilidar/cloud/filtered` | `sensor_msgs/PointCloud2` | Head 3D lidar without the points on the robot, as on the real robot. Frame `unitree4d_l2_imu_initial`, unorganized, `x`, `y`, `z` only. About 11.7 clouds per simulated second (12 Hz configured). Best effort. |
+| `/unilidar/cloud` | `sensor_msgs/PointCloud2` | Head 3D lidar as simulated: organized, 180 x 32 rays, NaN where a ray hits nothing, includes points on the robot. Same frame and rate. |
 | `/imu` | `sensor_msgs/Imu` | Frame `top_imu_link` |
 | `/zed_head/zed_node/rgb/color/rect/image`, `/zed_head/zed_node/depth/depth_registered` | `sensor_msgs/Image` | Head camera, color and depth. The topic names of the real ZED camera. |
 | `/zed_head/zed_node/depth/camera_info` | `sensor_msgs/CameraInfo` | Head camera, frame `zed_head_left_camera_frame_optical` |
 | `/bottom_camera/image_raw`, `/bottom_camera/depth/image_raw` | `sensor_msgs/Image` | Bottom camera, color and depth |
 | `/bottom_camera/camera_info` | `sensor_msgs/CameraInfo` | Bottom camera, frame `bottom_color_optical_frame` |
 | `/mujoco_ground_truth/odom` | `nav_msgs/Odometry` | True base pose from the simulator, without TF. Gazebo uses `/gazebo_ground_truth/odom`. |
-| `/clock` | `rosgraph_msgs/Clock` | Simulated time, about 500 Hz |
+| `/clock` | `rosgraph_msgs/Clock` | Simulated time. About 340 messages per second since the head 3D lidar (about 500 before it). |
 
 ??? info "What the launch files measured on 2026-10-13"
     Measured headless, with `rmw_zenoh_cpp`.
@@ -486,6 +497,14 @@ priorities and timeouts.
     | `/front_lidar`, `/back_lidar`, `/scan` | About 27.8 Hz, not the configured 40 Hz. See [Troubleshooting](#troubleshooting). |
     | Frames | `/imu` in `top_imu_link`, `/front_lidar` in `front_lidar_link`, `/back_lidar` in `back_lidar_link`, `/scan` in `merged_lidar_link`, `/omni_wheel_drive_controller/odom` in `odom` |
     | Cameras | Published on the topics and frames listed above |
+
+??? info "What the head 3D lidar costs (measured 2026-10-16)"
+    Each cloud stalls the simulation for about 53 ms of wall time, every 84 ms of simulated
+    time. Both launch files still ran at a real-time factor of 1.00, but
+    `ros2_control_node` used about 115 % CPU instead of 56 %, and `/clock` dropped from
+    about 500 to about 340 messages per second (263 with Nav2). On a slower machine the
+    simulation may fall below real time; fewer rays help, see
+    [2.8 Head 3D Lidar](../migrations/02-mujoco/08-3d-lidar.md#resolution-and-rate).
 
 ### Drive with Nav2 and RViz
 
@@ -641,8 +660,9 @@ publish, and the cameras register themselves under `/mujoco_camera_plugin/...`.
 | | `bottom_camera` | `/bottom_camera/image_raw`, `/bottom_camera/depth/image_raw`, `/bottom_camera/camera_info` | `bottom_color_optical_frame` |
 | `rangefinder_lidar_plugin` (`RangefinderLidarPlugin`, 40 Hz configured) | `front_lidar` | `/front_lidar` | `front_lidar_link` |
 | | `back_lidar` | `/back_lidar` | `back_lidar_link` |
+| `mujoco_3d_lidar_plugin` (`Mujoco3dLidarPlugin`, 12 Hz set in `walkie.xml`) | `unitree_l2` | `/unilidar/cloud` | `unitree4d_l2_imu_initial` |
 
-Each lidar is one entry under the plugin instance:
+Each 2D lidar is one entry under the plugin instance:
 
 ```yaml title="bringup/config/mujoco/mujoco_plugins.yaml (excerpt)"
 /**:
@@ -661,11 +681,14 @@ Each lidar is one entry under the plugin instance:
           laserscan_topic: /front_lidar
 ```
 
-- **Name the lidar instance exactly `rangefinder_lidar_plugin`.** The plugin reads its
+- **Name the 2D lidar instance exactly `rangefinder_lidar_plugin`.** The plugin reads its
   publish rate from the fixed key
   `mujoco_plugins.rangefinder_lidar_plugin.lidar_publish_rate`.
-- The camera and lidar names (`head_camera`, `front_lidar` and so on) must match the
-  names in `walkie.xml`. Each `frame_name` must be a frame of the URDF.
+- The camera and lidar names (`head_camera`, `front_lidar`, `unitree_l2` and so on) must
+  match the names in `walkie.xml`. Each `frame_name` must be a frame of the URDF.
+- The 3D lidar entry sets only `frame_name` and `topic`. Its rays, range and rate are in
+  `walkie.xml`: change `LIDAR_3D_RESOLUTION`, `LIDAR_3D_RANGE` or `LIDAR_3D_UPDATE_RATE` in
+  `build_mjcf.py` and run `pixi run mjcf` ([Change a MuJoCo-only value](#mujoco-only-values)).
 - The head camera publishes its images and camera info on the topic names of the real ZED
   camera, so nodes that read them need no remaps.
 - No ZED point cloud is published. Nodes that read
@@ -683,9 +706,14 @@ Each lidar is one entry under the plugin instance:
       topics.
     - The camera `frame_name` values are the URDF optical frames. One MuJoCo camera renders
       both head camera images, so the depth image is registered to the color image.
-    - `RangefinderLidarPlugin` is deprecated upstream. Its replacement,
-      `Mujoco3dLidarPlugin`, needs the `mujoco_3d_lidar` MuJoCo extension, which is not in
-      the pixi environment.
+    - `unitree_l2` is the name of a sensor of the MuJoCo extension `mujoco.plugin.lidar`
+      (package `ros-jazzy-mujoco-3d-lidar`) in `walkie.xml`. `Mujoco3dLidarPlugin`
+      publishes every sensor of that extension; the entry under the instance only sets its
+      frame and topic. The frame is the one the real L2 driver stamps its cloud with.
+    - `RangefinderLidarPlugin` is deprecated upstream in favor of `Mujoco3dLidarPlugin`.
+      The 2D lidars keep it because the extension cannot skip the robot's own geoms, and
+      every 2D beam would end on `base_link`. See
+      [2.8 Head 3D Lidar](../migrations/02-mujoco/08-3d-lidar.md).
 
 ## Tests
 
@@ -709,7 +737,8 @@ pixi run python -m pytest description/test/test_mjcf.py
 | Robot base collisions with the world | Left out by design. Navigation relies on the lidars. | [2.3 Collisions](../migrations/02-mujoco/03-collisions.md) |
 | Localization in the map | Odometry only: a static `map` to `odom` transform. No AMCL and no localization from the ground truth, so the pose drifts. | [Drive with Nav2 and RViz](#drive-with-nav2-and-rviz) |
 | Interactive use of RViz | Not yet checked by a person. The plugin classes and topics of both RViz configs were checked. | [Drive with Nav2 and RViz](#drive-with-nav2-and-rviz) |
-| `Mujoco3dLidarPlugin`, the replacement for the deprecated `RangefinderLidarPlugin` | Needs the `mujoco_3d_lidar` MuJoCo extension, which is not in the pixi environment | [The mujoco_plugins parameter file](#the-mujoco_plugins-parameter-file) |
+| Nav2 with the head 3D lidar | The cloud is published and filtered, but the simulation Nav2 parameter file reads only `/scan`. The file is shared with Gazebo, which has no 3D lidar, and `collision_monitor` stops every Nav2 command while a source has no data. | [2.8 Head 3D Lidar](../migrations/02-mujoco/08-3d-lidar.md#still-open) |
+| `intensity`, `ring` and `time` in the 3D lidar cloud | The simulated cloud has `x`, `y` and `z` only | [2.8 Head 3D Lidar](../migrations/02-mujoco/08-3d-lidar.md#real-and-simulated) |
 
 ## Troubleshooting
 
@@ -733,6 +762,11 @@ pixi run python -m pytest description/test/test_mjcf.py
 | The MuJoCo window opens, but you want none | `headless` defaults to `false` | Add `headless:=true` |
 | The whole launch stops when the MuJoCo window is closed | `ros2_control_node` ends the launch when it exits | Expected. Use `headless:=true` to run without the window. |
 | `/front_lidar` and `/back_lidar` do not exist | `ros2_control_node` was started without `bringup/config/mujoco/mujoco_plugins.yaml`, for example by hand | Use `mujoco_omnibot.launch.py`, or pass the file. See [The mujoco_plugins parameter file](#the-mujoco_plugins-parameter-file). |
+| Loading `walkie.xml` or a world fails with `XML Error: plugin mujoco.plugin.lidar not found` | The MuJoCo in use does not have the head 3D lidar extension, for example a MuJoCo from `pip` outside pixi, or a pixi environment created before the extension was added | Run `pixi install`, and load the model through `pixi run`. See [2.8 Head 3D Lidar](../migrations/02-mujoco/08-3d-lidar.md#packaged-extension). |
+| `pixi run mjcf` stops with `RuntimeError: MuJoCo extension 'mujoco.plugin.lidar' is not available` | Same cause, found by the generator before it writes anything | `pixi install` |
+| `/unilidar/cloud` does not exist | `ros2_control_node` was started without the `mujoco_3d_lidar_plugin` entry of `mujoco_plugins.yaml`, or `walkie.xml` predates the 3D lidar | Use `mujoco_omnibot.launch.py`. Rebuild `walkie_description` after updating the `description` submodule. |
+| The launch stops at the start with `PackageNotFoundError` for `robot_self_filter` | `robot_self_filter` is not built in this workspace | `pixi run build-pkg robot_self_filter` |
+| RViz shows nothing under **Head 3D lidar** | The display does not use **Best Effort**, or `/unilidar/cloud` is missing (see the row above) | Set the display's reliability policy to **Best Effort**. Check `pixi run ros2 topic hz /unilidar/cloud/filtered`. |
 | `/front_lidar`, `/back_lidar` and `/scan` publish at about 28 Hz, not 40 Hz | Not known yet. [2.7 Launch Files and Nav2](../migrations/02-mujoco/07-launch.md) records a likely cause. | None yet |
 | Camera topics appear under `/mujoco_camera_plugin/...`, and their frames are not in TF | No `CameraPlugin` is configured, so the cameras register themselves (deprecated) | Use `mujoco_omnibot.launch.py`, or add the `mujoco_camera_plugin` entry of the parameter file |
 | No `/scan` | `dual_laser_merger` pairs `/front_lidar` and `/back_lidar` by time stamp and publishes nothing while one of them is missing. It also publishes nothing when it cannot transform a scan into `merged_lidar_link` (`Transform failure` in its log). A merger started outside `mujoco_omnibot.launch.py` without `publish_on_empty_cloud: True` publishes nothing while a lidar has no return in range, as in the default world. | Check both lidar topics with `pixi run ros2 topic hz /front_lidar` and `/back_lidar`; if one is missing, see the row on missing lidar topics above. Start the merger through `mujoco_omnibot.launch.py`. |

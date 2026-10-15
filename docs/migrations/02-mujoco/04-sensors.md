@@ -30,6 +30,12 @@ any ROS code that works on the real robot or in Gazebo sees the same frames in M
     has the commands, and [2.7 Launch Files and Nav2](07-launch.md) records the launch
     files.
 
+!!! note "Update 2026-10-16: head 3D lidar added"
+    The model now also has the Unitree 4D L2 at the top of the robot: the sensor
+    `unitree_l2` of the MuJoCo extension `mujoco.plugin.lidar` on the site
+    `unitree4d_l2_imu_initial`, published by `Mujoco3dLidarPlugin` on `/unilidar/cloud`.
+    The Gazebo model has no such sensor. See [2.8 Head 3D Lidar](08-3d-lidar.md).
+
 ## Sensors at a glance
 
 `description/scripts/build_mjcf.py` reads the lidar and camera values from the Gazebo
@@ -186,6 +192,12 @@ frame `merged_lidar_link` and remaps the output to `/scan`. Nav2 reads `/scan`.
     sets to `true`, the merger publishes `/scan` in the empty `scene.xml`. A lidar with no
     return in range reads as free space. The real robot keeps the default, `false`. See
     [5. Repair Nav2 After the navigation2 Bump](../05-nav2-repair.md#scan-in-the-empty-mujoco-world).
+
+!!! note "Update 2026-10-16: the mujoco_3d_lidar extension is installed"
+    `ros-jazzy-mujoco-3d-lidar` is now in `pixi.toml`, and `Mujoco3dLidarPlugin` publishes
+    the head 3D lidar. The 2D lidars stay on `RangefinderLidarPlugin`: the extension cannot
+    skip the robot's own geoms, so every 2D beam would end on `base_link`. See
+    [2.8 Head 3D Lidar](08-3d-lidar.md#the-2d-lidars-stay-on-rangefinderlidarplugin).
 
 When this entry was written, no launch file published the MuJoCo lidars on ROS topics.
 Two parts were missing:
@@ -424,7 +436,7 @@ Six tests cover the sensors: `test_imu_at_rest`, `test_lidar_beam_layout`,
 
 | Item | Status |
 | --- | --- |
-| Lidar publishing | Done 2026-10-13: `RangefinderLidarPlugin` for both lidars and `dual_laser_merger` to `/scan` in `mujoco_omnibot.launch.py`. The plugin stays deprecated upstream; `Mujoco3dLidarPlugin` needs the `mujoco_3d_lidar` MuJoCo extension, which is not in the pixi environment. Update 2026-10-14: since [entry 5](../05-nav2-repair.md#scan-in-the-empty-mujoco-world), `/scan` is also published in the empty `scene.xml` (`publish_on_empty_cloud`). |
+| Lidar publishing | Done 2026-10-13: `RangefinderLidarPlugin` for both lidars and `dual_laser_merger` to `/scan` in `mujoco_omnibot.launch.py`. The plugin stays deprecated upstream; `Mujoco3dLidarPlugin` needs the `mujoco_3d_lidar` MuJoCo extension, which is not in the pixi environment. Update 2026-10-14: since [entry 5](../05-nav2-repair.md#scan-in-the-empty-mujoco-world), `/scan` is also published in the empty `scene.xml` (`publish_on_empty_cloud`). Update 2026-10-16: the extension is installed, and `Mujoco3dLidarPlugin` publishes the head 3D lidar; the 2D lidars keep `RangefinderLidarPlugin` ([2.8](08-3d-lidar.md)). |
 | Lidar rate | About 27.8 Hz instead of the configured 40 Hz. The likely cause, not verified, is in "Measured lidar rate" under [Lidars](#lidars). |
 | Camera publishing | Done 2026-10-13: `CameraPlugin` for `head_camera` and `bottom_camera` in `bringup/config/mujoco/mujoco_plugins.yaml` |
 | IMU topic | Done 2026-10-13: remapped to `/imu` in `mujoco_omnibot.launch.py` |

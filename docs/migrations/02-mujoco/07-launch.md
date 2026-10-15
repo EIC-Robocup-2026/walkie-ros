@@ -273,6 +273,14 @@ The file and its naming rules are in
     `Mujoco3dLidarPlugin` was not chosen because it needs the `mujoco_3d_lidar` MuJoCo
     extension, which is not in the pixi environment.
 
+!!! note "Update 2026-10-16: head 3D lidar"
+    `mujoco_plugins.yaml` now has a `mujoco_3d_lidar_plugin` instance
+    (`Mujoco3dLidarPlugin`) for the head 3D lidar on `/unilidar/cloud`, and
+    `mujoco_omnibot.launch.py` starts `robot_self_filter` for it. The extension is in
+    `pixi.toml`. Like `mujoco_ros2_control`, it is not declared in `bringup/package.xml`.
+    The 2D lidars stay on `RangefinderLidarPlugin`, now because the extension cannot skip
+    the robot's own geoms. See [2.8 Head 3D Lidar](08-3d-lidar.md).
+
 ## /scan from dual_laser_merger, as on the real robot { #scan-from-dual_laser_merger }
 
 `dual_laser_merger` merges `/front_lidar` and `/back_lidar` into `/scan` in the frame

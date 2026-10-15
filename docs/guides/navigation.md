@@ -823,6 +823,16 @@ drivers and the merger.
 The depth cameras and the 3D lidar see parts of the robot, such as the arms.
 `robot_self_filter` removes points that fall inside the robot's collision
 geometry from the URDF. `real_omnibot.launch.py` runs up to three instances.
+`mujoco_omnibot.launch.py`, and with it `nav_mujoco_omnibot.launch.py`, runs the
+`/unilidar/cloud` instance on the simulated head lidar
+([MuJoCo Simulation](simulation-mujoco.md#topics)).
+
+With `keep_organized: false`, the output drops points without a return (NaN or inf
+coordinates) and is marked dense. All three instances use this setting. The real L2
+driver sends no such points; the ZED cloud has one for every pixel without valid
+depth, and the simulated lidar cloud one for every ray without a hit. Before
+2026-10-16 the filter passed these points through
+([2.8 Head 3D Lidar](../migrations/02-mujoco/08-3d-lidar.md#the-self-filter-and-nan-points)).
 
 ??? info "Self filter instances"
     | Input | Output | Config | Runs when |
