@@ -830,6 +830,25 @@ The depth cameras and the 3D lidar see parts of the robot, such as the arms.
 `robot_self_filter` removes points that fall inside the robot's collision
 geometry from the URDF. `real_omnibot.launch.py` runs up to three instances.
 
+With `keep_organized: false`, which all three instances use, the output is an
+unorganized list without the points that have no return (NaN or inf
+coordinates), and it is marked dense (`is_dense: true`). The ZED cloud has such
+a point for every pixel without valid depth; the L2 driver sends none.
+
+??? info "Change of 2026-10-16: non-finite points are dropped"
+    Before, the filter kept NaN and inf points in its unorganized output and
+    still marked the output dense. A consumer that trusts the flag, such as many
+    PCL algorithms, then reads NaN coordinates.
+
+    Since the change, `/zed_head/zed_node/point_cloud/cloud_registered/filtered`
+    has fewer points per cloud and is dense. The MoveIt octomap
+    (`sensors_3d.yaml`) and the Nav2 point cloud sources discarded these points
+    already. `cloud_to_map_node` only transforms the cloud, so its
+    `filtered_map` output changes the same way. The L2 output does not change.
+
+    With `keep_organized: true`, the output keeps one entry per input point and
+    is marked not dense.
+
 ??? info "Self filter instances"
     | Input | Output | Config | Runs when |
     | --- | --- | --- | --- |
