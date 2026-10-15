@@ -91,7 +91,7 @@ New pages must be added to `nav` in `mkdocs.yml`. Admonition bodies are indented
 
 **Submodules**: `description/` and `navigation/` (with nested `navigation2` and `map`) use SSH URLs. Clone with `--recurse-submodules`, then `git submodule foreach --recursive git lfs pull`.
 
-**Docker/CI**: `.github/workflows/build-docker.yml` builds the `simulation` and `physical` images (apt/rosdep/colcon, not pixi) to `ghcr.io/eic-robocup-2026/walkie-ros`. `.github/workflows/docs.yml` publishes the docs site from `main`.
+**CI**: `.github/workflows/ci.yml` runs on pushes to `main` and on every pull request. It checks out all submodules with their LFS files, installs the pixi environment from `pixi.lock` (`--locked`), builds the whole workspace including Nav2 (ccache, `BUILD_TESTING=OFF` except for the tested packages), and runs the tests of `walkie_description`, `openarm_bimanual_moveit_config` and `topic_based_ros2_control` without their lint tests. Lint tests of the first-party packages run but do not fail the job. `.github/workflows/docs.yml` publishes the docs site from `main`. CI no longer builds the Docker images in `docker/`. See `docs/guides/testing.md#ci`.
 
 ### Lift homing launch arguments
 

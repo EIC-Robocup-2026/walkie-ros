@@ -30,10 +30,11 @@ option works after it.
     which needs a real Hokuyo lidar. Use `--packages-select`, or add
     `--packages-skip urg_node2`. See [Known issues](#known-issues).
 
-!!! note "No CI runs the tests"
-    No GitHub Actions workflow runs the tests. `build-docker.yml` builds the
-    Docker images, and `docs.yml` builds this site. Run the tests on your
-    machine before you push, at least for the packages you changed.
+!!! note "CI runs the tests of three packages"
+    On every pull request and every push to `main`, CI builds the workspace
+    and runs the tests of `walkie_description`,
+    `openarm_bimanual_moveit_config`, and `topic_based_ros2_control`. Lint
+    tests run but do not fail the job. See [CI](#ci).
 
 ??? info "Where the result files are"
     - `build/<package>/test_results/<package>/*.xunit.xml`: JUnit XML result
@@ -121,6 +122,83 @@ one line per test.
     new `test/test_*.py` file is registered by the next
     `pixi run build-pkg walkie_description`. You do not need to edit
     `CMakeLists.txt`, but you do need that build.
+
+## CI
+
+`.github/workflows/ci.yml` builds the workspace and runs the tests on every
+pull request, whatever its base branch, and on every push to `main`. You can
+also start it by hand in the Actions tab of the repository.
+
+| Step | What it does |
+| --- | --- |
+| Checkout | All submodules, recursively, then the Git LFS files inside them (the meshes in `description/`) |
+| pixi | Installs the `default` environment from `pixi.lock` with `--locked`. The job fails if `pixi.toml` and `pixi.lock` disagree. |
+| Build | `colcon build` of the whole workspace, Nav2 included |
+| Test | The tests of `walkie_description`, `openarm_bimanual_moveit_config`, and `topic_based_ros2_control`, without their lint tests. A failure fails the job. |
+| Lint (not enforced) | The lint tests of `robot_bringup`, `robot_simulation`, `robot_navigation`, `dual_laser_merger`, and `joy_interface`. A failure is reported, but the job still passes. |
+
+Run the enforced tests the way CI does:
+
+```bash
+pixi run build
+pixi run test --packages-select walkie_description openarm_bimanual_moveit_config topic_based_ros2_control --ctest-args " -LE" linter
+pixi run colcon test-result --verbose
+```
+
+`-LE linter` tells CTest to skip the tests with the label `linter`, which
+every ament lint test has. colcon passes an argument that starts with `-`
+on to CTest only with a space in front of it, so keep the quotes.
+
+To see why a run failed, open the failed step in the job log. The Test step
+prints `colcon test-result --verbose`. The run summary shows the test counts
+of both test steps. The artifact `colcon-logs`, kept for 14 days, holds the
+colcon logs (`log/`) and the result files (`build/*/test_results/`).
+
+??? info "Tests that CI does not run"
+    - The upstream Nav2 tests in `navigation/navigation2/`: slow, and not
+      Walkie code. CI builds Nav2 without them.
+    - `urg_node2_test`: needs a real Hokuyo lidar (see
+      [Known issues](#known-issues)).
+    - The lint tests of third-party packages: `lakibeam1`, the Dynamixel
+      packages, `spatio_temporal_voxel_layer`, and `topic_based_ros2_control`.
+    - Launch files: no step starts a simulation or the robot.
+
+??? info "Why lint is not enforced"
+    The lint tests fail in most first-party packages. On 2026-10-15,
+    `ament_flake8` reported 1783 errors in `bringup/`, 127 in
+    `simulation/gazebo/`, and 71 in `tools/joy_interface/`. An enforced lint
+    step would keep every run red. When the lint tests of a package pass,
+    they can be made enforced: add a step to `ci.yml` that runs them without
+    `continue-on-error`.
+
+??? info "Why the build runs in two passes"
+    The first pass builds every package with `-DBUILD_TESTING=OFF`. This
+    skips the test targets of Nav2, which are a large part of its build. The
+    second pass builds only the packages in `TEST_PACKAGES` and
+    `LINT_PACKAGES` again, with `-DBUILD_TESTING=ON`, which registers their
+    tests. colcon configures a package again when its CMake arguments change,
+    so the second pass only configures these packages and compiles their
+    test targets.
+
+??? info "Caches"
+    | Cache | Contents | Written by |
+    | --- | --- | --- |
+    | ccache | Compiled objects, up to 2 GB | Every run, right after the build, also when a test fails |
+    | pixi | The `default` environment, keyed on `pixi.lock` | Pushes to `main` only |
+    | LFS | The Git LFS objects of the submodules, keyed on their object IDs | Runs that download new objects |
+
+    On 2026-10-15, a run without a ccache took 37 min, 32 of them in the
+    build. Run again with the ccache of that run, it took 8 min, 5.5 of them
+    in the build, with 90 % of the compilations taken from the cache. The
+    Build step ends with `ccache --show-stats`, which shows the hit rate of
+    the run.
+
+    A pull request restores the newest cache of its own branch, or else the
+    newest cache of `main`. GitHub keeps up to 10 GB of caches per repository
+    and removes the least recently used ones first. The pixi environment is
+    written only from `main`, so pull requests do not fill that space with
+    copies of it. With the LFS cache, a run downloads only the LFS objects
+    that changed since the cached ones.
 
 ## What each suite checks
 
@@ -316,3 +394,4 @@ aborts. Keep the pin until the RoboStack Jazzy packages work with pytest 9.
 | `test_mjcf.py` is reported as skipped | `mujoco` cannot be imported, for example outside pixi | Run it with `pixi run python -m pytest ...` |
 | `urg_node2_test` fails or times out | No Hokuyo UTM-30LX-EW at `192.168.0.10` | `pixi run test --packages-skip urg_node2` |
 | `pixi run test` takes a long time | It also runs the Nav2 tests | Use `--packages-select` |
+| CI fails in the `setup-pixi` step with `lock-file not up-to-date with the workspace` | `pixi.toml` changed, but `pixi.lock` was not updated and committed | Run `pixi install`, then commit `pixi.lock` together with `pixi.toml` |
