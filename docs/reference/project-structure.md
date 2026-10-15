@@ -307,7 +307,7 @@ command) when preparing a physical robot. `pixi run setup-real` runs
 | `LICENSE` | MIT license |
 | `CLAUDE.md` | Notes for the Claude Code assistant (environment rules, main pixi commands, short architecture summary). Points to this site for details. |
 | `.tmuxp.yaml` | tmuxp layout for a tmux session named `walkie` |
-| `.github/workflows/build-docker.yml` | Builds and pushes the Docker images. See [Docker Images](../guides/docker.md). |
+| `.github/workflows/ci.yml` | Builds the workspace with pixi and runs the tests on pull requests and pushes to `main`. See [Tests: CI](../guides/testing.md#ci). |
 | `.github/workflows/docs.yml` | Builds this site with `pixi run -e docs docs-build` and publishes it to GitHub Pages |
 
 ## scripts/

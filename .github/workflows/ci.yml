@@ -1,0 +1,144 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Tests that must pass. Lint tests (CTest label "linter") are excluded from this run.
+  TEST_PACKAGES: walkie_description openarm_bimanual_moveit_config topic_based_ros2_control
+  # First-party packages whose lint tests run but do not fail the job, because they fail today.
+  LINT_PACKAGES: robot_bringup robot_simulation robot_navigation dual_laser_merger joy_interface
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CCACHE_MAXSIZE: 2G
+  # The compiler comes from the pixi environment; hash its content, not its mtime.
+  CCACHE_COMPILERCHECK: content
+  MAKEFLAGS: -j2
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      # The pixi environment (about 7 GB), the build and the ccache need more than the free disk of the runner.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      # actions/checkout rewrites the SSH submodule URLs in .gitmodules to HTTPS.
+      # LFS files are fetched below, because actions/checkout does not fetch them inside submodules.
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Compute the LFS cache key
+        id: lfs-key
+        run: |
+          git config --global url.https://github.com/.insteadOf git@github.com:
+          oids=$(git submodule foreach --quiet --recursive 'git lfs ls-files --long' | cut -d' ' -f1 | sort)
+          echo "key=lfs-$(echo "$oids" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the LFS cache
+        id: lfs-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: .git/modules/**/lfs/objects
+          key: ${{ steps.lfs-key.outputs.key }}
+          restore-keys: lfs-
+
+      - name: Fetch submodule LFS files
+        run: git submodule foreach --recursive git lfs pull
+
+      - name: Save the LFS cache
+        if: steps.lfs-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: .git/modules/**/lfs/objects
+          key: ${{ steps.lfs-key.outputs.key }}
+
+      # setup-pixi installs with --locked, so the job fails when pixi.toml and pixi.lock disagree.
+      # Only pushes to main write the environment cache; pull requests restore it.
+      - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
+        with:
+          environments: default
+          cache: true
+          cache-write: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      - name: Install ccache
+        run: sudo apt-get update && sudo apt-get install -y ccache
+
+      - name: Restore the ccache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ccache-
+
+      - name: Prepare the pixi environment
+        run: pixi run setup
+
+      # The first pass builds every package without tests, which skips the test targets of Nav2.
+      # The second pass configures the tested packages again with their tests.
+      - name: Build
+        id: build
+        shell: pixi run bash -e {0}
+        run: |
+          colcon build --symlink-install --parallel-workers 2 \
+            --cmake-args -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" -DBUILD_TESTING=OFF \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          colcon build --symlink-install --parallel-workers 2 \
+            --packages-select $TEST_PACKAGES $LINT_PACKAGES \
+            --cmake-args -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" -DBUILD_TESTING=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          ccache --show-stats
+
+      # Saved right after the build, so a test failure does not discard the compiled objects.
+      - name: Save the ccache
+        if: always() && steps.build.outcome != 'skipped'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Test
+        shell: pixi run bash -e {0}
+        run: |
+          rc=0
+          colcon test --packages-select $TEST_PACKAGES --return-code-on-test-failure \
+            --ctest-args " -LE" linter || rc=$?
+          colcon test-result --verbose || true
+          echo "Tests: $(colcon test-result | tail -n 1)" >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
+
+      - name: Lint (not enforced)
+        if: always() && steps.build.outcome == 'success'
+        continue-on-error: true
+        shell: pixi run bash -e {0}
+        run: |
+          rc=0
+          colcon test --packages-select $LINT_PACKAGES --return-code-on-test-failure || rc=$?
+          colcon test-result || true
+          echo "Lint (not enforced): $(colcon test-result | tail -n 1)" >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
+
+      - name: Upload logs and test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: colcon-logs
+          path: |
+            log/build_*/
+            log/test_*/
+            build/*/test_results/
+          if-no-files-found: ignore
+          retention-days: 14

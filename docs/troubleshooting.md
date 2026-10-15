@@ -18,7 +18,8 @@ Problems with one simulator, launch file, or device are in the guides.
 | MoveIt and the arms | [Manipulation: Known issues](guides/manipulation.md#known-issues), [Troubleshooting](guides/manipulation.md#troubleshooting) |
 | Object detection and grasping | [Perception: Known issues](guides/perception.md#known-issues), [Troubleshooting](guides/perception.md#troubleshooting) |
 | Devices, lift, bringup | [Real Robot: Known issues](guides/real-robot.md#known-issues) |
-| Docker images and CI | [Docker Images: Known issues](guides/docker.md#known-issues) |
+| Docker images | [Docker Images: Known issues](guides/docker.md#known-issues) |
+| CI | [Tests: CI](guides/testing.md#ci) |
 | Single test failures | [Tests: Known issues](guides/testing.md#known-issues), [Troubleshooting](guides/testing.md#troubleshooting) |
 
 ## Environment and pixi
