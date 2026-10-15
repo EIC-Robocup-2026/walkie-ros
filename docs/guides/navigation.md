@@ -86,6 +86,14 @@ pixi run ros2 launch slam_toolbox online_sync_launch.py use_sim_time:=true \
   slam_params_file:=$PWD/navigation/walkie-navigation/config/slam/slam_toolbox_params.yaml
 ```
 
+`robot_navigation`'s `slam_toolbox.launch.py` includes the same
+`online_sync_launch.py` with the same parameter file. Its `use_sim_time`
+defaults to `false`, so pass it in simulation:
+
+```bash
+pixi run ros2 launch robot_navigation slam_toolbox.launch.py use_sim_time:=true
+```
+
 Drive the robot around (see
 [Gazebo Simulation](simulation-gazebo.md#driving-the-robot)), then save the
 map. `map_saver_cli` writes `map.yaml` and `map.pgm` with the given prefix:
@@ -93,10 +101,6 @@ map. `map_saver_cli` writes `map.yaml` and `map.pgm` with the given prefix:
 ```bash
 pixi run ros2 run nav2_map_server map_saver_cli -f /tmp/my_map/map
 ```
-
-!!! warning
-    Do not use `slam_toolbox.launch.py`. It does not load the Walkie
-    parameters. See [Known issues](#known-issues).
 
 ### Test goal logic without physics
 
@@ -325,6 +329,8 @@ every directory, so pass it explicitly:
 Directories `01` to `18` hold older maps: TurtleBot3 maps, the simulation map
 `08_23102025_SimWalkie_awssmallhouse_slam_toolbox`, and earlier venues. Some of
 them name the map file after a time stamp or the place instead of `map.yaml`.
+`29_14102026_o3de_warehouse` is a warehouse map from the O3DE simulator; no
+launch file uses it by default.
 
 ## Send navigation goals { #goal-interfaces }
 
@@ -900,6 +906,41 @@ footprint of furniture, which helps when drawing keepout zones.
     Nav2 packages build against it. On 2026-10-13, `bt_navigator` on 4.10.0
     completed navigation goals in MuJoCo (`nav_mujoco_omnibot.launch.py`).
 
+??? info "navigation2 update of 2026-10-15 (`32861197`)"
+    The `navigation` submodule moved `navigation2` from `e48c3296` to
+    `32861197` (10 upstream commits). The Walkie parameter files and behavior
+    trees need no change for it. Rebuild all of Nav2 after pulling
+    (`pixi run build`, not only `build-pkg robot_navigation`):
+    `nav2_behavior_tree` gained a `Log` node and `nav2_bt_navigator` gained
+    `behavior_trees/subtrees/`, and the default trees already use both.
+
+    - **Transform staleness checks**
+      ([#6391](https://github.com/ros-navigation/navigation2/pull/6391),
+      [#6500](https://github.com/ros-navigation/navigation2/pull/6500),
+      [#6514](https://github.com/ros-navigation/navigation2/pull/6514),
+      [#6529](https://github.com/ros-navigation/navigation2/pull/6529)):
+      the static layer, the asymmetric inflation layer, costmap filters
+      (including `keepout_filter`), docking, following and route server get
+      `transform_staleness_threshold`, default `0.0` (check off). The
+      collision monitor's default is `1.0` s, but it applies only with
+      `base_shift_correction: false` and to exclusion zones. The Walkie files
+      keep the default `true` and use only the `scan` and `pointcloud` sources.
+    - **Empty observation clouds**
+      ([#6641](https://github.com/ros-navigation/navigation2/pull/6641)):
+      the obstacle and voxel layers skip an observation without points. In
+      the empty MuJoCo world every `/scan` beam is `inf` and is dropped
+      (`inf_is_valid` defaults to `false`), so the observation neither marks
+      nor clears, as before.
+    - **BackUp recovery**
+      ([#6559](https://github.com/ros-navigation/navigation2/pull/6559),
+      [#6635](https://github.com/ros-navigation/navigation2/pull/6635)):
+      the default Nav2 trees call the `BackupWithReset` subtree (backs up
+      again only after the robot moved 1 m) from `behavior_trees/subtrees/`,
+      which the default `bt_search_directories` now includes.
+      `nav_to_pose_real_recovery_bt.xml` has no BackUp and is unaffected. A
+      params file that sets `bt_search_directories` and uses a default Nav2
+      tree must list `$(find-pkg-share nav2_bt_navigator)/behavior_trees/subtrees`.
+
 ??? info "Why the Jazzy release of Nav2 is not enough"
     The custom behavior tree plugins in `robot_navigation` need this build.
     Their `CMakeLists.txt` requires `nav2_ros_common`, which the Jazzy release
@@ -932,9 +973,8 @@ launch files are in `launch/`, the Nav2 parameter files and behavior trees in
 
 ## Launch files
 
-`slam_toolbox.launch.py`, `slam_cartographer.launch.py`, and
-`octomap_3d_mapping.launch.py` have known problems. See
-[Known issues](#known-issues).
+`slam_cartographer.launch.py` and `octomap_3d_mapping.launch.py` have known
+problems. See [Known issues](#known-issues).
 
 ??? info "All navigation launch files"
     | Launch file | Package | Purpose |
@@ -942,7 +982,7 @@ launch files are in `launch/`, the Nav2 parameter files and behavior trees in
     | `localization_Nav2_sim.launch.py` | `robot_navigation` | Nav2 with AMCL on a saved map, for Gazebo |
     | `localization_Nav2_real.launch.py` | `robot_navigation` | Nav2 with AMCL on a saved map, plus keepout zones, for the real robot |
     | `mapping_Nav2_real.launch.py` | `robot_navigation` | SLAM Toolbox mapping plus Nav2, for the real robot |
-    | `slam_toolbox.launch.py` | `robot_navigation` | SLAM Toolbox only. Does not load the Walkie parameters. |
+    | `slam_toolbox.launch.py` | `robot_navigation` | SLAM Toolbox only (`online_sync_launch.py` with `config/slam/slam_toolbox_params.yaml`). `use_sim_time` defaults to `false`. |
     | `nav2_loopback.launch.py` | `robot_navigation` | Nav2 with the loopback simulator, no physics |
     | `slam_cartographer.launch.py` | `robot_navigation` | Cartographer. Does not run. |
     | `nav_sim_omnibot.launch.py` | `robot_bringup` | Gazebo plus `localization_Nav2_sim.launch.py` |
@@ -1021,7 +1061,6 @@ empty MuJoCo world, and the loopback and hero configurations.
 | After `bt_navigator` rejects a goal, for example with error 9002, it copies that error code into the result of the next goal of the same action that it accepts, also when that goal succeeds (upstream navigation2). `NavigateToPose` and `NavigateThroughPoses` each keep their own error. | A client that reads only `error_code` treats a successful goal as failed | Judge a goal by its status. In an accepted goal, an `error_code` of 9002 (9102 for `NavigateThroughPoses`) can be left over ([Troubleshooting](../troubleshooting.md#nav2-map-frame-does-not-exist)) |
 | `nav_mujoco_omnibot.launch.py` has no AMCL | The pose drifts with the odometry. A goal sent while the robot is already at it by odometry aborts with error 103 (`Resulting plan has 0 poses in it`). | None |
 | `nav2_bringup`'s `bringup_launch.py` runs all Nav2 servers on one thread when composed (its default) | Bringup can hang at `Waiting for service smoother_server/get_state...` | `use_composition:=False`. `localization_Nav2_sim.launch.py` and `nav_mujoco_omnibot.launch.py` set it. ([details](#nav2-composition-deadlock)) |
-| `slam_toolbox.launch.py` ignores the Walkie parameters | SLAM Toolbox runs with its own defaults and `use_sim_time: true` | Run `online_sync_launch.py` with `slam_params_file:=` ([Mapping in simulation](#mapping-in-simulation)) |
 | `slam_cartographer.launch.py` needs `cartographer_ros`, which `pixi.toml` does not install | The launch fails | Use SLAM Toolbox |
 | `octomap_3d_mapping.launch.py` needs `octomap_server` and `topic_tools`, which are not in `pixi.toml` | The launch fails with "package not found" under pixi | Add both packages to the environment |
 | `scripts/bringup/real_slam_nav.sh` is broken | The Nav2 tab fails | Use the launch files in [Localization and mapping on the real robot](#localization-and-mapping-on-the-real-robot) |
@@ -1040,8 +1079,6 @@ empty MuJoCo world, and the loopback and hero configurations.
       fix, not applied, is `voxel_layer.publish_voxel_map: False`, which drops
       the `VoxelGrid` visualization. The simulation, loopback, and hero files
       have no STVL layer.
-    - **`slam_toolbox.launch.py`.** It passes its parameter file as
-      `params_file`, but `online_sync_launch.py` expects `slam_params_file`.
     - **`real_slam_nav.sh`.** It starts `localization_Nav2_stvl_real.launch.py`,
       which does not exist, and starts SLAM Toolbox (`online_async_launch.py`)
       in a second tab. If the Nav2 tab did start, AMCL and SLAM Toolbox would

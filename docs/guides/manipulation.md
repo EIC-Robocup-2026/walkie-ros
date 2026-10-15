@@ -125,7 +125,7 @@ the bringup switches.
     | Motors | Damiao DM8009 (joints 1–2), DM4340 (joints 3–4), DM4310 (joints 5–7 and the gripper) |
     | CAN IDs | Send `0x01`–`0x07`, receive `0x11`–`0x17`; gripper `0x08` / `0x18` |
     | Control mode | MIT mode: position, velocity, gains, and a feed-forward torque |
-    | Stiffness `kp` | 70, 70, 70, 60, 25, 25, 25, from `description/config/openarm/arm/v10/control_gains.yaml` |
+    | Stiffness `kp` | 400, 167, 167, 120, 47, 47, 47, from `description/config/openarm/arm/v10/control_gains.yaml` |
     | Feed-forward torque | Commanded effort plus gravity compensation from a KDL model (`gravity_compensation` on, `coriolis_compensation` off by default) |
 
     The plugin talks to the motors through `openarm_can`
