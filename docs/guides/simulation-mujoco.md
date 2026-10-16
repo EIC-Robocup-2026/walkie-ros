@@ -407,10 +407,8 @@ Run the commands from the repository root.
 
     1. `mujoco_omnibot.launch.py`, with `mujoco_model`, `headless`, `use_rviz` and
        `rviz_config`.
-    2. `map_to_odom_publisher.py` of `robot_bringup` (node name `map_to_odom`): an
-       identity transform from `map` to `odom` on `/tf_static`, published again every
-       second, so a node that missed it has it within a second. See
-       [Troubleshooting: bt_navigator says "map" does not exist](../troubleshooting.md#nav2-map-frame-does-not-exist).
+    2. `static_transform_publisher` (node name `map_to_odom`): an identity transform from
+       `map` to `odom`.
     3. `nav2_bringup`'s `bringup_launch.py` with `use_sim_time:=True`,
        `use_localization:=False` (no AMCL), `serve_static_map:=True` (`map_server` serves
        `map`), `use_keepout_zones:=False`, `use_speed_zones:=False`, `autostart:=True`
@@ -780,7 +778,6 @@ pixi run python -m pytest description/test/test_mjcf.py
 | Nav2 repeats `The inflation radius (...) is smaller than the circumscribed radius (...)` errors | The local costmap `inflation_radius` in the file passed with `params_file:=` is smaller than the circumscribed radius of the footprint. Not a MuJoCo issue. | Set it to at least the circumscribed radius. `nav2_mppi_walkie_sim_params.yaml` uses 0.35 m (circumscribed radius 0.313 m). |
 | A goal logs `Failed to make progress` once or twice, for example during the slow final approach, and is still reached | The progress checker wants 0.5 m of movement within 8 s | None needed. The behavior tree retries, and the goal is reached. |
 | A goal aborts with error 103, `Resulting plan has 0 poses in it` | The robot is already at the goal by odometry | None needed. The ground truth pose can still be off by the odometry drift. |
-| `bt_navigator` rejects goals and logs `"map" passed to lookupTransform argument target_frame does not exist` and `Initial robot pose is not available` (error 9002) | `bt_navigator` has no transform from `map` to `odom`. Before `map_to_odom_publisher.py`, the launch published it only once. | Update your checkout to one that has `bringup/scripts/map_to_odom_publisher.py`, run `pixi run build-pkg robot_bringup`, and restart the launch. Or start a second publisher. See [Troubleshooting](../troubleshooting.md#nav2-map-frame-does-not-exist). |
-| `nav_mujoco_omnibot.launch.py` stops at the start with `executable 'map_to_odom_publisher.py' not found on the libexec directory` | `robot_bringup` was not rebuilt after an update added the script. The launch file is installed as a link to the source, so it is already the new one. | `pixi run build-pkg robot_bringup` |
+| `bt_navigator` rejects goals and logs `"map" passed to lookupTransform argument target_frame does not exist` and `Initial robot pose is not available` (error 9002) | `bt_navigator` has no transform from `map` to `odom`, which the launch publishes only once. Seen once; the cause is not known. | Start a second publisher. See [Troubleshooting](../troubleshooting.md#nav2-map-frame-does-not-exist). |
 | A goal ends `SUCCEEDED`, but its result has `error_code` 9002 | The error is left over from an earlier goal that `bt_navigator` rejected | Judge goals by their status. See [Troubleshooting](../troubleshooting.md#nav2-map-frame-does-not-exist). |
 | RViz shows the robot at the goal, but `/mujoco_ground_truth/odom` is off, for example by 0.17 to 0.43 m after one or two goals | Odometry-only localization drifts | Expected. See [Drive with Nav2 and RViz](#drive-with-nav2-and-rviz). |

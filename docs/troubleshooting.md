@@ -637,11 +637,9 @@ Setting internal error error_code:9002, error_msg:Initial robot pose is not avai
 robot in the map. Other nodes can still have it: the costmaps work, and a new
 `pixi run ros2 run tf2_ros tf2_echo map base_footprint` prints the transform.
 
-`nav_mujoco_omnibot.launch.py` publishes `map` to `odom` again every second
-(`map_to_odom_publisher.py` in `robot_bringup`), so a node that missed it has
-it within a second. If your launch file publishes `map` to `odom` once with
-`static_transform_publisher`, start a second publisher. Running nodes receive
-its transform:
+If the launch file publishes `map` to `odom` once with
+`static_transform_publisher`, as `nav_mujoco_omnibot.launch.py` does, start a
+second publisher. Running nodes receive its transform:
 
 ```bash
 pixi run ros2 run tf2_ros static_transform_publisher --frame-id map --child-frame-id odom \
@@ -680,11 +678,16 @@ themselves, and a second source overrides the localization.
       the start, while the costmaps had it. 12 minutes later it had the frame.
       The ROS logs show no other `map` to `odom` publisher in between, so it is
       not known why the frame was missing or how it arrived.
-    - A test did not reproduce it: 90 late subscribers under `rmw_zenoh_cpp`
+    - Tests did not reproduce it. 90 late subscribers under `rmw_zenoh_cpp`
       0.2.11 and 90 under `rmw_fastrtps_cpp`, 16 processes started at once,
-      all got the stored copy within 0.26 s.
-    - Publishing again does not depend on the cause: every connected
-      subscriber gets a new copy within one period.
+      all got the stored copy within 0.26 s. In 8 headless runs of
+      `nav_mujoco_omnibot.launch.py` under `rmw_zenoh_cpp` on 2026-10-16,
+      `bt_navigator` accepted and completed a goal every time, and a client
+      that created its TF listener 15 s before, together with, or 50 s after
+      the launch always had the `map` frame.
+    - Publishing the transform again every second would not depend on the
+      stored copy. The launch file does not do that, because the failure was
+      seen only once.
     - On the real robot, AMCL publishes `map` to `odom` on `/tf` continuously,
       so this case does not apply there. `robot_state_publisher` publishes the
       fixed robot frames once, in the same way; no node has been seen missing
