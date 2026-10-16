@@ -232,11 +232,13 @@ marked not dense.
     - **ZED head camera** (`zed2i_self_filter.yaml`): the input is organized, with NaN or
       inf for every pixel without valid depth. `/zed_head/zed_node/point_cloud/cloud_registered/filtered`
       no longer contains those points, so it has fewer points per cloud and is marked
-      dense. The MoveIt octomap (`sensors_3d.yaml`) and the Nav2 sources of the real and
-      restaurant parameter files discarded non-finite points already.
+      dense. Before, the MoveIt octomap (`sensors_3d.yaml`) skipped NaN points but not inf
+      points, and the STVL voxel filter of the real and restaurant parameter files trusted
+      the dense flag when it computed its bounds; both now get only finite points.
       `cloud_to_map_node` only transforms the cloud, so `filtered_map` changes the same way.
-    - **D415** (`d415_bottom_self_filter.yaml`, also `keep_organized: false`): the same
-      change whenever its input contains non-finite points.
+    - **D415** (`d415_bottom_self_filter.yaml`, also `keep_organized: false`): not started,
+      because `real_omnibot.launch.py` comments out the camera and its filter. If they are
+      enabled again, the same change applies whenever the input contains non-finite points.
 
     Not yet checked on the robot.
 

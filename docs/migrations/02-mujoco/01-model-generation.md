@@ -338,7 +338,7 @@ layout under `share/walkie_description/`. Two checks follow:
     A successful run prints a summary like this:
 
     ```text
-    wrote .../description/mujoco/walkie.xml: nq=31 nv=30 nu=22 nbody=57 ngeom=69 nmesh=23 nsensor=485 mass=36.664 kg, 4 self-collision excludes
+    wrote .../description/mujoco/walkie.xml: nq=31 nv=30 nu=22 nbody=57 ngeom=68 nmesh=24 nsensor=486 mass=36.664 kg, 4 self-collision excludes
     ```
 
 ## The default world: scene.xml

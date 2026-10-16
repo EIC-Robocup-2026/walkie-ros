@@ -452,7 +452,7 @@ pixi run uv sync
 
 | Environment | Contents | Size |
 | --- | --- | --- |
-| `default` | ROS 2 Jazzy, Gazebo, MoveIt, compilers, MuJoCo, and the other build and simulation dependencies | 1179 packages, about 1.7 GB download |
+| `default` | ROS 2 Jazzy, Gazebo, MoveIt, compilers, MuJoCo, and the other build and simulation dependencies | 1188 packages, about 1.7 GB download |
 | `docs` | MkDocs and the Material theme. No ROS, and it does not source `install/setup.bash`. | 63 packages, about 70 MB download |
 
 How pixi chooses the environment:
