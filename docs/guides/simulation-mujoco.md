@@ -500,10 +500,11 @@ priorities and timeouts.
 
 ??? info "What the head 3D lidar costs (measured 2026-10-16)"
     Each cloud stalls the simulation for about 53 ms of wall time, every 84 ms of simulated
-    time. Both launch files still ran at a real-time factor of 1.00, but
-    `ros2_control_node` used about 115 % CPU instead of 56 %, and `/clock` dropped from
-    about 500 to about 340 messages per second (263 with Nav2). On a slower machine the
-    simulation may fall below real time; fewer rays help, see
+    time. `mujoco_omnibot.launch.py` still ran at a real-time factor of 1.00 and
+    `nav_mujoco_omnibot.launch.py` at 0.94 to 0.99 (1.00 without the lidar).
+    `ros2_control_node` used about 115 % CPU instead of 56 to 66 %, and `/clock` dropped
+    from about 500 to about 340 messages per second (about 270 with Nav2). On a slower
+    machine the simulation falls further below real time; fewer rays help, see
     [2.8 Head 3D Lidar](../migrations/02-mujoco/08-3d-lidar.md#resolution-and-rate).
 
 ### Drive with Nav2 and RViz

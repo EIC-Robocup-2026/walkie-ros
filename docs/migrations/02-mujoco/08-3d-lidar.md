@@ -25,8 +25,9 @@ next to the real one, and why it is built this way. For day-to-day use, read
 - **Result:** both MuJoCo launch files publish `/unilidar/cloud` and
   `/unilidar/cloud/filtered` at about 11.7 clouds per simulated second, in the real
   driver's frame. The filtered cloud has no points on the robot and no NaN. A cloud costs
-  about 53 ms; the launches still run in real time, but `ros2_control_node` needs about
-  twice the CPU ([Verification](#verification)).
+  about 53 ms and `ros2_control_node` needs about twice the CPU. `mujoco_omnibot.launch.py`
+  still runs in real time; with Nav2 the development machine ran at 0.94 to 0.99 of real
+  time ([Verification](#verification)).
 - **Not done:** Nav2 does not use the cloud in simulation. The simulation parameter file has
   only the `scan` source ([Still open](#still-open)).
 
@@ -169,27 +170,30 @@ The extension casts every ray against every geom of the model, including the vis
 meshes of the robot. The rays cost simulation time, so the resolution is a trade between
 density and the real-time factor.
 
-180 x 32 rays at 12 Hz keep both MuJoCo launch files at a real-time factor of 1.0 on the
-development machine, but with little margin: a cloud costs about 53 ms of wall time, so
+180 x 32 rays at 12 Hz keep `mujoco_omnibot.launch.py` at a real-time factor of 1.0 on
+the development machine, with little margin: a cloud costs about 53 ms of wall time, so
 the simulation stalls for that long every 84 ms of simulated time and catches up in the
-steps between. A slower machine can fall below real time. The cost is linear in the ray
+steps between. With Nav2 (`nav_mujoco_omnibot.launch.py`) it ran at 0.94 to 0.99, and a
+slower machine falls further below real time. The cost is linear in the ray
 count, about 9.3 µs per ray, because every ray is tested against the robot's visual
 meshes too.
 
 ??? info "Measured cost (2026-10-16)"
-    Measured on a 12-core desktop with other applications open. The Python rows step
-    `scene.xml` from `home` without ROS; the ROS rows are headless launches with
-    `rmw_zenoh_cpp`.
+    Measured on a 12-core laptop with 15 GB of RAM and other applications open. The
+    Python rows step `scene.xml` from `home` without ROS; the ROS rows are headless
+    launches with `rmw_zenoh_cpp`, partly repeated after the merge of `main` and
+    `navigation2` `3286119`.
 
     | | Without the 3D lidar | 180 x 32 at 12 Hz |
     | --- | --- | --- |
     | Wall time of the step that computes a cloud (Python) | - | 53 ms (48 to 70 ms) |
     | Mean wall time per step (Python) | 0.10 ms | 1.35 ms |
     | Fastest possible real-time factor, physics and lidar only (Python) | about 20 | about 1.5 |
-    | CPU of `ros2_control_node`, `mujoco_omnibot.launch.py` | 56 % | 113 % |
-    | CPU of `ros2_control_node`, `nav_mujoco_omnibot.launch.py` | not measured | 119 % |
-    | Real-time factor, both launch files | 1.00 | 0.99 to 1.00 |
-    | `/clock` messages per second | about 500 | about 340; 263 with Nav2 |
+    | CPU of `ros2_control_node`, `mujoco_omnibot.launch.py` | 56 % | 106 to 113 % |
+    | CPU of `ros2_control_node`, `nav_mujoco_omnibot.launch.py` | 66 % | 114 to 119 % |
+    | Real-time factor, `mujoco_omnibot.launch.py` | 1.00 | 0.99 to 1.00 |
+    | Real-time factor, `nav_mujoco_omnibot.launch.py` | 1.00 | 0.94 to 0.99 |
+    | `/clock` messages per second | about 500 | about 340; about 270 with Nav2 |
 
     Other resolutions, same angle ranges (Python): 180 x 16 costs 26.9 ms per cloud
     (fastest real-time factor 2.7), 90 x 32 costs 29.0 ms (2.5). To lower the cost,
@@ -244,18 +248,21 @@ marked not dense.
 
 ## Verification
 
-Run on 2026-10-16 after `pixi run build`, headless, with `rmw_zenoh_cpp` on a private
-router. A probe node subscribed best effort to both clouds and `/clock` for 30 s (40 s
-with Nav2) and transformed the points into `base_footprint`.
+Run on 2026-10-16 after `pixi run build`, on the tree with `main` and `navigation2`
+`3286119` merged, headless, with `rmw_zenoh_cpp` on a private router. A probe node
+subscribed best effort to both clouds and `/clock` for 30 s (40 s with Nav2) and
+transformed the points into `base_footprint`. The box world ran before the merge, with
+the same model and extension.
 
 | Check | Result |
 | --- | --- |
 | `test_description.py` and `test_mjcf.py` | 101 passed, 1 strict xfail (a known controller pairing) |
+| `colcon test` of the packages CI tests (`walkie_description`, `openarm_bimanual_moveit_config`, `topic_based_ros2_control`) | 106 tests, no failures, 1 skipped |
 | `pixi run docs-build` | Passes |
-| `/unilidar/cloud`, empty `scene.xml`, `mujoco_omnibot.launch.py` | 350 clouds, stamps 0.084 s apart, 11.7 clouds per simulated second. Frame `unitree4d_l2_imu_initial`, 180 x 32, `point_step` 12, fields `x`, `y`, `z`. 707 NaN entries: the rays above the horizon, which hit nothing in the empty world. 1191 points (21 %) inside the self-filter box. |
+| `/unilidar/cloud`, empty `scene.xml`, `mujoco_omnibot.launch.py` | Real-time factor 1.00. 353 clouds in 30 s, stamps 0.084 s apart, 11.8 clouds per simulated second. Frame `unitree4d_l2_imu_initial`, 180 x 32, `point_step` 12, fields `x`, `y`, `z`. 707 NaN entries: the rays above the horizon, which hit nothing in the empty world. 1191 points (21 %) inside the self-filter box. |
 | `/unilidar/cloud/filtered`, same run | One cloud per input cloud. 3862 points, unorganized, `is_dense` true, no NaN, none inside the box: only floor points (z from -0.002 to 0.007 m in `base_footprint`), 1.86 m to 29.9 m away |
 | World with a box beside the robot, its face at y = 1.4 m | 198 points above the floor beside the robot, the nearest at y = 1.400 m, in both clouds |
-| `nav_mujoco_omnibot.launch.py`, empty world | Real-time factor 1.00. 464 clouds in 40 s, 11.6 per simulated second. The same raw and filtered layout as without Nav2. |
+| `nav_mujoco_omnibot.launch.py`, empty world | Nav2 active. Real-time factor 0.94 and 0.99 in two runs (1.00 without the 3D lidar). 420 clouds in 40 s, 11.2 per simulated second. The same raw and filtered layout as without Nav2. |
 | Launch logs | No errors before shutdown. `ros2_control_node` loads the extension from the `mujoco_3d_lidar` package and adds the sensor `unitree_l2` on `/unilidar/cloud`. |
 
 The expected rate is 11.9 clouds per second. About 2 % of the clouds are not published:
@@ -268,7 +275,7 @@ before the self filter, not by the probe. The cause was not investigated.
 | --- | --- | --- |
 | The rays hit the robot | About 21 % of the rays end on the robot in the `home` pose. The self filter removes them from `/unilidar/cloud/filtered`. | Use the filtered topic |
 | No `intensity`, `ring` or `time` fields | A node that needs them gets no data | None. No node in the repository reads them. |
-| Cost grows with the ray count | A cloud stalls the simulation for about 53 ms. The fastest possible real-time factor drops from about 20 to about 1.5, so a slower machine may not keep real time. | Fewer rays, for example `LIDAR_3D_RESOLUTION = (180, 16)` in `build_mjcf.py` ([measured cost](#resolution-and-rate)) |
+| Cost grows with the ray count | A cloud stalls the simulation for about 53 ms. The fastest possible real-time factor drops from about 20 to about 1.5. With Nav2 the development machine ran at 0.94 to 0.99, and a slower machine falls further behind. | Fewer rays, for example `LIDAR_3D_RESOLUTION = (180, 16)` in `build_mjcf.py` ([measured cost](#resolution-and-rate)) |
 | About 2 % of the clouds are missing | The stamps jump by 0.168 s instead of 0.084 s now and then | None needed for a 12 Hz lidar |
 
 ## Still open
