@@ -828,22 +828,26 @@ drivers and the merger.
 
 The depth cameras and the 3D lidar see parts of the robot, such as the arms.
 `robot_self_filter` removes points that fall inside the robot's collision
-geometry from the URDF. `real_omnibot.launch.py` runs up to three instances.
+geometry from the URDF. `real_omnibot.launch.py` runs two instances, for the
+L2 lidar and the ZED camera; the D415 camera and its instance are commented
+out.
 
-With `keep_organized: false`, which all three instances use, the output is an
-unorganized list without the points that have no return (NaN or inf
-coordinates), and it is marked dense (`is_dense: true`). The ZED cloud has such
-a point for every pixel without valid depth; the L2 driver sends none.
+With `keep_organized: false`, which every instance config sets, the output is
+an unorganized list without the points that have no return (NaN or inf
+coordinates), and it is marked dense (`is_dense: true`). The ZED cloud has
+such a point for every pixel without valid depth; the L2 driver sends none.
 
 ??? info "Change of 2026-10-16: non-finite points are dropped"
     Before, the filter kept NaN and inf points in its unorganized output and
     still marked the output dense. A consumer that trusts the flag, such as many
-    PCL algorithms, then reads NaN coordinates.
+    PCL algorithms, then reads NaN coordinates. On the real robot, the MoveIt
+    octomap (`sensors_3d.yaml`) skipped NaN points but not inf points, and the
+    STVL voxel filter (`filter: "voxel"`) trusted the dense flag when it
+    computed its bounds.
 
     Since the change, `/zed_head/zed_node/point_cloud/cloud_registered/filtered`
-    has fewer points per cloud and is dense. The MoveIt octomap
-    (`sensors_3d.yaml`) and the Nav2 point cloud sources discarded these points
-    already. `cloud_to_map_node` only transforms the cloud, so its
+    has fewer points per cloud and is dense, so its consumers get only finite
+    points. `cloud_to_map_node` only transforms the cloud, so its
     `filtered_map` output changes the same way. The L2 output does not change.
 
     With `keep_organized: true`, the output keeps one entry per input point and
@@ -853,7 +857,7 @@ a point for every pixel without valid depth; the L2 driver sends none.
     | Input | Output | Config | Runs when |
     | --- | --- | --- | --- |
     | `/unilidar/cloud` | `/unilidar/cloud/filtered` | `bringup/config/lidar/unitree_self_filter.yaml` | `use_unitree_lidar:=true` (default) |
-    | `/camera/camera/depth/color/points` | `/camera/camera/depth/color/points/filtered` | `bringup/config/camera/d415_bottom_self_filter.yaml` | Always |
+    | `/camera/camera/depth/color/points` | `/camera/camera/depth/color/points/filtered` | `bringup/config/camera/d415_bottom_self_filter.yaml` | Not started: commented out in `real_omnibot.launch.py` |
     | `/zed_head/zed_node/point_cloud/cloud_registered` | `/zed_head/zed_node/point_cloud/cloud_registered/filtered` | `bringup/config/camera/zed2i_self_filter.yaml` | `use_zed:=true` (default) |
 
 ### Spatio-Temporal Voxel Layer
