@@ -37,8 +37,8 @@ _HW_MAPPINGS = {
         "add_world_link": "false",
     },
     "isaac": {
-        "ros2_control": "isaac",
-        "add_world_link": "true",
+        "ros2_control": "topic_base",
+        "add_world_link": "false",
     },
     "real_robot": {
         "ros2_control": "real_robot",
@@ -56,7 +56,7 @@ _HW_MAPPINGS = {
 def _make_nodes(context: LaunchContext, hardware_type_lc,
                 point_cloud_topic_lc, octomap_resolution_lc,
                 left_use_fake_arm_hardware_lc, right_use_fake_arm_hardware_lc,
-                right_joint2_fixed_lc, use_rviz_lc):
+                right_joint2_fixed_lc, use_rviz_lc, use_sim_time_lc):
     hardware_type = context.perform_substitution(hardware_type_lc)
     point_cloud_topic = context.perform_substitution(point_cloud_topic_lc)
     octomap_resolution = float(context.perform_substitution(octomap_resolution_lc))
@@ -64,6 +64,8 @@ def _make_nodes(context: LaunchContext, hardware_type_lc,
     right_use_fake_arm_hardware = context.perform_substitution(right_use_fake_arm_hardware_lc)
     right_joint2_fixed = context.perform_substitution(right_joint2_fixed_lc)
     use_rviz = context.perform_substitution(use_rviz_lc)
+    use_sim_time_str = context.perform_substitution(use_sim_time_lc)
+
     mappings = dict(_HW_MAPPINGS.get(hardware_type, _HW_MAPPINGS["mock_components"]))
     # Arm hardware (mock vs real OpenArm CAN) is selectable per side, independent
     # of hardware_type, which only controls the base/lift/wheels backend.
@@ -73,7 +75,10 @@ def _make_nodes(context: LaunchContext, hardware_type_lc,
 
     pkg_moveit = get_package_share_directory("openarm_bimanual_moveit_config")
 
-    use_sim_time = hardware_type in ("gazebo", "isaac", "mujoco")
+    if use_sim_time_str == "auto":
+        use_sim_time = hardware_type in ("gazebo", "isaac", "mujoco")
+    else:
+        use_sim_time = use_sim_time_str.lower() in ("true", "1")
 
     moveit_config = (
         MoveItConfigsBuilder("openarm", package_name="openarm_bimanual_moveit_config")
@@ -92,9 +97,9 @@ def _make_nodes(context: LaunchContext, hardware_type_lc,
     )
     moveit_params = moveit_config.to_dict()
     moveit_params["use_sim_time"] = use_sim_time
-    # Octomap needs the ZED point cloud, which only Gazebo and the real robot
-    # publish (no point cloud source is wired for mock/isaac/mujoco).
-    if hardware_type not in ("gazebo", "real_robot"):
+    # Octomap needs the ZED point cloud, which only Gazebo, real robot, and Isaac Sim publish.
+    if hardware_type not in ("gazebo", "real_robot", "isaac"):
+        moveit_params.pop("sensors", None)
         moveit_params.pop("sensors_3d", None)
         moveit_params["octomap_resolution"] = 0.0
     else:
@@ -107,16 +112,6 @@ def _make_nodes(context: LaunchContext, hardware_type_lc,
             entry = moveit_params.get(_name)
             if isinstance(entry, dict) and "point_cloud_topic" in entry:
                 entry["point_cloud_topic"] = point_cloud_topic
-
-    # MoveItConfigsBuilder does not auto-load move_group.yaml, so merge it here.
-    # Provides start_state_max_bounds_error and trajectory_execution tolerances.
-    with open(os.path.join(pkg_moveit, "config", "move_group.yaml")) as _f:
-        _mg = yaml.safe_load(_f)
-    for _k, _v in _mg.items():
-        if isinstance(_v, dict) and isinstance(moveit_params.get(_k), dict):
-            moveit_params[_k].update(_v)
-        else:
-            moveit_params[_k] = _v
 
     # MoveItConfigsBuilder does not auto-load move_group.yaml, so merge it here.
     # Provides start_state_max_bounds_error and trajectory_execution tolerances.
@@ -191,6 +186,11 @@ def generate_launch_description():
             default_value="true",
             description="Launch RViz2 alongside move_group.",
         ),
+        DeclareLaunchArgument(
+            "use_sim_time",
+            default_value="auto",
+            description="Use simulation clock (/clock). 'auto' resolves to true for gazebo/isaac/mujoco.",
+        ),
     ]
 
     hardware_type = LaunchConfiguration("hardware_type")
@@ -200,12 +200,13 @@ def generate_launch_description():
     right_use_fake_arm_hardware = LaunchConfiguration("right_use_fake_arm_hardware")
     right_joint2_fixed = LaunchConfiguration("right_joint2_fixed")
     use_rviz = LaunchConfiguration("use_rviz")
+    use_sim_time = LaunchConfiguration("use_sim_time")
 
     nodes_func = OpaqueFunction(
         function=_make_nodes,
         args=[hardware_type, point_cloud_topic, octomap_resolution,
               left_use_fake_arm_hardware, right_use_fake_arm_hardware,
-              right_joint2_fixed, use_rviz],
+              right_joint2_fixed, use_rviz, use_sim_time],
     )
 
     return LaunchDescription(declared_arguments + [nodes_func])

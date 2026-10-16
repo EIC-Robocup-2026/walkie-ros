@@ -232,6 +232,9 @@ test-joints = {cmd = "python walkie-isaac/test_joints.py", description = "Run in
 rsp = {cmd = "ros2 launch walkie_description robot_state_publisher.launch.py use_sim_time:=true ros2_control:=topic_base", description = "Launch robot_state_publisher with sim time enabled for Isaac Sim"}
 full-isaacbringup = {cmd = "ros2 launch robot_bringup full_isaac_bringup.launch.py", description = "Launch complete Isaac Sim ROS 2 bringup (RSP, controllers, self-filters, pose publisher, rosbridge, rviz)"}
 isaac-bringup = {cmd = "ros2 launch robot_bringup full_isaac_bringup.launch.py", description = "Launch complete Isaac Sim ROS 2 bringup"}
+moveit-sim = {cmd = "ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=isaac", description = "Launch MoveIt 2 (move_group + MoveIt RViz) for Isaac Sim"}
+nav-sim = {cmd = "ros2 launch robot_navigation localization_Nav2_sim.launch.py", description = "Launch Nav2 localization and navigation for Isaac Sim"}
+slam-sim = {cmd = "ros2 launch robot_navigation slam_toolbox.launch.py use_sim_time:=true", description = "Launch SLAM Toolbox online mapping for Isaac Sim"}
 
 [tasks.build-setup]
 args = [{ arg = "workers", default = "1" }]
