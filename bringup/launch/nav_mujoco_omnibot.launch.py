@@ -3,9 +3,8 @@
 
 Includes mujoco_omnibot.launch.py and starts Nav2 (nav2_bringup) with the
 simulation parameters from robot_navigation, map_server, and no AMCL. The
-map -> odom transform is a static identity, republished every second, so the
-robot pose in the map is the wheel odometry, and the robot must start at the
-map origin. A goal from the
+map -> odom transform is a static identity, so the robot pose in the map is the
+wheel odometry, and the robot must start at the map origin. A goal from the
 RViz "2D Goal Pose" tool (/goal_pose) or the Nav2 panel drives the robot.
 """
 import os
@@ -78,14 +77,12 @@ def generate_launch_description():
 
     # Odometry-only localization: AMCL would have nothing to match in a world
     # without walls. omni_wheel_drive_controller publishes odom -> base_footprint.
-    # map_to_odom_publisher.py sends the static identity again every second, not
-    # once like static_transform_publisher: bt_navigator once had no map frame
-    # minutes after the start and rejected a goal with error 9002.
     map_to_odom = Node(
-        package="robot_bringup",
-        executable="map_to_odom_publisher.py",
+        package="tf2_ros",
+        executable="static_transform_publisher",
         name="map_to_odom",
         output="screen",
+        arguments=["--frame-id", "map", "--child-frame-id", "odom"],
         parameters=[{"use_sim_time": True}],
     )
 

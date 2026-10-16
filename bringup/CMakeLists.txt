@@ -20,7 +20,6 @@ install(PROGRAMS
   scripts/openarm_joint_state_reader.py
   scripts/openarm_joint_error_monitor.py
   scripts/head_touch_beep_node.py
-  scripts/map_to_odom_publisher.py
   DESTINATION lib/${PROJECT_NAME})
 
 # find dependencies
