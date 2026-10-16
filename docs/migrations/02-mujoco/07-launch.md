@@ -173,20 +173,6 @@ lists their defaults.
     smoother and the collision monitor before `twist_mux`. See
     [5. Repair Nav2 After the navigation2 Bump](../05-nav2-repair.md#velocity-smoother-and-collision-monitor-bypassed).
 
-!!! note "Update 2026-10-15: map to odom is published every second"
-    `map_to_odom_publisher.py` of `robot_bringup` replaces `static_transform_publisher`.
-    It publishes the same identity transform on `/tf_static`, with the node name
-    `map_to_odom`, and publishes it again every second on a steady clock. Reason:
-    `bt_navigator` once had no `map` frame 4 minutes after the start and rejected a goal
-    with error 9002
-    ([Troubleshooting](../../troubleshooting.md#nav2-map-frame-does-not-exist)).
-    Checked headless on 2026-10-15, once with `rmw_zenoh_cpp` and once with
-    `rmw_fastrtps_cpp`: Nav2 was active after 8.1 s and 11.1 s, and two `NavigateToPose`
-    goals per run ended `SUCCEEDED` with `error_code` 0. On shutdown the node behaves
-    like `static_transform_publisher`: it finishes cleanly when only `ros2 launch`
-    receives SIGINT, and exits with code -2 on a Ctrl+C in the terminal, which sends
-    SIGINT to every process of the launch.
-
 ## Expand the URDF in the launch file
 
 `mujoco_omnibot.launch.py` runs `xacro` on `description/robots/gz_walkie.urdf.xacro` itself,
