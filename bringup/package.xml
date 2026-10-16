@@ -31,7 +31,7 @@
   <exec_depend>dual_laser_merger</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>nav2_rviz_plugins</exec_depend>
-  <exec_depend>robot_navigation</exec_depend>
+  <!-- <exec_depend>robot_navigation</exec_depend> -->
   <!-- mujoco_omnibot.launch.py also needs mujoco_ros2_control, which the pixi
        environment provides. It is not declared so that rosdep does not install
        MuJoCo into the physical Docker image. -->

@@ -19,6 +19,7 @@ from launch.launch_description_sources import (
 )
 from launch.substitutions import Command, LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -83,7 +84,7 @@ def generate_launch_description():
     robot_state_publisher_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(
-                get_package_share_directory(package_name),
+                get_package_share_directory(description_package_name),
                 "launch",
                 "robot_state_publisher.launch.py",
             )
@@ -131,7 +132,7 @@ def generate_launch_description():
         package="controller_manager",
         executable="ros2_control_node",
         parameters=[
-            {"robot_description", robot_description_content},
+            {"robot_description": ParameterValue(robot_description_content, value_type=str)},
             {"use_sim_time": use_sim_time},
             controllers_config_selected,
         ],
@@ -232,7 +233,7 @@ def generate_launch_description():
     )
 
     current_pose_publisher = Node(
-        package="robot_navigation",
+        package=package_name,
         executable="current_pose_publisher.py",
         name="current_pose_publisher",
         output="screen",
