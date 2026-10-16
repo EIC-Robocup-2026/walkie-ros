@@ -74,6 +74,7 @@ def generate_launch_description():
     use_foxglove = LaunchConfiguration("use_foxglove", default="false")
     use_perception = LaunchConfiguration("use_perception", default="true")
     use_tf_server = LaunchConfiguration("use_tf_server", default="true")
+    use_moveit = LaunchConfiguration("use_moveit", default="false")
 
     # --------------------------------------------------------------------------
     # Launch Arguments
@@ -148,6 +149,11 @@ def generate_launch_description():
         "use_tf_server",
         default_value="true",
         description="Launch walkie_tf_server for TF transform lookups",
+    )
+    declare_use_moveit = DeclareLaunchArgument(
+        "use_moveit",
+        default_value="false",
+        description="Whether to launch MoveIt 2 (move_group + MoveIt RViz Motion Planning UI)",
     )
 
     # --------------------------------------------------------------------------
@@ -541,6 +547,28 @@ def generate_launch_description():
         condition=IfCondition(use_foxglove),
     )
 
+    # --------------------------------------------------------------------------
+    # 9. MoveIt 2 (move_group + MoveIt RViz Motion Planning UI)
+    # --------------------------------------------------------------------------
+    pkg_moveit = get_package_share_directory("openarm_bimanual_moveit_config")
+    moveit_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_moveit, "launch", "moveit_only.launch.py")
+        ),
+        launch_arguments={
+            "hardware_type": "isaac",
+            "use_sim_time": use_sim_time,
+            "right_joint2_fixed": right_joint2_fixed,
+            "use_rviz": use_rviz,
+        }.items(),
+        condition=IfCondition(use_moveit),
+    )
+
+    # When use_moveit is true, moveit_only launches RViz configured with moveit.rviz.
+    # Otherwise, bringup launches default.rviz.
+    rviz_condition = IfCondition(
+        PythonExpression(["'", use_rviz, "' == 'true' and '", use_moveit, "' != 'true'"])
+    )
     rviz_config_path = PathJoinSubstitution([
         get_package_share_directory(package_name), "config", "rviz", "default.rviz"
     ])
@@ -551,7 +579,7 @@ def generate_launch_description():
         output="screen",
         arguments=["-d", rviz_config_path],
         parameters=[{"use_sim_time": use_sim_time}],
-        condition=IfCondition(use_rviz),
+        condition=rviz_condition,
     )
 
     # --------------------------------------------------------------------------
@@ -574,6 +602,7 @@ def generate_launch_description():
     ld.add_action(declare_use_foxglove)
     ld.add_action(declare_use_perception)
     ld.add_action(declare_use_tf_server)
+    ld.add_action(declare_use_moveit)
 
     # RSP & Twist Mux
     ld.add_action(robot_state_publisher_cmd)
@@ -599,6 +628,9 @@ def generate_launch_description():
     ld.add_action(walkie_tf_server)
     ld.add_action(cloud_to_map)
     ld.add_action(ob_pose_service)
+
+    # MoveIt
+    ld.add_action(moveit_launch)
 
     # Bridges & RViz
     ld.add_action(rosbridge_launch)

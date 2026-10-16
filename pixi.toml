@@ -231,6 +231,7 @@ rviz-sensors = {cmd = "ros2 run rviz2 rviz2 -d walkie-isaac/config/view_sensors.
 test-joints = {cmd = "python walkie-isaac/test_joints.py", description = "Run interactive joint control test for arms, lift, head, and grippers"}
 rsp = {cmd = "ros2 launch walkie_description robot_state_publisher.launch.py use_sim_time:=true ros2_control:=topic_base", description = "Launch robot_state_publisher with sim time enabled for Isaac Sim"}
 full-isaacbringup = {cmd = "ros2 launch robot_bringup full_isaac_bringup.launch.py", description = "Launch complete Isaac Sim ROS 2 bringup (RSP, controllers, self-filters, pose publisher, rosbridge, rviz)"}
+full-isaacbringup-moveit = {cmd = "ros2 launch robot_bringup full_isaac_bringup.launch.py use_moveit:=true", description = "Launch complete Isaac Sim bringup with MoveIt 2 (move_group + MoveIt RViz UI)"}
 isaac-bringup = {cmd = "ros2 launch robot_bringup full_isaac_bringup.launch.py", description = "Launch complete Isaac Sim ROS 2 bringup"}
 moveit-sim = {cmd = "ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=isaac", description = "Launch MoveIt 2 (move_group + MoveIt RViz) for Isaac Sim"}
 nav-sim = {cmd = "ros2 launch robot_navigation localization_Nav2_sim.launch.py", description = "Launch Nav2 localization and navigation for Isaac Sim"}
