@@ -1,7 +1,7 @@
 # Troubleshooting
 
 Fixes for problems that are not tied to one part of the robot: the
-environment, pixi, Git, the build, Zenoh, tests, and this site. Search for a
+environment, pixi, Git, the build, Zenoh, Nav2 bringup, tests, and this site. Search for a
 distinctive part of your error message to find the right entry.
 
 ## By topic
@@ -13,7 +13,7 @@ Problems with one simulator, launch file, or device are in the guides.
 | pixi, helper scripts, Python venvs | [Working with Pixi: Known issues](guides/pixi.md#known-issues) |
 | Zenoh router and connecting to the robot | [Middleware: Known issues](guides/middleware.md#known-issues), [Troubleshooting](guides/middleware.md#troubleshooting) |
 | Gazebo | [Gazebo Simulation: Known issues](guides/simulation-gazebo.md#known-issues), [Troubleshooting](guides/simulation-gazebo.md#troubleshooting) |
-| MuJoCo model, viewer, custom worlds, and the ROS 2 bringup | [MuJoCo Simulation: Troubleshooting](guides/simulation-mujoco.md#troubleshooting) |
+| MuJoCo model, viewer, custom worlds, and the launch files | [MuJoCo Simulation: Troubleshooting](guides/simulation-mujoco.md#troubleshooting) |
 | Nav2, maps, localization | [Navigation: Known issues](guides/navigation.md#known-issues), [Troubleshooting](guides/navigation.md#troubleshooting) |
 | MoveIt and the arms | [Manipulation: Known issues](guides/manipulation.md#known-issues), [Troubleshooting](guides/manipulation.md#troubleshooting) |
 | Object detection and grasping | [Perception: Known issues](guides/perception.md#known-issues), [Troubleshooting](guides/perception.md#troubleshooting) |
@@ -294,12 +294,12 @@ git submodule update --init --recursive -- description navigation \
     hardware/actuator/topic_based_ros2_control hardware/actuator/openarm/openarm_can
 ```
 
-`tools/twist_stamper` itself comes from `pixi run import`.
+`tools/twist_stamper` was an obsolete package and has been removed from the repository.
 
 ??? info "Why Git cannot clone tools/twist_stamper"
     On `feat/Pixi` and on branches made from it before commit `8ead77e`,
     `tools/twist_stamper` was committed as a gitlink: a submodule entry with
-    no line in `.gitmodules`. Git cannot clone it. `8ead77e` removes the
+    no line in `.gitmodules`. Git cannot clone it. `8ead77e` removed the
     gitlink.
 
 ## Build
@@ -327,15 +327,14 @@ Building `urg_node2` fails with
 `Could not find a package configuration file provided by "laser_proc"`.
 
 ```bash
-pixi run import
-pixi run build-pkg laser_proc urg_node2
+pixi install
+pixi run build-pkg urg_node2
 ```
 
-??? info "Why build-pkg does not find laser_proc"
-    `laser_proc` is not installed from the channels. `pixi run import` clones
-    it into `hardware/lidar/laser_proc`, and colcon builds it with the
-    workspace. `pixi run build` runs the import first. `pixi run build-pkg`
-    does not, and it builds only the packages you name.
+??? info "Why CMake cannot find laser_proc"
+    `ros-jazzy-laser-proc` is installed as a conda package via pixi. Run `pixi install`
+    to ensure the package is present in `.pixi/envs/default/`. If you previously had
+    a source clone in `hardware/lidar/laser_proc`, remove it.
 
 ### The build runs out of memory or crashes during initial setup
 
@@ -435,6 +434,30 @@ Set the same `ROS_DOMAIN_ID` everywhere. The team uses domain 23. See
     | `RMW_IMPLEMENTATION` is not set in one terminal | pixi does not set it. Without it, ROS 2 Jazzy uses its default DDS middleware (`rmw_fastrtps_cpp`), which cannot talk to Zenoh nodes |
     | Different `ROS_DOMAIN_ID` values | The team uses domain 23. `scripts/bringup/connect_walkie_zenoh_router.sh` sets it only for its own router process; an unset variable means domain 0 |
 
+## Nav2 and launch files
+
+These problems come from the Nav2 fork in `navigation/navigation2/` and hit
+more than one launch file.
+
+### Nav2 stops with Failed to load motion model plugin 'Omni' { #nav2-fails-to-load-the-omni-motion-model }
+
+`controller_server` fails to configure, Nav2 stops during bringup, and the log
+shows `Can not get 'plugin' param value for FollowPath.Omni` and
+`Failed to load motion model plugin 'Omni'`. Every Nav2 launch except
+`nav_mujoco_omnibot.launch.py` stops this way.
+
+Add `Omni: plugin: "mppi::OmniMotionModel"` under `FollowPath` in the MPPI
+parameter file. See
+[Navigation: controller_server cannot load the Omni motion model](guides/navigation.md#mppi-omni-motion-model-plugin).
+
+### Nav2 waits forever for smoother_server/get_state { #nav2-waits-for-smoother-server }
+
+Nav2 never becomes active, and the log repeats
+`Waiting for service smoother_server/get_state...`.
+
+Pass `use_composition:=False` to `nav2_bringup`'s `bringup_launch.py`. See
+[Navigation: Nav2 bringup hangs at smoother_server/get_state](guides/navigation.md#nav2-composition-deadlock).
+
 ## Tests
 
 ### Every Python test aborts at start-up
@@ -490,15 +513,20 @@ then run `pixi run docs-build` again.
 
 ### The docs deploy job is rejected
 
-A manual run of the Docs workflow on a branch other than `main` builds the
-site, but the `deploy` job fails.
+A run of the Docs workflow on a branch other than `main` (such as `feat/Pixi`)
+builds the site, but the `deploy` job fails with a message such as
+`Deployment to github-pages was rejected: branch feat/Pixi is not allowed to deploy`.
 
-Merge the change to `main`. To check a branch, run `pixi run docs-build`
-locally instead.
+To allow `feat/Pixi` to deploy to GitHub Pages:
 
-??? info "Why only main can deploy"
-    By default, the `github-pages` environment accepts deployments only from
-    the default branch, `main`.
+1. Open the repository on GitHub and go to **Settings → Environments → github-pages**.
+2. Under **Deployment branches and tags**, add `feat/Pixi` (or select "No restriction").
+
+??? info "Why only main can deploy by default"
+    By default, GitHub creates the `github-pages` environment with deployment
+    protection rules that restrict deployments to the default branch (`main`).
+    Adding `feat/Pixi` allows documentation changes made during development to
+    publish automatically.
 
 ### Port 8000 is already in use
 

@@ -16,8 +16,19 @@ any ROS code that works on the real robot or in Gazebo sees the same frames in M
 - The IMU is a site on `top_imu_link`, wired through ros2_control. Each camera sits on
   its URDF optical frame.
 - Result: all sensors exist in `walkie.xml` and `test_mjcf.py` checks them. Lidar and
-  camera publishing works with a plugin parameter file that is not in the repository
-  yet, and the IMU topic needs a remap ([Still open](#still-open)).
+  camera publishing works with a plugin parameter file, and the IMU topic needs a remap.
+  Both were added to the repository with the launch files on 2026-10-13
+  ([Still open](#still-open)).
+
+!!! note "Update 2026-10-13: launch files added"
+    With `bringup/launch/mujoco_omnibot.launch.py`, every sensor publishes on a ROS topic.
+    The launch file loads the plugin parameter file
+    `bringup/config/mujoco/mujoco_plugins.yaml`, merges the two lidars into `/scan` with
+    `dual_laser_merger`, and remaps the IMU to `/imu`. The updates in the sections below
+    give the details.
+    [MuJoCo Simulation: Run with ROS 2](../../guides/simulation-mujoco.md#run-with-ros-2)
+    has the commands, and [2.7 Launch Files and Nav2](07-launch.md) records the launch
+    files.
 
 ## Sensors at a glance
 
@@ -102,6 +113,11 @@ collision geometry around both scanners.
     front lidar is therefore 0.235 m ahead of the robot center and the back lidar
     0.235 m behind it.
 
+    !!! note
+        Since description `main` was merged (description `f6649ee`), `base_link` is
+        aligned with `base_footprint`. The sites are now at (0.235, 0, 0.28232) and
+        (-0.235, 0, 0.28232) in `base_link`. Their positions in the world are unchanged.
+
 ### Evaluate each beam once per scan
 
 Every rangefinder has `interval="0.025 0"`, so MuJoCo casts each beam once per scan
@@ -147,7 +163,26 @@ frame `merged_lidar_link` and remaps the output to `/scan`. Nav2 reads `/scan`.
 
 ### What /scan will need
 
-No launch file publishes the MuJoCo lidars on ROS topics yet. Two parts are missing:
+!!! note "Update 2026-10-13: /scan comes from dual_laser_merger"
+    `mujoco_omnibot.launch.py` builds `/scan` from both parts listed below:
+
+    - `RangefinderLidarPlugin`, configured in `bringup/config/mujoco/mujoco_plugins.yaml`,
+      publishes `/front_lidar` (frame `front_lidar_link`) and `/back_lidar` (frame
+      `back_lidar_link`).
+    - `dual_laser_merger` runs with the same parameters as on the real robot. It remaps
+      `/merged_lidar` to `/scan`, in the frame `merged_lidar_link`.
+    - The merger publishes only when both lidars hit something. The default `scene.xml`
+      has only a floor, so it has no `/scan`. Nav2 still runs there; its obstacle layers
+      see nothing. In a walled test room, `/scan` published at about 27.8 Hz.
+    - The launch files keep the deprecated `RangefinderLidarPlugin`. Its replacement,
+      `Mujoco3dLidarPlugin`, needs the `mujoco_3d_lidar` MuJoCo extension, which is not
+      in the pixi environment.
+
+    [MuJoCo Simulation: The mujoco_plugins parameter file](../../guides/simulation-mujoco.md#the-mujoco_plugins-parameter-file)
+    has the file, and [2.7 Launch Files and Nav2](07-launch.md) records the launch files.
+
+When this entry was written, no launch file published the MuJoCo lidars on ROS topics.
+Two parts were missing:
 
 1. **A LaserScan publisher per lidar**, publishing `/front_lidar` and `/back_lidar`.
 2. **The merger.** Run `dual_laser_merger` with the same parameters as on the real
@@ -157,6 +192,9 @@ No launch file publishes the MuJoCo lidars on ROS topics yet. Two parts are miss
     The generator names the sensors for `RangefinderLidarPlugin` from
     `mujoco_ros2_control_plugins` 0.1.2. The alternative, `Mujoco3dLidarPlugin`, has
     not been tried with Walkie. Choosing between the two is an open decision.
+
+    **Update 2026-10-13:** decided in [2.7 Launch Files and Nav2](07-launch.md). The launch
+    files use `RangefinderLidarPlugin`.
 
 MuJoCo does not clip readings to the range. A beam that hits nothing reads -1, and a
 beam can read more than 10 m. The publisher must treat both as "no return".
@@ -210,14 +248,20 @@ beam can read more than 10 m. The publisher must treat both as "no return".
       `mujoco_plugins.rangefinder_lidar_plugin.lidar_publish_rate`.
 
     With the Walkie values from the parameter table, `/front_lidar` and `/back_lidar` each
-    published 241 ranges. Without a parameter file the lidars publish nothing.
-    `dual_laser_merger` is not set up for MuJoCo yet.
+    published 241 ranges. Without a parameter file the lidars publish nothing. The manual
+    bringup did not run `dual_laser_merger`.
     [MuJoCo Simulation](../../guides/simulation-mujoco.md#the-mujoco_plugins-parameter-file)
     has the working file.
 
 ??? info "Measured lidar rate"
     In the manual bringup, the lidars published at about 28 Hz instead of the configured
     40 Hz. The cause has not been investigated.
+
+    **Update 2026-10-13:** runs of `mujoco_omnibot.launch.py` measured about 27.8 Hz. The
+    likely cause, not verified in the plugin source: the plugin publishes from the
+    controller manager loop, which runs at `update_rate` 60 (`mujoco_controllers.yaml`).
+    A 40 Hz target is then met only every second cycle, about 30 Hz, and the loop runs at
+    about 55 Hz in practice.
 
 ## IMU
 
@@ -232,6 +276,11 @@ The accelerometer reports specific force, like a real IMU. At rest it reads abou
     `imu_sensor_broadcaster` publishes on `~/imu`, which resolves to
     `/imu_sensor_broadcaster/imu`. Gazebo publishes on `/imu`. The launch file must
     remap the topic so that code written for Gazebo finds it.
+
+!!! note "Update 2026-10-13: remapped in the launch file"
+    `mujoco_omnibot.launch.py` remaps `/imu_sensor_broadcaster/imu` to `/imu` on the
+    `ros2_control_node`. `/imu` carries the frame `top_imu_link`. See
+    [2.7 Launch Files and Nav2](07-launch.md).
 
 ??? info "Full IMU wiring: mount, interfaces, broadcaster and Gazebo equivalent"
     | Item | Value |
@@ -304,8 +353,27 @@ of view.
 
 ### What camera topics will need
 
-No launch file publishes the MuJoCo cameras yet. The `CameraPlugin` of
-`mujoco_ros2_control_plugins` 0.1.2 is not configured in the repository.
+!!! note "Update 2026-10-13: head camera on the ZED topic names"
+    `bringup/config/mujoco/mujoco_plugins.yaml` configures one `CameraPlugin` instance
+    with `camera_publish_rate` 5.0, and `mujoco_omnibot.launch.py` loads it. The head
+    camera publishes its images and camera info on the topic names of the real ZED, so
+    nodes that read them need no remaps:
+
+    | Camera | Color image | Depth image | Camera info | Frame |
+    | --- | --- | --- | --- | --- |
+    | `head_camera` | `/zed_head/zed_node/rgb/color/rect/image` | `/zed_head/zed_node/depth/depth_registered` | `/zed_head/zed_node/depth/camera_info` | `zed_head_left_camera_frame_optical` |
+    | `bottom_camera` | `/bottom_camera/image_raw` | `/bottom_camera/depth/image_raw` | `/bottom_camera/camera_info` | `bottom_color_optical_frame` |
+
+    One MuJoCo camera renders both images, so the depth image is registered to the color
+    image. Before this update, the parameter file in the guide published the head camera
+    on `/head_camera/...` topics. No ZED point cloud is published, so nodes that read
+    `/zed_head/zed_node/point_cloud/cloud_registered` get no cloud.
+    [MuJoCo Simulation: The mujoco_plugins parameter file](../../guides/simulation-mujoco.md#the-mujoco_plugins-parameter-file)
+    has the current file.
+
+When this entry was written, no launch file published the MuJoCo cameras, and the
+`CameraPlugin` of `mujoco_ros2_control_plugins` 0.1.2 was not configured in the
+repository.
 
 ??? info "CameraPlugin parameters in the upstream demo"
     The upstream demo config sets `camera_publish_rate` and, per camera, `policy`,
@@ -350,18 +418,27 @@ Six tests cover the sensors: `test_imu_at_rest`, `test_lidar_beam_layout`,
 
 | Item | Status |
 | --- | --- |
-| Lidar publishing | Choose between the deprecated `RangefinderLidarPlugin` and `Mujoco3dLidarPlugin`, then configure two lidars and `dual_laser_merger` |
-| Camera publishing | Configure `CameraPlugin` for `head_camera` and `bottom_camera` |
-| IMU topic | Remap `imu_sensor_broadcaster` `~/imu` to `/imu` in the launch file |
+| Lidar publishing | Done 2026-10-13: `RangefinderLidarPlugin` for both lidars and `dual_laser_merger` to `/scan` in `mujoco_omnibot.launch.py`. The plugin stays deprecated upstream; `Mujoco3dLidarPlugin` needs the `mujoco_3d_lidar` MuJoCo extension, which is not in the pixi environment. |
+| Lidar rate | About 27.8 Hz instead of the configured 40 Hz. The likely cause, not verified, is in "Measured lidar rate" under [Lidars](#lidars). |
+| Camera publishing | Done 2026-10-13: `CameraPlugin` for `head_camera` and `bottom_camera` in `bringup/config/mujoco/mujoco_plugins.yaml` |
+| IMU topic | Done 2026-10-13: remapped to `/imu` in `mujoco_omnibot.launch.py` |
 
 !!! note "Update 2026-10-13"
     Lidar and camera publishing work with a plugin parameter file, see the updates above.
     The file, the choice of lidar plugin, `dual_laser_merger` and the IMU remap still have
     to go into a launch file.
 
-The launch file that will hold all of this is described in
-[2.5 ros2_control](05-ros2-control.md). The collision classes that decide what the arms
-touch (but not what the lidars see) are in [2.3 Collisions](03-collisions.md).
+!!! note "Update 2026-10-13: launch files added"
+    Lidar and camera publishing first worked with a plugin parameter file in a manual
+    bringup, see the updates above. The parameter file, the lidar plugin,
+    `dual_laser_merger` and the IMU remap are now in `robot_bringup`, and the table above
+    shows the result. See [2.7 Launch Files and Nav2](07-launch.md).
+
+The requirements for the launch file are listed in
+[2.5 ros2_control](05-ros2-control.md#the-launch-file-still-to-write), and the launch files
+themselves are described in [2.7 Launch Files and Nav2](07-launch.md). The collision
+classes that decide what the arms touch (but not what the lidars see) are in
+[2.3 Collisions](03-collisions.md).
 
 ## Known issues
 

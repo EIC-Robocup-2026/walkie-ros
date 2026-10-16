@@ -176,16 +176,21 @@ The repository has no keyboard teleop package, and `pixi.toml` does not
 install `teleop_twist_keyboard`. `twist_mux` reserves `/cmd_vel_key` for a
 keyboard source. A keyboard tool must publish `TwistStamped` on that topic.
 
-??? info "About `twist_stamper`"
-    `tools/twist_stamper` is fetched by `pixi run import` from
-    `walkie_external.repos`, because RoboStack does not build it. It converts
-    `Twist` to `TwistStamped`. Only the Isaac Sim launch file uses it. The
-    Gazebo launch files do not.
-
 ## Run Gazebo with Nav2 { #gazebo-with-nav2 }
 
 !!! warning
     The default simulation map is missing. Extract it and pass it with `map:=` as shown in [The simulation map](navigation.md#the-simulation-map).
+
+!!! warning "Nav2 stops during bringup with the current parameter files"
+    No MPPI parameter file in `robot_navigation` sets `FollowPath.Omni.plugin`, so
+    `controller_server` fails to configure and Nav2 stops. Add the key to
+    `nav2_mppi_walkie_sim_params.yaml`, as shown in
+    [Navigation: controller_server cannot load the Omni motion model](navigation.md#mppi-omni-motion-model-plugin).
+
+    The composed Nav2 bringup can also hang at
+    `Waiting for service smoother_server/get_state...`. Add `use_composition:=False` to the
+    command below. See
+    [Navigation: Nav2 bringup hangs at smoother_server/get_state](navigation.md#nav2-composition-deadlock).
 
 ```bash
 pixi run ros2 launch robot_bringup nav_sim_omnibot.launch.py map:=/tmp/sim_map/map.yaml
@@ -367,6 +372,8 @@ scene is not in this repository.
 | --- | --- | --- |
 | On a computer with a system ROS 2 Jazzy, Gazebo can load a system build of `libgz_ros2_control-system.so` and crash with a segmentation fault | The launch files set the plugin path to `/opt/ros/jazzy/lib/` and replace the value that pixi sets | Remove the `SetEnvironmentVariable` action for `GZ_SIM_SYSTEM_PLUGIN_PATH` from `gzsim_omnibot.launch.py` and `world_preview_gz.launch.py`. See also [Gazebo problems only on computers with a system ROS](../troubleshooting.md#gazebo-problems-only-on-computers-with-a-system-ros). |
 | `nav_sim_omnibot.launch.py` cannot load its map | Default map is missing at the pinned map commit | Pass `map:=`. See [The simulation map](navigation.md#the-simulation-map). |
+| `controller_server` fails to configure, and Nav2 stops during bringup | The MPPI parameter files do not set `FollowPath.Omni.plugin`, which the Nav2 fork requires | Add `plugin: "mppi::OmniMotionModel"` under `FollowPath.Omni`. See [Navigation](navigation.md#mppi-omni-motion-model-plugin). |
+| Nav2 hangs at `Waiting for service smoother_server/get_state...` | `localization_Nav2_sim.launch.py` keeps the composed bringup, which can deadlock on Jazzy | Pass `use_composition:=False`. See [Navigation](navigation.md#nav2-composition-deadlock). |
 | No `/scan` with `dual_lidar:=True`, so Nav2 has no laser data | Bridge entries commented out, no laser merger | Keep the default `dual_lidar:=False` |
 | `robot_preview_rviz.launch.py` and `robot_preview_lift_rviz.launch.py` fail with `name 'true' is not defined` | `robot_state_publisher.launch.py` defaults `dual_lidar` to `true`, which the xacro cannot evaluate in `gazebo` mode | Pass `dual_lidar:=False` (or `True`) on the command line |
 | `/gazebo_ground_truth/odom` gets no data | Bridge reads `/model/my_bot/pose`, model is `walkie_bot` | None in the repository |

@@ -16,8 +16,15 @@ find_package(control_msgs REQUIRED)
 find_package(moveit_core REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(moveit_ros_warehouse REQUIRED)
-find_package(warehouse_ros REQUIRED)
+find_package(moveit_ros_planning REQUIRED)
 find_package(tf2 REQUIRED)
+
+add_executable(benchmark_collision src/benchmark_collision.cpp)
+ament_target_dependencies(benchmark_collision
+  rclcpp
+  moveit_core
+  moveit_ros_planning
+)
 
 add_executable(commander src/commander_template.cpp)
 ament_target_dependencies(commander
@@ -67,7 +74,7 @@ ament_target_dependencies(save_named_constraint
   tf2_geometry_msgs
 )
 
-install(TARGETS commander pick_and_place_isaac pick_and_place_isaac2 save_named_constraint
+install(TARGETS commander pick_and_place_isaac pick_and_place_isaac2 save_named_constraint benchmark_collision
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch

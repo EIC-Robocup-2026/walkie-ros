@@ -195,9 +195,10 @@ mujoco = "3.15.*"
 ros-jazzy-mujoco-ros2-control = ">=0.1.2"
 # `ros2 control view_controller_chains` imports graphviz; RoboStack does not map python3-graphviz.
 python-graphviz = "*"
+ros-jazzy-nmea-msgs = ">=2.1.0,<3"
 
-# Available since build set _25, but still built from source (walkie_external.repos):
-# ros-jazzy-laser-proc = "*"
+ros-jazzy-laser-proc = "*"
+ros-jazzy-topic-tools = ">=1.3.4,<2"
 
 # The following packages were not found:
 # libblosc-dev = "*"
@@ -213,8 +214,8 @@ python-graphviz = "*"
 
 [tasks]
 setup = {cmd = "ln -sf libpthread.so.0 $CONDA_PREFIX/x86_64-conda-linux-gnu/sysroot/usr/lib/libpthread.so", description = "Fix missing libpthread.so symlink in conda sysroot"}
-import = {cmd = "vcs import < walkie_external.repos", description = "Clone/update external repos defined in walkie_external.repos"}
-build = {cmd = "colcon build --symlink-install --packages-ignore openarm_hardware --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX", depends-on = ["setup", "import"], description = "Build the ROS workspace ignoring physical CAN hardware"}
+setup-real = {cmd = "vcs import < walkie_real.repos", description = "Pull real-robot packages (e.g. ZED wrapper and submodules) from walkie_real.repos"}
+build = {cmd = "colcon build --symlink-install --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX", depends-on = ["setup"], description = "Build the ROS workspace"}
 build-pkg = {cmd = "colcon build --symlink-install --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX --packages-select", depends-on = ["setup"], description = "Build a specific package, e.g: pixi run build-pkg -- openvdb_vendor"}
 test = {cmd = "colcon test", description = "Run tests for the workspace"}
 clean = {cmd = "rm -rf build install log", description = "Clean build artifacts (build, install, log directories)"}
@@ -232,15 +233,17 @@ test-joints = {cmd = "python walkie-isaac/test_joints.py", description = "Run in
 [tasks.build-setup]
 args = [{ arg = "workers", default = "1" }]
 cmd = "colcon build --symlink-install --parallel-workers {{ workers }} --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX"
-depends-on = ["setup", "import"]
+depends-on = ["setup"]
 description = "Build workspace for initial setup (default: 1 worker; e.g. pixi run build-setup 3)"
 
-# Scripts to source on environment activation, found after first colcon build.
 [activation]
 scripts = ["install/setup.bash"]
 
 [activation.env]
 RMW_IMPLEMENTATION = "rmw_zenoh_cpp"
+CUDA_HOME = "/usr/local/cuda"
+PATH = "/usr/local/cuda/bin:$PATH"
+LD_LIBRARY_PATH = "/usr/local/cuda/lib64:$LD_LIBRARY_PATH"
 
 # Documentation site (MkDocs Material). The docs environment excludes the default
 # feature, so it installs without ROS: pixi run docs / pixi run docs-build.

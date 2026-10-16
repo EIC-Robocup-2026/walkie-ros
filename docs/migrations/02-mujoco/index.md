@@ -18,9 +18,10 @@ This entry records what the team built, why, and what is still missing. The
 - **Found along the way:** `robot_radius` was 0.252 instead of 0.185 in two controller files.
 - **Result:** the model, the viewer and the MJCF tests work. The ros2_control runtime was
   blocked because `mujoco_ros2_control` was not in `pixi.lock`. Since
-  [entry 4](../04-robostack-build-25.md) it is installed and works when started by hand,
-  but no launch file starts it. Until one does, Gazebo stays the simulator for Nav2 and
-  MoveIt ([Current status](#current-status)).
+  [entry 4](../04-robostack-build-25.md) it is installed. Since
+  [2.7](07-launch.md), `mujoco_omnibot.launch.py` starts it, and
+  `nav_mujoco_omnibot.launch.py` adds Nav2. MoveIt with MuJoCo has not been run yet
+  ([Current status](#current-status)).
 
 ## Why MuJoCo
 
@@ -122,31 +123,29 @@ flowchart TD
     world --> tools["pixi run mjcf-view<br/>test_mjcf.py"]
     world --> hw["mujoco_ros2_control<br/>MujocoSystemInterface"]
     urdf -. "robot_description<br/>(ros2_control block)" .-> hw
-    launch["MuJoCo launch file"] -.-> hw
+    launch["mujoco_omnibot.launch.py"] --> hw
     hw --> ctrl["Controllers<br/>mujoco_controllers.yaml"]
     ctrl --> moveit["MoveIt<br/>hardware_type:=mujoco"]
-    ctrl --> nav2["Nav2"]
+    ctrl --> nav2["Nav2<br/>nav_mujoco_omnibot.launch.py"]
     classDef ready fill:#2e7d3233,stroke:#2e7d32
     classDef configured fill:#b5890033,stroke:#b58900
-    classDef missing fill:#c6282833,stroke:#c62828
-    class xacro,urdf,gen,model,world,tools ready
-    class hw,ctrl,moveit configured
-    class launch,nav2 missing
+    class xacro,urdf,gen,model,world,tools,launch,hw,ctrl,nav2 ready
+    class moveit configured
 ```
 
-- Green: works today.
-- Yellow: written, but no launch file starts it. Since the
-  [move to RoboStack build set `_25`](../04-robostack-build-25.md), the hardware plugin
-  and the controllers run in a manual bringup. MoveIt with `hardware_type:=mujoco` has not
-  been run.
-- Red: not written yet.
+- Green: works today. The launch files of [2.7](07-launch.md) start the hardware plugin
+  and the controllers, and Nav2 drives the base.
+- Yellow: written, but not run. MoveIt with `hardware_type:=mujoco` has not been run.
 
 ## What changed where
 
 The work spans four commits in the `description/` submodule and four in the superproject.
-The `description/` commits are on its `feat/mujoco` branch, except `13244ae`, which is
-also on `main`. The other ros2_control modes (`gazebo`, `mock`, `topic_base`,
-`real_robot`) expand to the same URDF as before.
+The `description/` commits were made on its `feat/mujoco` branch and are on `main` since
+description pull request #38 (merge commit `90a2243`). That pull request also merged `main`
+into the branch and regenerated `walkie.xml` (`f6649ee`); see
+[Robot Description: Frames and joints](../../reference/robot-description.md#frames-and-joints)
+for the `base_link` change it brought. The other ros2_control modes (`gazebo`, `mock`,
+`topic_base`, `real_robot`) expanded to the same URDF as before this work.
 
 ??? info "Commits, files and changes"
     | Repository | Commit | Files | Change |
@@ -192,13 +191,24 @@ What works today, with no colcon build:
 | Open the scene in the MuJoCo viewer | `pixi run mjcf-view` |
 | Run the MJCF tests | `pixi run python -m pytest description/test/test_mjcf.py` |
 
+With ROS 2, after `pixi run build` (on a workspace built before the launch files existed,
+`pixi run build-pkg robot_bringup walkie_description` is enough):
+
+| Task | Command |
+| --- | --- |
+| MuJoCo with ros2_control, the sensors and RViz | `pixi run ros2 launch robot_bringup mujoco_omnibot.launch.py` |
+| The same plus Nav2 on a blank map | `pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py` |
+
+Set up the middleware first, as described in
+[MuJoCo Simulation: Run with ROS 2](../../guides/simulation-mujoco.md#run-with-ros-2).
+
 What did not work when this entry was written: the ros2_control runtime.
 
 - `mujoco_ros2_control`, which provides the hardware plugin, was not in `pixi.lock`. The
   `mujoco` ros2_control branch was written against 0.1.2, which the `robostack-jazzy`
   channel publishes only for RoboStack build 25. The lock was on build 21, which has only
   the older 0.0.3. See [2.5 ros2_control](05-ros2-control.md#packaging-status).
-- There is no MuJoCo launch file yet.
+- There was no MuJoCo launch file.
 - The MoveIt launches accept `hardware_type:=mujoco`, but they expect the MuJoCo
   controller manager to be started separately.
 
@@ -206,8 +216,18 @@ What did not work when this entry was written: the ros2_control runtime.
     The default environment is now on RoboStack build set `_25`, and
     `mujoco_ros2_control` 0.1.2 is in the lock. A headless bringup started by hand loaded
     the model and activated the controllers, and the base followed velocity commands on
-    `/omni_wheel_drive_controller/cmd_vel`. There is still no MuJoCo launch file. See
+    `/omni_wheel_drive_controller/cmd_vel`. At that point, there was still no MuJoCo
+    launch file (added in [2.7 Launch Files and Nav2](07-launch.md)). See
     [the move to build set `_25`](../04-robostack-build-25.md) and
+    [MuJoCo Simulation: Run with ROS 2](../../guides/simulation-mujoco.md#run-with-ros-2).
+
+!!! note "Update 2026-10-13: launch files added"
+    Two launch files in `robot_bringup` now start the runtime. `mujoco_omnibot.launch.py`
+    starts MuJoCo with ros2_control, the controllers, `twist_mux`, `dual_laser_merger`
+    for `/scan`, and RViz. `nav_mujoco_omnibot.launch.py` adds Nav2 with odometry-only
+    localization on a blank map. In headless tests, Nav2 reached its goals. MoveIt with
+    MuJoCo has still not been run. See
+    [2.7 Launch Files and Nav2](07-launch.md) and
     [MuJoCo Simulation: Run with ROS 2](../../guides/simulation-mujoco.md#run-with-ros-2).
 
 ## Next steps
@@ -233,6 +253,10 @@ What did not work when this entry was written: the ros2_control runtime.
     parameter file for the cameras and lidars. It is listed in
     [MuJoCo Simulation: Run with ROS 2](../../guides/simulation-mujoco.md#run-with-ros-2).
 
+!!! note "Update 2026-10-13: launch files added"
+    Step 2 is done, see [2.7 Launch Files and Nav2](07-launch.md). The parameter file is
+    now `bringup/config/mujoco/mujoco_plugins.yaml`.
+
 ??? info "Why not a separate pixi environment for MuJoCo"
     A separate pixi environment for MuJoCo was the alternative to re-locking. It was not
     chosen because pixi activation sources `install/setup.bash`, so a second environment
@@ -248,6 +272,7 @@ What did not work when this entry was written: the ros2_control runtime.
 | [2.4 Sensors](04-sensors.md) | IMU, cameras and the lidar emulation |
 | [2.5 ros2_control](05-ros2-control.md) | The `mujoco` hardware branch, the controller file, MoveIt support, packaging status |
 | [2.6 Tests](06-tests.md) | What the description, MJCF and SRDF contract tests check |
+| [2.7 Launch Files and Nav2](07-launch.md) | The MuJoCo and Nav2 launch files, the plugin parameter file, two Nav2 fork issues, test results |
 
 For day-to-day use, see the [MuJoCo Simulation guide](../../guides/simulation-mujoco.md).
 
@@ -255,7 +280,8 @@ For day-to-day use, see the [MuJoCo Simulation guide](../../guides/simulation-mu
 
 | Issue | Effect | Workaround |
 | --- | --- | --- |
-| No MuJoCo launch file | The ros2_control runtime is installed and works when started by hand, but no launch file starts it ([Current status](#current-status)) | Use Gazebo for Nav2 and MoveIt |
+| MoveIt with MuJoCo not run | The launch files start the runtime and Nav2 ([2.7](07-launch.md)), but MoveIt with `hardware_type:=mujoco` has not been run against them | Use Gazebo for MoveIt |
+| Launch and Nav2 issues | Odometry drift in the map, no `/scan` on the empty floor, and other issues of the launch files | See [2.7 Launch Files and Nav2: Known issues](07-launch.md#known-issues) |
 | Wheel radius mismatch | Drives about 1.5 % and turns about 2.4 % slower than commanded | None. The drive test tolerances (3 % and 4 %) allow for it. |
 | `base_footprint` below the floor | It rests at z = -0.0062 m | None |
 | Wheel speed limits disagree | ros2_control: ±3.14 rad/s. MJCF actuators: ±100 rad/s. | Replace the URDF placeholder `velocity="100"` with the real motor limit, then `pixi run mjcf` |

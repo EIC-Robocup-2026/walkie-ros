@@ -42,7 +42,7 @@ add dependencies. It assumes you have finished
     | `pixi.lock` | The exact version of every package in every environment. pixi writes it. Never edit it by hand. | Yes |
     | `.pixi/envs/default/` | The installed ROS environment, about 7 GB | No |
     | `.pixi/envs/docs/` | The installed documentation environment | No |
-    | `walkie_external.repos` | Source packages that are not on the channels. `pixi run import` clones them. | Yes |
+    | `walkie_real.repos` | Real-robot hardware packages (e.g. ZED wrapper). `pixi run setup-real` clones them. | Yes |
     | `install/setup.bash` | Created by the first build. pixi sources it when it activates the environment. | No |
 
 ## Run commands in the environment { #pixi-run-and-pixi-shell }
@@ -164,12 +164,12 @@ yourself, so the flags are always the same.
 
 | Task | What it does |
 | --- | --- |
-| `build-setup` | Runs `setup` and `import`, then builds the workspace sequentially (default: 1 worker; e.g. `pixi run build-setup 3`) |
-| `build` | Runs `setup` and `import`, then builds the whole workspace |
-| `build-pkg` | Runs `setup` (not `import`), then builds the named packages |
+| `build-setup` | Runs `setup`, then builds the workspace sequentially (default: 1 worker; e.g. `pixi run build-setup 3`) |
+| `build` | Runs `setup`, then builds the whole workspace |
+| `build-pkg` | Runs `setup`, then builds the named packages |
 | `test` | Runs the tests of every package |
 | `clean` | Removes all build output |
-| `import` | Clones or updates the packages in `walkie_external.repos` |
+| `setup-real` | Clones or updates real-robot hardware packages in `walkie_real.repos` |
 | `setup` | Adds the `libpthread.so` link that the conda compiler sysroot is missing. Safe to run again. |
 | `mjcf` | Regenerates `description/mujoco/walkie.xml` from the robot Xacro. No build needed. |
 | `mjcf-view` | Opens `description/mujoco/scene.xml` in the MuJoCo viewer, at the `home` keyframe |
@@ -180,7 +180,7 @@ yourself, so the flags are always the same.
     | Task | Environment | Command |
     | --- | --- | --- |
     | `setup` | default | `ln -sf libpthread.so.0 $CONDA_PREFIX/x86_64-conda-linux-gnu/sysroot/usr/lib/libpthread.so` |
-    | `import` | default | `vcs import < walkie_external.repos` |
+    | `setup-real` | default | `vcs import < walkie_real.repos` |
     | `build-setup` | default | `colcon build --symlink-install --parallel-workers {{ workers }} --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX` (default: 1) |
     | `build` | default | `colcon build --symlink-install --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX` |
     | `build-pkg` | default | The `build` command plus `--packages-select` |
@@ -278,43 +278,24 @@ then `pixi run clean && pixi run build`.
     | `linguist-generated=true` | GitHub collapses the file in pull request diffs. |
     | `linguist-language=YAML` | GitHub treats the file as YAML. |
 
-### Packages that are not on the channels
+### Real-robot hardware repositories { #packages-that-are-not-on-the-channels }
 
-Some ROS packages are not published on `robostack-jazzy`, or were not when the
-workspace moved to pixi. They are cloned as source code and built with the
-rest of the workspace. `walkie_external.repos` lists them in the
-[vcstool](https://github.com/dirk-thomas/vcstool) format.
+Some packages (such as camera and sensor drivers requiring CUDA or specific vendor SDKs) are only needed when working on the physical robot. `walkie_real.repos` lists them in the [vcstool](https://github.com/dirk-thomas/vcstool) format.
 
 | Path | Version | Needed by |
 | --- | --- | --- |
-| `hardware/lidar/laser_proc` | A fixed commit | `urg_node2` (the Hokuyo lidar driver) |
-| `tools/twist_stamper` | Tag `0.0.5` | `robot_bringup` and `robot_simulation` |
+| `hardware/camera/zed-ros2-wrapper` | `v5.5.0` | Real robot ZED camera driver |
+| `hardware/camera/zed-ros2-wrapper/zed-ros2-interfaces` | `5.5.0` | ZED ROS 2 message definitions |
+| `hardware/camera/zed-ros2-wrapper/zed-ros2-description` | `0.2.0` | ZED URDF and meshes |
+| `hardware/camera/zed-ros2-wrapper/zed-ros2-examples` | `v5.5.0` | ZED examples |
 
-To add a package:
+To clone these packages on a machine connected to the real robot:
 
-1. Add an entry to `walkie_external.repos` with `type`, `url`, and `version`.
-   Use a tag or a commit hash as the version, so everyone builds the same
-   code.
+```bash
+pixi run setup-real
+```
 
-    ```yaml title="walkie_external.repos"
-    repositories:
-      tools/twist_stamper:
-        type: git
-        url: https://github.com/joshnewans/twist_stamper.git
-        version: 0.0.5
-    ```
-
-2. Add the path to `.gitignore`. The clone is not part of this repository.
-3. Run `pixi run import`, or `pixi run build`, which runs it.
-
-??? info "Why laser_proc and twist_stamper are built from source"
-    Build set `_25` has `ros-jazzy-laser-proc` 1.0.2, but the workspace still
-    clones and builds `laser_proc` from source. Moving it to `pixi.toml` means
-    adding `ros-jazzy-laser-proc`, removing its entry from
-    `walkie_external.repos`, and deleting `hardware/lidar/laser_proc` on every
-    computer. colcon still builds a clone that is left in place, and that
-    build shadows the conda package. `ros-jazzy-twist-stamper` is not on the
-    channel.
+By keeping these drivers out of the default repository and ignoring them in `.gitignore`, developers working on simulation, perception, or navigation without CUDA hardware can build and run the workspace without build failures.
 
 ??? info "The 'packages were not found' block in pixi.toml"
     At the end of `[dependencies]`, `pixi.toml` has a commented block that

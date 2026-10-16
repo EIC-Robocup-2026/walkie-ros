@@ -142,7 +142,7 @@ WARN Could not find activation scripts: .../install/setup.bash
     | Task | What it does |
     | --- | --- |
     | `setup` | Adds a `libpthread.so` symlink that the conda compiler sysroot is missing. |
-    | `import` | Runs `vcs import < walkie_external.repos`. This clones `hardware/lidar/laser_proc` and `tools/twist_stamper`, two source packages that are not installed from the pixi channels. |
+    | `setup-real` | Runs `vcs import < walkie_real.repos` to clone physical hardware packages (e.g. ZED camera wrapper and submodules) on real robot machines. |
     | `build-setup` | Runs `colcon build --symlink-install --parallel-workers 1` (or custom workers, e.g. `pixi run build-setup 3`). |
     | `build` | Runs `colcon build --symlink-install` against the pixi environment with default parallel workers. |
 
@@ -171,6 +171,17 @@ pixi run ros2 launch robot_simulation gzsim_omnibot.launch.py
 This starts Gazebo with the `aws_small_house` world, the robot with its
 controllers, the ros_gz bridge, and RViz. Add `use_rviz:=false` to skip RViz.
 
+To run the MuJoCo simulation instead, start this in the second terminal:
+
+```bash
+export RMW_IMPLEMENTATION=rmw_zenoh_cpp
+pixi run ros2 launch robot_bringup mujoco_omnibot.launch.py
+```
+
+This opens the MuJoCo viewer with the robot on an empty floor, and starts its
+controllers and RViz. Add `headless:=true` to skip the viewer window. See
+[MuJoCo Simulation](guides/simulation-mujoco.md#run-with-ros-2).
+
 !!! tip "Quick check without ROS"
     `pixi run mjcf-view` opens the MuJoCo model of the robot in the MuJoCo
     viewer. It reads the model files from the source tree, so it works even
@@ -197,8 +208,9 @@ The [Guides](guides/index.md) list every task guide. Start with these:
   adding dependencies.
 - [Middleware (Zenoh)](guides/middleware.md): the router, `ROS_DOMAIN_ID`, and
   connecting to the real robot.
-- [Gazebo Simulation](guides/simulation-gazebo.md) (the other simulation launch
-  files, including Nav2) and [MuJoCo Simulation](guides/simulation-mujoco.md).
+- [Gazebo Simulation](guides/simulation-gazebo.md) and
+  [MuJoCo Simulation](guides/simulation-mujoco.md): the other simulation launch
+  files, including Nav2.
 - [Real Robot](guides/real-robot.md): device setup and bringup on the physical
   robot.
 - [Troubleshooting](troubleshooting.md): known errors and their fixes.

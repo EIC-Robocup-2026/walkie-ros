@@ -96,6 +96,82 @@ sudo cp bringup/udev/99-zed-usb-reset.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
+### Set up the ZED camera (ZED SDK 5.5 & CUDA 13.2) { #zed-setup }
+
+The robot uses a Stereolabs ZED 2i stereo camera on the head (`zed_head`). Building and running the ZED camera driver requires NVIDIA CUDA 13.2 and the Stereolabs ZED SDK 5.5 on the host computer.
+
+Machines without an NVIDIA GPU or CUDA can skip this section and run simulations or navigation without camera hardware (`use_zed:=false`).
+
+#### 1. Install NVIDIA Driver and CUDA 13.2
+
+Ensure the proprietary NVIDIA display driver and CUDA 13.2 toolkit are installed on Ubuntu:
+
+```bash
+# Verify NVIDIA driver is loaded and GPU is accessible
+nvidia-smi
+
+# Check CUDA compiler version (CUDA 13.2)
+nvcc --version
+```
+
+If CUDA 13.2 is not yet installed, follow NVIDIA's official instructions for Ubuntu:
+```bash
+wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt update
+sudo apt install -y cuda-toolkit-13-2
+```
+Ensure `/usr/local/cuda-13.2/bin` is in your `PATH` and `/usr/local/cuda-13.2/lib64` is in `LD_LIBRARY_PATH`.
+
+#### 2. Install ZED SDK 5.5
+
+Download and run the ZED SDK 5.5 installer (Ubuntu 24.04, CUDA 13, TensorRT 11):
+
+```bash
+# Download the installer
+wget https://stereolabs.sfo2.cdn.digitaloceanspaces.com/zedsdk/5.5/ZED_SDK_Ubuntu24_cuda13.0_tensorrt11.0_v5.5.0.zstd.run
+
+# Make executable and run (silent mode bypasses interactive prompts)
+chmod +x ZED_SDK_Ubuntu24_cuda13.0_tensorrt11.0_v5.5.0.zstd.run
+./ZED_SDK_Ubuntu24_cuda13.0_tensorrt11.0_v5.5.0.zstd.run -- silent
+```
+
+Verify the SDK installation with the ZED Diagnostic tool:
+```bash
+/usr/local/zed/tools/ZED_Diagnostic
+```
+
+#### 3. Pull the ZED ROS 2 Wrapper Repositories
+
+From the `walkie-ros` repository root, pull `hardware/camera/zed-ros2-wrapper` and its submodules (`zed-ros2-interfaces`, `zed-ros2-description`, `zed-ros2-examples`) pinned to version `v5.5.0`:
+
+```bash
+pixi run setup-real
+```
+
+This clones the repositories defined in `walkie_real.repos` into `hardware/camera/zed-ros2-wrapper/`. The directory is listed in `.gitignore` so your Git status stays clean.
+
+#### 4. Build the ZED ROS 2 Wrapper Packages
+
+Build the camera driver packages against the active pixi environment:
+
+```bash
+pixi run build-pkg zed_interfaces zed_description zed_components zed_wrapper
+```
+*(Or run `pixi run build` to build the full workspace with the newly added packages).*
+
+#### 5. Verify and Launch the ZED Camera
+
+1. **Standalone camera test**:
+   ```bash
+   pixi run ros2 launch robot_bringup test_zed.launch.py
+   ```
+2. **Real robot bringup with ZED enabled**:
+   ```bash
+   pixi run ros2 launch robot_bringup real_omnibot.launch.py use_zed:=true
+   ```
+   The camera will be supervised by `bringup/scripts/zed_watchdog.py`, which monitors the stream and automatically recovers from USB or frame-stall faults.
+
 ## Create the lift Python environment (once) { #python-environment }
 
 The lift node needs TMotorCANControl and python-can. They are not in the pixi
@@ -155,6 +231,12 @@ Then start each step in its own terminal, in this order:
   the same value as in `real_omnibot.launch.py`.
 - Under pixi, step 3 stops with `package not found`. See
   [Packages that pixi does not provide](#packages-that-pixi-does-not-provide).
+
+!!! warning "Step 4 stops during bringup with the current parameter files"
+    No MPPI parameter file in `robot_navigation` sets `FollowPath.Omni.plugin`, so
+    `controller_server` fails to configure and Nav2 stops. Add the key to
+    `nav2_mppi_walkie_real_param.yaml`, as shown in
+    [Navigation: controller_server cannot load the Omni motion model](navigation.md#mppi-omni-motion-model-plugin).
 
 ??? info "Which bringup step needs which"
     ```mermaid
@@ -356,7 +438,7 @@ pixi run ros2 launch robot_bringup real_omnibot.launch.py use_zed:=false use_rvi
 
 | Package | Used for | Effect under pixi |
 | --- | --- | --- |
-| `zed_wrapper` | ZED camera | Needs the ZED SDK and CUDA. Pass `use_zed:=false`. |
+| `zed_wrapper` | ZED camera | Fetched via `pixi run setup-real`; requires ZED SDK 5.5 and CUDA 13.2 (see [Set up the ZED camera](#zed-setup)). Pass `use_zed:=false` if working without CUDA. |
 | `realsense2_camera` | Bottom camera | Always started. Without it, the launch stops with `package not found`. |
 | `topic_tools` | Lift joint state relay | Always started. Without it, the launch stops with `package not found`. |
 
@@ -512,6 +594,7 @@ lidar network. The Lakibeam `hostip` in
 | `scripts/setup_device/` still has the older single-device setup scripts. | They and `setup_device.sh` overwrite or uninstall each other's files. | Use only `setup_all_device.sh`. |
 | `scripts/tmux_walkie.sh` and `.tmuxp.yaml` are out of date. | The pane commands run outside pixi and without the Zenoh settings. | Run the commands from [Start the robot](#bringup-order) by hand. |
 | `scripts/bringup/real_slam_nav.sh` launches a file that does not exist. | The script fails. | Use `localization_Nav2_real.launch.py`. See [Navigation](navigation.md). |
+| The MPPI parameter files in `robot_navigation` do not set `FollowPath.Omni.plugin`. | `controller_server` fails to configure, and Nav2 (step 4) stops during bringup. | Add `plugin: "mppi::OmniMotionModel"` under `FollowPath.Omni`. See [Navigation](navigation.md#mppi-omni-motion-model-plugin). |
 | `scripts/setup_env.sh` is an old pixi activation hook. | Nothing uses it. `pixi.toml` activates `install/setup.bash`. | Ignore it. |
 
 ??? info "Why the lift node takes `can2` down"
