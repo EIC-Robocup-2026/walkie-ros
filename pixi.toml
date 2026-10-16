@@ -229,6 +229,7 @@ rviz = {cmd = "ros2 run rviz2 rviz2 --ros-args -p use_sim_time:=true", descripti
 rviz-scan = {cmd = "ros2 run rviz2 rviz2 -d walkie-isaac/config/view_scan.rviz --ros-args -p use_sim_time:=true", description = "Launch RViz2 pre-configured for Walkie Bot LiDAR scan"}
 rviz-sensors = {cmd = "ros2 run rviz2 rviz2 -d walkie-isaac/config/view_sensors.rviz --ros-args -p use_sim_time:=true", description = "Launch RViz2 pre-configured for Walkie Bot complete sensor suite"}
 test-joints = {cmd = "python walkie-isaac/test_joints.py", description = "Run interactive joint control test for arms, lift, head, and grippers"}
+rsp = {cmd = "ros2 launch walkie_description robot_state_publisher.launch.py use_sim_time:=true ros2_control:=topic_base", description = "Launch robot_state_publisher with sim time enabled for Isaac Sim"}
 
 [tasks.build-setup]
 args = [{ arg = "workers", default = "1" }]
