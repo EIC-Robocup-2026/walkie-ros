@@ -39,6 +39,7 @@ _HW_MAPPINGS = {
     "isaac": {
         "ros2_control": "topic_base",
         "add_world_link": "false",
+        "lift_at_top": "true",
     },
     "real_robot": {
         "ros2_control": "real_robot",
@@ -72,6 +73,7 @@ def _make_nodes(context: LaunchContext, hardware_type_lc,
     mappings["left_use_fake_arm_hardware"] = left_use_fake_arm_hardware
     mappings["right_use_fake_arm_hardware"] = right_use_fake_arm_hardware
     mappings["right_joint2_fixed"] = right_joint2_fixed
+    lift_at_top = mappings.get("lift_at_top", "false")
 
     pkg_moveit = get_package_share_directory("openarm_bimanual_moveit_config")
 
@@ -90,7 +92,10 @@ def _make_nodes(context: LaunchContext, hardware_type_lc,
         # gated by the same flag in the SRDF so it's skipped once the joint is fixed.
         .robot_description_semantic(
             file_path="config/openarm_bimanual.srdf",
-            mappings={"right_joint2_fixed": right_joint2_fixed},
+            mappings={
+                "right_joint2_fixed": right_joint2_fixed,
+                "lift_at_top": lift_at_top,
+            },
         )
         .trajectory_execution(moveit_manage_controllers=False)
         .to_moveit_configs()

@@ -75,10 +75,16 @@ def generate_launch_description():
     use_perception = LaunchConfiguration("use_perception", default="true")
     use_tf_server = LaunchConfiguration("use_tf_server", default="true")
     use_moveit = LaunchConfiguration("use_moveit", default="false")
+    lift_at_top = LaunchConfiguration("lift_at_top", default="true")
 
     # --------------------------------------------------------------------------
     # Launch Arguments
     # --------------------------------------------------------------------------
+    declare_lift_at_top = DeclareLaunchArgument(
+        "lift_at_top",
+        default_value="true",
+        description="Whether lift origin is at top (z=1.142m, range [-0.7435, 0]), matching Isaac Sim USD",
+    )
     declare_use_sim_time = DeclareLaunchArgument(
         "use_sim_time",
         default_value="true",
@@ -172,6 +178,8 @@ def generate_launch_description():
             " use_fake_arm_hardware:=true",
             " right_joint2_fixed:=",
             right_joint2_fixed,
+            " lift_at_top:=",
+            lift_at_top,
         ]
     )
 
@@ -194,6 +202,7 @@ def generate_launch_description():
             "use_arm": use_arm,
             "use_fake_arm_hardware": "true",
             "right_joint2_fixed": right_joint2_fixed,
+            "lift_at_top": lift_at_top,
         }.items(),
     )
 
@@ -603,6 +612,7 @@ def generate_launch_description():
     ld.add_action(declare_use_perception)
     ld.add_action(declare_use_tf_server)
     ld.add_action(declare_use_moveit)
+    ld.add_action(declare_lift_at_top)
 
     # RSP & Twist Mux
     ld.add_action(robot_state_publisher_cmd)

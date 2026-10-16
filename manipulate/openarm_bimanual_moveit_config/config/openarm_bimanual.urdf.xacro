@@ -27,6 +27,7 @@
     <xacro:arg name="right_joint2_fixed"       default="false"/>
     <xacro:arg name="add_world_link"           default="true"/>
     <xacro:arg name="dual_lidar"               default="True"/>
+    <xacro:arg name="lift_at_top"              default="false"/>
 
     <xacro:include filename="$(find walkie_description)/robots/gz_walkie.urdf.xacro"/>
 
