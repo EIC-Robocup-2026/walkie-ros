@@ -837,13 +837,15 @@ entry.
     `nav_mujoco_omnibot.launch.py` in the default scene (Nav2 active after
     7.6 s, three goals reached) and `nav2_loopback.launch.py` (14 of 14 goals
     reached in 7 runs). Two upstream Nav2 unit tests fail on `3286119`, and the
-    loopback launch stops slowly. None of the three comes from the bump: each
-    behaves the same on `e48c3296`.
+    loopback launch stops slowly. The test hang and the slow shutdown behave
+    the same on `e48c3296`. The failing static layer test case is new in
+    `3286119` (navigation2 #6391); it fails because of Jazzy's `tf2`, not
+    because of the static layer code.
 
     ??? info "Upstream test failures and the slow shutdown on 3286119"
         | Problem | Cause | Effect on Walkie |
         | --- | --- | --- |
-        | `nav2_costmap_2d` `static_layer_test`: `StaticLayerRollingTest.FailedTransformMarksLayerNotCurrentAndRecovers` fails every time | The test expects `tf2`'s `clear()` to drop static transforms. Rolling does since ros2/geometry2#908; Jazzy's `tf2` 0.36.23 keeps them, so the lookup the test wants to fail succeeds. | None. The static layer code is correct, and with a dynamic transform the case passes. |
+        | `nav2_costmap_2d` `static_layer_test`: `StaticLayerRollingTest.FailedTransformMarksLayerNotCurrentAndRecovers` fails every time | The case is new in `3286119` ([#6391](https://github.com/ros-navigation/navigation2/pull/6391)). It expects `tf2`'s `clear()` to drop static transforms. Rolling does since ros2/geometry2#908; Jazzy's `tf2` 0.36.23 keeps them, so the lookup the test wants to fail succeeds. | None. The static layer code is correct, and with a dynamic transform the case passes. |
         | `nav2_collision_monitor` `collision_monitor_node_test` sometimes hangs until the ctest timeout (2 of 30 runs of `testIncorrectSourceType`) | A lost-wakeup race in Jazzy `rclcpp` 28.1.22: a `cancel()` of the executor that runs before its `spin()` starts is lost. `tf2_ros::TransformListener` with its own spin thread hits it when it is destroyed right after it is created. It reproduces without Nav2. | A test-only hang; the collision monitor creates its listener once |
         | `nav2_loopback.launch.py` takes about 15 s to stop after Ctrl+C | Since navigation2 #6063, the costmap update loop sleeps on the ROS clock. On Ctrl+C, deactivating the costmap waits for `/clock` to advance, but the node that publishes `/clock` has stopped too. `ros2 launch` ends the servers with SIGKILL after its timeout. | The same 15 s on Ctrl+C in every simulated-time Nav2 launch. Harmless; see [MuJoCo Simulation: Troubleshooting](../guides/simulation-mujoco.md#troubleshooting). |
 

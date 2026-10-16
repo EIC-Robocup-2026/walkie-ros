@@ -918,6 +918,11 @@ footprint of furniture, which helps when drawing keepout zones.
   error, even when its ABI changed. After a change of the RoboStack build set,
   rebuild the whole workspace with `pixi run clean && pixi run build` (see
   [Changing the build set](pixi.md#changing-the-build-set)).
+- When the `navigation2` commit changes, rebuild all of Nav2 with
+  `pixi run build`, not only `pixi run build-pkg robot_navigation`. The
+  update of 2026-10-15 (`32861197`) needs it: the default behavior trees use a
+  node and subtrees that only the new `nav2_behavior_tree` and
+  `nav2_bt_navigator` provide.
 
 ??? info "Nav2 on behaviortree_cpp 4.10"
     Since [4. Move to RoboStack Build Set _25](../migrations/04-robostack-build-25.md),
@@ -928,10 +933,9 @@ footprint of furniture, which helps when drawing keepout zones.
 ??? info "navigation2 update of 2026-10-15 (`32861197`)"
     The `navigation` submodule moved `navigation2` from `e48c3296` to
     `32861197` (10 upstream commits). The Walkie parameter files and behavior
-    trees need no change for it. Rebuild all of Nav2 after pulling
-    (`pixi run build`, not only `build-pkg robot_navigation`):
-    `nav2_behavior_tree` gained a `Log` node and `nav2_bt_navigator` gained
-    `behavior_trees/subtrees/`, and the default trees already use both.
+    trees need no change for it. `nav2_behavior_tree` gained a `Log` node and
+    `nav2_bt_navigator` gained `behavior_trees/subtrees/`, and the default
+    trees already use both.
 
     - **Transform staleness checks**
       ([#6391](https://github.com/ros-navigation/navigation2/pull/6391),
