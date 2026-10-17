@@ -458,6 +458,29 @@ Nav2 never becomes active, and the log repeats
 Pass `use_composition:=False` to `nav2_bringup`'s `bringup_launch.py`. See
 [Navigation: Nav2 bringup hangs at smoother_server/get_state](guides/navigation.md#nav2-composition-deadlock).
 
+### Nav2 waits forever for amcl/get_state or crashes with version GLIBC_2.38 not found { #nav2-amcl-glibc-238 }
+
+The lifecycle manager hangs on `Waiting for service amcl/get_state...`, or Nav2 nodes (`amcl`, `controller_server`) crash on startup with:
+`version 'GLIBC_2.38' not found (required by .../libamcl_core.so)`.
+
+The conda build sysroot (GLIBC 2.39) links `fmod` and ISO C23 `strtol` functions to `GLIBC_2.38`, which do not exist on Ubuntu 22.04's host libraries (GLIBC 2.35).
+
+This is resolved via `nav2_common/cmake/glibc_compat.h` forced-include in `nav2_package.cmake`. Rebuild the affected package:
+```bash
+pixi run build-pkg -- nav2_amcl
+```
+
+### RViz Navigation 2 panel fails to load { #rviz-nav2-panel-fails-to-load }
+
+RViz shows an error when opening the Nav2 panel:
+`The class required for this panel, 'nav2_rviz_plugins/Navigation 2', could not be loaded.`
+`dlopen error: /lib/x86_64-linux-gnu/libc.so.6: version 'GLIBC_2.38' not found`
+
+Resolved via dynamic runtime fallback wrappers in `nav2_rviz_plugins/src/nav2_panel.cpp`. Rebuild the plugin:
+```bash
+pixi run build-pkg -- nav2_rviz_plugins
+```
+
 ## Tests
 
 ### Every Python test aborts at start-up

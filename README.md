@@ -30,5 +30,33 @@ git clone --recurse-submodules git@github.com:EIC-Robocup-2026/walkie-ros.git
 cd walkie-ros
 git submodule foreach --recursive git lfs pull
 pixi install
-pixi run build-setup                  # build packages sequentially (or: pixi run build)
+pixi run build-setup                  # build packages sequentially with 1 worker (prevents OOM)
 ```
+
+## Simulation & Navigation
+
+The workspace supports NVIDIA Isaac Sim, MuJoCo, and Gazebo. For NVIDIA Isaac Sim with Nav2:
+
+```bash
+# Terminal 1: Zenoh router (required for rmw_zenoh_cpp)
+pixi run zenoh-router
+
+# Terminal 2: Isaac Sim Walkie Bot simulation
+pixi run sim
+
+# Terminal 3: Full ROS 2 bringup (robot_state_publisher, controllers, RViz)
+pixi run full-isaacbringup
+
+# Terminal 4: Nav2 navigation (AMCL localization + MPPI controller)
+pixi run nav-sim
+```
+
+Other common simulation tasks:
+- **SLAM Online Mapping**: `pixi run slam-sim`
+- **MoveIt 2 Arm Planning**: `pixi run moveit-sim`
+- **Interactive Joint CLI**: `pixi run test-joints`
+- **Teleoperation**: `pixi run teleop`
+
+> [!TIP]
+> **Memory Safety**: Nav2 and MoveIt compile units require 1.5–2.5 GB RAM each. Always build sequentially using `pixi run build-setup` (1 worker) or `pixi run build-pkg -- <package>` to prevent laptop memory exhaustion.
+

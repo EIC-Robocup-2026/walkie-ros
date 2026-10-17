@@ -45,12 +45,28 @@ Output:
 /scan
 ```
 
-### 3. Visualize LiDAR in RViz2
+### 3. Full ROS 2 Bringup & Navigation
+
+To run autonomous navigation inside Isaac Sim:
 
 ```bash
-pixi run rviz-scan
+# Terminal 1: Zenoh router (required for rmw_zenoh_cpp)
+pixi run zenoh-router
+
+# Terminal 2: Isaac Sim Walkie Bot
+pixi run sim
+
+# Terminal 3: Full ROS 2 bringup (RSP, controllers, self-filter, RViz)
+pixi run full-isaacbringup
+
+# Terminal 4: Nav2 localization & navigation
+pixi run nav-sim
 ```
-*(Launches RViz2 with simulation time enabled, fixed frame set to `front_lidar_link`, and `/scan` visualization configured).*
+
+Or for online SLAM mapping:
+```bash
+pixi run slam-sim
+```
 
 ### 4. Drive the Robot (Teleop)
 
@@ -61,6 +77,17 @@ pixi run teleop
 ```
 
 Use standard keyboard controls (`u/i/o/j/k/l/m/,/.` or shift for holonomic omni-drive).
+
+### 5. Joint & Manipulation Control
+
+- **Interactive Joint CLI**: `pixi run test-joints` (controls arm, lift, head, and gripper positions).
+- **MoveIt 2 Planning**: `pixi run moveit-sim` (launches MoveIt 2 bimanual motion planning).
+
+> [!NOTE]
+> **Lift Joint Direction**: The Isaac Sim USD model defines the torso lift prismatic joint with its origin at the top (extending downward). The simulation bringup sets `lift_at_top:=true` in `robot_state_publisher` so the TF tree correctly aligns the torso, arms, and sensors with the base.
+
+> [!TIP]
+> **Build Guideline**: Always build packages with `--parallel-workers 1` (`pixi run build-setup` or `pixi run build-pkg -- <pkg>`) to prevent high RAM usage and system freezes.
 
 ## Communication Spec
 
