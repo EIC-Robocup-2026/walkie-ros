@@ -215,8 +215,8 @@ ros-jazzy-topic-tools = ">=1.3.4,<2"
 [tasks]
 setup = {cmd = "ln -sf libpthread.so.0 $CONDA_PREFIX/x86_64-conda-linux-gnu/sysroot/usr/lib/libpthread.so", description = "Fix missing libpthread.so symlink in conda sysroot"}
 setup-real = {cmd = "vcs import < walkie_real.repos", description = "Pull real-robot packages (e.g. ZED wrapper and submodules) from walkie_real.repos"}
-build = {cmd = "colcon build --symlink-install --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX", depends-on = ["setup"], description = "Build the ROS workspace"}
-build-pkg = {cmd = "colcon build --symlink-install --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX --packages-select", depends-on = ["setup"], description = "Build a specific package, e.g: pixi run build-pkg -- openvdb_vendor"}
+build = {cmd = "env CMAKE_BUILD_PARALLEL_LEVEL=1 MAKEFLAGS=-j1 colcon build --symlink-install --parallel-workers 1 --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX", depends-on = ["setup"], description = "Build the ROS workspace (1 package, 1 compiler job to prevent OOM)"}
+build-pkg = {cmd = "env CMAKE_BUILD_PARALLEL_LEVEL=1 MAKEFLAGS=-j1 colcon build --symlink-install --parallel-workers 1 --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX --packages-select", depends-on = ["setup"], description = "Build a specific package safely without OOM"}
 test = {cmd = "colcon test", description = "Run tests for the workspace"}
 clean = {cmd = "rm -rf build install log", description = "Clean build artifacts (build, install, log directories)"}
 mjcf = {cmd = "python description/scripts/build_mjcf.py", description = "Regenerate the MuJoCo model description/mujoco/walkie.xml from the robot xacro (no build needed)"}
@@ -239,15 +239,17 @@ slam-sim = {cmd = "ros2 launch robot_navigation slam_toolbox.launch.py use_sim_t
 
 [tasks.build-setup]
 args = [{ arg = "workers", default = "1" }]
-cmd = "colcon build --symlink-install --parallel-workers {{ workers }} --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX"
+cmd = "env CMAKE_BUILD_PARALLEL_LEVEL=1 MAKEFLAGS=-j1 colcon build --symlink-install --parallel-workers {{ workers }} --cmake-args -DCMAKE_PREFIX_PATH=$CONDA_PREFIX"
 depends-on = ["setup"]
-description = "Build workspace for initial setup (default: 1 worker; e.g. pixi run build-setup 3)"
+description = "Build workspace for initial setup (1 worker, 1 compiler thread to prevent OOM)"
 
 [activation]
 scripts = ["install/setup.bash"]
 
 [activation.env]
 RMW_IMPLEMENTATION = "rmw_zenoh_cpp"
+CMAKE_BUILD_PARALLEL_LEVEL = "1"
+MAKEFLAGS = "-j1"
 CUDA_HOME = "/usr/local/cuda"
 PATH = "/usr/local/cuda/bin:$PATH"
 LD_LIBRARY_PATH = "/usr/local/cuda/lib64:$LD_LIBRARY_PATH"
