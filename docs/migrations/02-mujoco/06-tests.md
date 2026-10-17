@@ -14,14 +14,15 @@ clear message, and remove the old test that did not test this robot.
 - **Key decisions:** check each controller file against the mode it is loaded with; mark
   known broken pairings as strict xfails; fail when the checked-in `walkie.xml` is stale;
   register tests with a CMake glob; pin pytest below 9.
-- **Result:** 109 tests in three files. Two [known issues](#known-issues) remain.
+- **Result:** 109 tests in three files. Two [known issues](#known-issues) remain. Update
+  2026-10-16: 112, with three tests for the head 3D lidar ([2.8](08-3d-lidar.md)).
 
 ## Which tests were added { #overview }
 
 | File | Package | Build first | Tests |
 | --- | --- | --- | --- |
 | `description/test/test_description.py` | `walkie_description` | Yes | 76 |
-| `description/test/test_mjcf.py` | `walkie_description` | No | 23 |
+| `description/test/test_mjcf.py` | `walkie_description` | No | 26 (23 before the head 3D lidar) |
 | `manipulate/openarm_bimanual_moveit_config/test/test_srdf_urdf_contract.py` | `openarm_bimanual_moveit_config` | Yes | 10 |
 
 The counts are what `pytest --collect-only` reports for each file. `test_pep257.py` in
@@ -216,6 +217,17 @@ explains the wheel model.
 `test_lidar_beam_layout`, `test_lidar_sees_nothing_in_empty_scene` and
 `test_lidar_ranges_to_wall` are described with their tolerances in
 [2.4 Sensors](04-sensors.md).
+
+Three tests check the head 3D lidar, added in [2.8 Head 3D Lidar](08-3d-lidar.md). The
+`walkie.xml` now needs the `mujoco_3d_lidar` extension. With a MuJoCo that lacks it, the
+tests that load the model fail instead of being skipped.
+
+??? info "Tests and tolerances for the head 3D lidar"
+    | Test | What it checks | Tolerance |
+    | --- | --- | --- |
+    | `test_lidar_3d_layout` | `unitree_l2` is one extension sensor on the site `unitree4d_l2_imu_initial` (its own body), with 180 x 32 readings; the plugin config in `walkie.xml` equals what the generator writes; the rays sit at the cell centers of an even grid over the hemisphere, strictly inside [-π, π]; the `walkie.xml` header documents the sensor | exact; grid edges 1e-6 relative (`pytest.approx`), 1e-12 rad at elevation 0 |
+    | `test_lidar_3d_sees_floor` | Empty scene at `home`: every hit lies in the configured range and no farther than the floor along its ray; every ray that meets the floor within range hits something; more than 60 % of the rays end on the floor and less than 30 % on the robot (measured: 67 % and 21 %); every point on the robot lies inside the self-filter box of `unitree_self_filter.yaml` | 1e-6 m |
+    | `test_lidar_3d_ranges_to_box` | A box 1.5 m to the left of the robot (+y): every ray toward it ends on the box at the analytic distance, or earlier on the robot; more than 100 rays hit the box | 1e-6 m |
 
 ### (d) Contract with the ros2_control block
 

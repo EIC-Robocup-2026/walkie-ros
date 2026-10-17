@@ -9,33 +9,49 @@ guide to run navigation in simulation or on the robot, and to send goals.
     `--recurse-submodules`, or run `git submodule update --init --recursive`
     after cloning.
 
-!!! warning "Nav2 stops during bringup with the current parameter files"
-    No MPPI parameter file in `config/nav2/` sets `FollowPath.Omni.plugin`, so
-    `controller_server` fails to configure. This breaks the Gazebo, real robot,
-    mapping, and loopback launches. Only `nav_mujoco_omnibot.launch.py` works
-    around it. See
-    [controller_server cannot load the Omni motion model](#mppi-omni-motion-model-plugin).
+!!! warning "The collision monitor now stops and slows the robot"
+    Since [5. Repair Nav2 After the navigation2 Bump](../migrations/05-nav2-repair.md),
+    Nav2 velocity commands pass the velocity smoother and the collision monitor
+    before they reach `twist_mux`.
+
+    - The robot slows down near obstacles and stops before an obstacle it
+      drives toward. Commands that drive away from the obstacle or along it
+      pass, so Nav2 can move the robot on.
+    - The monitor stops every Nav2 command while one of its sources has no
+      data.
+    - If Nav2 stays blocked, drive the robot out with the joystick or
+      keyboard. They bypass the monitor.
+
+    See [Velocity command path](#velocity-command-path) and
+    [Collision monitor](#collision-monitor).
 
 ## Navigate in simulation { #localization-and-mapping-in-simulation }
 
 ### The simulation map
 
 `localization_Nav2_sim.launch.py` and `nav2_loopback.launch.py` default to the
-map `8_23102025_SimWalkie_awssmallhouse_slam_toolbox`. That directory is
-missing at the pinned map commit (see [Known issues](#known-issues)). Extract
-the map from the map submodule history and pass it with `map:=`. Run from the
-repository root:
+map `08_23102025_SimWalkie_awssmallhouse_slam_toolbox` in the map submodule, so
+no `map:=` argument is needed. To use another map, pass its full path with
+`map:=<path>/map.yaml`.
+
+If the launch cannot find the default map, the map submodule is at an older
+commit or the map is not installed yet. Update the submodules and reinstall
+the maps, from the repository root:
 
 ```bash
-mkdir -p /tmp/sim_map
-SRC=94d86cc~1:8_23102025_SimWalkie_awssmallhouse_slam_toolbox
-git -C navigation/walkie-navigation/map show $SRC/map.yaml > /tmp/sim_map/map.yaml
-git -C navigation/walkie-navigation/map show $SRC/map.pgm > /tmp/sim_map/map.pgm
+git submodule update --init --recursive
+pixi run build-pkg robot_navigation
 ```
 
-??? info "How the extraction and the map argument work"
-    `git show <commit>:<path>` prints a file as it was in that commit.
-    `94d86cc~1` is the commit before the one that removed the directory.
+??? info "Map history and how the map argument works"
+    Before [5. Repair Nav2 After the navigation2 Bump](../migrations/05-nav2-repair.md),
+    the map submodule was pinned to `94d86cc`, which had removed this map, and
+    the launch files named it without the leading zero. The map collection
+    commit `c22354c` restored it.
+
+    With `--symlink-install`, `robot_navigation` installs `map/` as one
+    symlink per file. A map directory that is new in the submodule therefore
+    needs the rebuild above before the launch files can find it.
 
     The `map` argument given to `nav_sim_omnibot.launch.py` reaches
     `localization_Nav2_sim.launch.py` because ROS 2 launch arguments are
@@ -44,7 +60,7 @@ git -C navigation/walkie-navigation/map show $SRC/map.pgm > /tmp/sim_map/map.pgm
 ### Localize and send goals
 
 ```bash
-pixi run ros2 launch robot_bringup nav_sim_omnibot.launch.py map:=/tmp/sim_map/map.yaml
+pixi run ros2 launch robot_bringup nav_sim_omnibot.launch.py
 ```
 
 This starts Gazebo plus `localization_Nav2_sim.launch.py` (see
@@ -70,6 +86,14 @@ pixi run ros2 launch slam_toolbox online_sync_launch.py use_sim_time:=true \
   slam_params_file:=$PWD/navigation/walkie-navigation/config/slam/slam_toolbox_params.yaml
 ```
 
+`robot_navigation`'s `slam_toolbox.launch.py` includes the same
+`online_sync_launch.py` with the same parameter file. Its `use_sim_time`
+defaults to `false`, so pass it in simulation:
+
+```bash
+pixi run ros2 launch robot_navigation slam_toolbox.launch.py use_sim_time:=true
+```
+
 Drive the robot around (see
 [Gazebo Simulation](simulation-gazebo.md#driving-the-robot)), then save the
 map. `map_saver_cli` writes `map.yaml` and `map.pgm` with the given prefix:
@@ -78,14 +102,10 @@ map. `map_saver_cli` writes `map.yaml` and `map.pgm` with the given prefix:
 pixi run ros2 run nav2_map_server map_saver_cli -f /tmp/my_map/map
 ```
 
-!!! warning
-    Do not use `slam_toolbox.launch.py`. It does not load the Walkie
-    parameters. See [Known issues](#known-issues).
-
 ### Test goal logic without physics
 
 ```bash
-pixi run ros2 launch robot_navigation nav2_loopback.launch.py map:=/tmp/sim_map/map.yaml
+pixi run ros2 launch robot_navigation nav2_loopback.launch.py
 ```
 
 `nav2_loopback.launch.py` runs Nav2 with `nav2_loopback_sim`, which moves the
@@ -93,11 +113,63 @@ robot exactly as commanded and needs no physics or sensors. Use it to test
 behavior trees and goal logic quickly. `nav_commander` is commented out in this
 file, so `/navigate_to_object` is not available in loopback mode.
 
+1. Set an initial pose with the **2D Pose Estimate** tool in RViz. Until you
+   do, the loopback simulator publishes no transforms, and Nav2 does not
+   finish activating.
+2. Send a goal with the **Nav2 Goal** tool.
+
+Without RViz, publish the initial pose yourself, for example at the map
+origin:
+
+```bash
+pixi run ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
+  "{header: {frame_id: map}, pose: {pose: {orientation: {w: 1.0}}}}"
+```
+
 ??? info "Loopback setup"
     The launch file uses `ros2_control:=mock` for the robot model and
     `nav2_mppi_walkie_loopback_params.yaml`, which uses plain `Twist`
     everywhere. RViz opens by default (`use_rviz:=true`) with `nav2_bringup`'s
     `nav2_default_view.rviz`.
+
+    Two lifecycle managers start the nodes: `lifecycle_manager_map` for
+    `map_server`, and `lifecycle_manager_nav2` for the Nav2 servers. The
+    reason is the same as for the real-robot launch files (see
+    [Localization and mapping on the real robot](#localization-and-mapping-on-the-real-robot)).
+    There is no `twist_mux`. The parameter file chains the commands the
+    upstream way: `/cmd_vel_nav` to `velocity_smoother`, `/cmd_vel_smoothed` to
+    `collision_monitor`, and `/cmd_vel` to `loopback_simulator`.
+    `docking_server` and `following_server` publish on `/cmd_vel` directly.
+
+??? info "Why the loopback simulator needs an initial pose and sim time"
+    Since the navigation2 bump, `nav2_loopback_sim` is a C++ Nav2 lifecycle
+    node (it was a Python node). No lifecycle manager manages it. The launch
+    file sets `autostart_node: true`, so it configures and activates itself.
+    Before navigation `e5d33c2`, nothing configured it, so it published no
+    transforms, and Nav2 never activated.
+
+    It publishes the `map` to `odom` to `base_footprint` transforms only after
+    it receives an initial pose on `/initialpose`. Until then,
+    `local_costmap` waits for the `odom` to `base_footprint` transform, and
+    `lifecycle_manager_nav2` does not finish activating. This is upstream
+    behavior.
+
+    The launch file also sets `use_sim_time: true`, as upstream's
+    `loopback_simulation.launch.py` does. Without it, the transforms carry
+    wall time and the scan carries sim time. `collision_monitor` then logs
+    `Failed to get "base_footprint"->"base_footprint" frame transform: Lookup would require extrapolation into the past`
+    and stops on an invalid source.
+
+    navigation `e5d33c2` also changed `nav2_mppi_walkie_loopback_params.yaml`:
+    it adds `compute_path_heading_spin_bt_node` to `plugin_lib_names`, sets
+    `enable_stamped_cmd_vel: false` on `behavior_server`, and adds a
+    `following_server` block with the same setting. Before, both servers
+    published `TwistStamped` into the plain `Twist` chain, so their commands
+    never reached the simulator.
+
+    On 2026-10-14, `lifecycle_manager_nav2` was active after 16 s, once an
+    initial pose at (0, 0) was published on `/initialpose`. A goal sent with `/goal_pose` and a `navigate_to_pose`
+    action goal were both reached, within 0.04 m and 0.5° by `/odom`.
 
 ## Navigate in MuJoCo
 
@@ -110,15 +182,26 @@ This starts the MuJoCo simulation and Nav2 on a blank 20 m x 20 m map
 tool in RViz. The setup, the launch arguments, and custom worlds are in
 [MuJoCo Simulation: Drive with Nav2 and RViz](simulation-mujoco.md#drive-with-nav2-and-rviz).
 
+Nav2 drives the robot in the default MuJoCo world (`scene.xml`), which has no
+obstacles. `mujoco_omnibot.launch.py` sets the merger parameter
+`publish_on_empty_cloud: True`, so `/scan` is published even when neither
+lidar sees anything in range. Without it, the merger publishes nothing in the
+empty world, and the collision monitor, which is now in the command path,
+stops every Nav2 command. The real robot keeps the default `false` (see
+[Dual 2D lidar](#dual-2d-lidar)).
+
 - There is no AMCL. A static identity transform from `map` to `odom` makes the
   wheel odometry the robot pose in the map. The robot must start at the world
   origin, and the map origin must match the world origin. The pose drifts as
-  the odometry drifts.
-- Nav2 uses `nav2_mppi_walkie_sim_params.yaml`, the same file as Gazebo. The
-  launch file works around both Nav2 fork issues in
-  [Known issues](#known-issues): it adds `FollowPath.Omni.plugin` to a
-  temporary copy of the file, and it starts Nav2 with
-  `use_composition:=False`.
+  the odometry drifts: 0.17 to 0.43 m against the MuJoCo ground truth after
+  one or two goals in the 2026-10-14 tests.
+- Nav2 uses `nav2_mppi_walkie_sim_params.yaml`, the same file as Gazebo,
+  passed through unchanged. Like the Gazebo and real-robot launch files, it
+  remaps the Nav2 `cmd_vel` output to `/cmd_vel_controller`, so commands pass
+  the velocity smoother and the collision monitor (see
+  [Velocity command path](#velocity-command-path)).
+- It starts Nav2 with `use_composition:=False` (see
+  [Nav2 bringup hangs at smoother_server/get_state](#nav2-composition-deadlock)).
 - `nav_commander` is not started, so `/navigate_to_object` and the RViz
   **Publish Point** tool (`/clicked_point`) have no effect. Send goals with
   **2D Goal Pose** or as `NavigateToPose` action goals.
@@ -134,9 +217,21 @@ the wheel controller. See [Real Robot](real-robot.md).
 | Build a new map | `pixi run ros2 launch robot_navigation mapping_Nav2_real.launch.py` |
 | Save the map while mapping | `pixi run ros2 run nav2_map_server map_saver_cli -f <map_dir>/map` |
 
+!!! warning "Run these launch files on `rmw_zenoh_cpp`"
+    Under Fast DDS (`rmw_fastrtps_cpp`, the ROS 2 default when
+    `RMW_IMPLEMENTATION` is not set), `controller_server` fails to configure in
+    both launch files, with
+    `create_publisher() called for existing topic name rt/local_costmap/voxel_grid with incompatible type`.
+    Both start on `rmw_zenoh_cpp`, the team middleware (see
+    [Middleware (Zenoh)](middleware.md)). See
+    [Known issues](#known-issues).
+
 - Localization defaults to the Arena map (`27_01072026_Arena`) with its keepout
   zones. To use another map, see [Choose a map](#choosing-a-map-on-the-real-robot).
 - Nav2 runs during mapping too, so you can send goals while the map grows.
+- Both launch files start their own lifecycle manager, `lifecycle_manager_nav2`,
+  which configures and activates the Nav2 servers on startup. SLAM Toolbox
+  manages its own lifecycle.
 - To rebuild maps later without driving again, record a rosbag during mapping
   with `scripts/map/` ([mapping rosbag guide](https://github.com/EIC-Robocup-2026/walkie-ros/blob/main/scripts/map/README.md)).
 - Use these launch files, not `scripts/bringup/real_slam_nav.sh`. See
@@ -147,17 +242,48 @@ the wheel controller. See [Real Robot](real-robot.md).
     `localization_launch.py` (map server and AMCL) and `navigation_launch.py`
     (the Nav2 servers). It also starts:
 
+    - `lifecycle_manager_nav2` for `map_server`, `amcl`, and the Nav2 servers
     - `head_tilt_near_goal_node.py`, which tilts the ZED head down near the
       goal so tabletops stay in view
     - `nav_commander`
     - a keepout mask server, a costmap filter info server, and their lifecycle
-      manager, when `use_keepout_zones` is `true`
+      manager (`lifecycle_manager_keepout`), when `use_keepout_zones` is `true`
 
     `mapping_Nav2_real.launch.py` includes SLAM Toolbox's
     `online_sync_launch.py` with `config/slam/slam_toolbox_params.yaml`, and
-    `navigation_launch.py`. It also starts `head_tilt_near_goal_node.py` and
-    `nav_commander`. There is no AMCL and no map server: SLAM Toolbox publishes
-    `/map` and the `map` to `odom` transform.
+    `navigation_launch.py`. It also starts `lifecycle_manager_nav2` for the
+    Nav2 servers, `head_tilt_near_goal_node.py`, and `nav_commander`. There is
+    no AMCL and no map server: SLAM Toolbox publishes `/map` and the `map` to
+    `odom` transform.
+
+    Both launch files wrap the `navigation_launch.py` include with a `cmd_vel`
+    remap (see [Velocity command path](#velocity-command-path)).
+
+??? info "Why the launch files start their own lifecycle manager"
+    navigation2 commit `a1904cdc` ("Combine lifecycle managers",
+    [#6410](https://github.com/ros-navigation/navigation2/pull/6410)), part of
+    the bumped navigation2 (`e48c3296`), removed the lifecycle managers from
+    `nav2_bringup`'s `navigation_launch.py` and `localization_launch.py`. Only
+    `bringup_launch.py` starts one now, named `lifecycle_manager_nav2`.
+
+    `localization_Nav2_real.launch.py`, `mapping_Nav2_real.launch.py`, and
+    `nav2_loopback.launch.py` include those files directly. Before
+    [5. Repair Nav2 After the navigation2 Bump](../migrations/05-nav2-repair.md),
+    their Nav2 nodes started but nothing configured them, and the log showed
+    `Waiting on external lifecycle transitions to activate`.
+
+    Each of the three files now starts `lifecycle_manager_nav2` with
+    `autostart: true` from an `OpaqueFunction`. The node list comes from
+    `nav2_bringup.navigation_launch.get_lifecycle_nodes()`, so it follows the
+    Nav2 servers that `navigation_launch.py` starts. The name matches
+    `nav2_bringup`'s manager, which the RViz Nav2 panel talks to.
+
+    | Launch file | Lifecycle managers |
+    | --- | --- |
+    | `localization_Nav2_real.launch.py` | `lifecycle_manager_nav2` (`map_server`, `amcl`, Nav2 servers), `lifecycle_manager_keepout` (keepout servers) |
+    | `mapping_Nav2_real.launch.py` | `lifecycle_manager_nav2` (Nav2 servers). SLAM Toolbox manages its own lifecycle. |
+    | `nav2_loopback.launch.py` | `lifecycle_manager_nav2` (Nav2 servers), `lifecycle_manager_map` (`map_server`) |
+    | `localization_Nav2_sim.launch.py`, `nav_mujoco_omnibot.launch.py` | `lifecycle_manager_nav2` from `bringup_launch.py`. Not affected by the change. |
 
 ### Choose a map { #choosing-a-map-on-the-real-robot }
 
@@ -183,9 +309,9 @@ pixi run ros2 launch robot_navigation localization_Nav2_real.launch.py \
     different map.
 
 Maps are in `navigation/walkie-navigation/map/`, named
-`<number>_<DDMMYYYY>_<place>`. Each directory has `map.yaml` and `map.pgm`. The
-keepout mask file name is not the same in every directory, so pass it
-explicitly:
+`<number>_<date>_<place>`. The maps of the current robot (from `19` on) each
+have `map.yaml` and `map.pgm`. The keepout mask file name is not the same in
+every directory, so pass it explicitly:
 
 | Directory | Keepout mask | Other files |
 | --- | --- | --- |
@@ -198,6 +324,13 @@ explicitly:
 | `25_30062026_Arena2_2` | `keepout.yaml` | Map editor files |
 | `26_01072026_Arena2_3` | | `map.ot` |
 | `27_01072026_Arena` | `keepout.yaml` | Map editor files. Default for the real robot. |
+| `28_15072026_sasinHall` | `keepout.yaml` | `map.ot`, `map_og.pgm` |
+
+Directories `01` to `18` hold older maps: TurtleBot3 maps, the simulation map
+`08_23102025_SimWalkie_awssmallhouse_slam_toolbox`, and earlier venues. Some of
+them name the map file after a time stamp or the place instead of `map.yaml`.
+`29_14102026_o3de_warehouse` is a warehouse map from the O3DE simulator; no
+launch file uses it by default.
 
 ## Send navigation goals { #goal-interfaces }
 
@@ -260,24 +393,324 @@ pixi run ros2 service call /move_robot robot_navigation/srv/MoveRobot \
 
 ## Velocity command path
 
-Nav2 publishes on `/cmd_vel_nav`, and `twist_mux` gives it priority 10.
-Joystick and keyboard topics (priority 100) override Nav2. See
+Nav2 commands pass the velocity smoother and the collision monitor, then reach
+`twist_mux` on `/cmd_vel_nav` with priority 10. Joystick and keyboard topics
+(priority 100) override Nav2 and do not pass the collision monitor. See
 [Gazebo Simulation](simulation-gazebo.md#driving-the-robot).
 
-!!! warning
-    The collision monitor and the velocity smoother are bypassed. See
-    [Known issues](#known-issues).
+The chain is `/cmd_vel_controller` (Nav2 servers) to `velocity_smoother`,
+`/cmd_vel_smoothed` to `collision_monitor`, `/cmd_vel_nav` to `twist_mux`, and
+`/omni_wheel_drive_controller/cmd_vel` to the wheel controller. It applies to
+`localization_Nav2_sim.launch.py`, `localization_Nav2_real.launch.py`,
+`mapping_Nav2_real.launch.py`, and `nav_mujoco_omnibot.launch.py`.
+
+!!! warning "The collision monitor stops and slows the robot"
+    Since [5. Repair Nav2 After the navigation2 Bump](../migrations/05-nav2-repair.md),
+    the collision monitor acts on every Nav2 command. Joystick and keyboard
+    commands bypass it.
+
+    - **Stop:** the stop polygon follows the direction of the command. A
+      command toward an obstacle within reach (up to 0.35 m from the base
+      center, on the side the robot drives to) is set to zero. A command that
+      drives away from the obstacle or along it passes.
+    - **Slow down:** with 4 or more points within 0.55 m of the base center,
+      the robot moves at 40 % speed. Narrow passages are slow.
+    - **Invalid source:** when a source has no new data for 2 s, or its frame
+      cannot be transformed to `base_footprint`, the monitor stops every Nav2
+      command and logs `Robot to stop due to invalid source`. The causes are
+      in [Troubleshooting](../troubleshooting.md#nav2-robot-stops-near-obstacles).
+    - **Speed limit:** the velocity smoother caps the output at 0.3 m/s and
+      1.0 rad/s, below the MPPI `wz_max` of 1.5 rad/s.
+
+    For the stop polygons, the blind zones, and what can still block Nav2,
+    see [Collision monitor](#collision-monitor).
+
+    It has not been tested on the real robot.
+
+To see why the robot stopped or slowed down, check the `collision_monitor` log.
+It logs an INFO line each time its action changes, such as
+`Robot to stop due to VelocityPolygonStop polygon`. The line does not name the
+direction band. In RViz, add the polygon topics `velocity_polygon_stop` and
+`polygon_slowdown`. `velocity_polygon_stop` shows only the band selected by
+the current command, and it stays empty until the first Nav2 command arrives.
+`bringup/config/rviz/default.rviz`, which `real_omnibot.launch.py` opens,
+shows both topics. The MuJoCo RViz configurations do not.
 
 ??? info "Velocity topic diagram"
     ```mermaid
     flowchart LR
-        C[controller_server] -->|"/cmd_vel_nav"| M[twist_mux]
-        B[behavior_server] -->|"/cmd_vel_nav"| M
+        C["controller_server<br/>behavior_server<br/>docking_server<br/>following_server"] -->|"/cmd_vel_controller"| S[velocity_smoother]
+        S -->|"/cmd_vel_smoothed"| CM[collision_monitor]
+        CM -->|"/cmd_vel_nav"| M[twist_mux]
+        J["joystick, keyboard"] -->|"/cmd_vel_joy, /cmd_vel_key"| M
         M -->|"/omni_wheel_drive_controller/cmd_vel"| W[omni_wheel_drive_controller]
-        C -->|"/cmd_vel_nav"| S[velocity_smoother]
-        S -->|"/cmd_vel_smoothed"| U["no subscriber"]
-        P["no publisher"] -->|"/cmd_vel_controller"| CM[collision_monitor]
     ```
+
+??? info "How the launch files route Nav2 commands through the collision monitor"
+    `nav2_bringup` remaps `cmd_vel` to `cmd_vel_nav` on `controller_server`,
+    `behavior_server`, and `velocity_smoother`. The Walkie launch files that
+    run Nav2 for the robot wrap the `nav2_bringup` include in a group with a
+    global remap:
+
+    ```python
+    GroupAction([
+        SetRemap(src="cmd_vel", dst="cmd_vel_controller"),
+        IncludeLaunchDescription(...),
+    ])
+    ```
+
+    `launch_ros` puts `SetRemap` rules before each node's own remappings, and
+    rcl applies the first rule that matches. So the Nav2 servers publish on
+    `/cmd_vel_controller`, and `velocity_smoother` reads its `cmd_vel` input
+    from there. No copy of the `nav2_bringup` launch files is needed, so the
+    remap survives navigation2 bumps.
+
+    Before entry 5, the Nav2 servers published on `/cmd_vel_nav` straight into
+    `twist_mux`. `velocity_smoother` wrote to `/cmd_vel_smoothed`, which had
+    no subscriber, and `collision_monitor` read `/cmd_vel_controller`, which
+    had no publisher. The parameter files set
+    `controller_server.cmd_vel_topic` and the `velocity_smoother` parameters
+    `cmd_vel_in_topic` and `cmd_vel_out_topic`, but Nav2 has none of these
+    parameters. Entry 5 removed them, and removed
+    `docking_server.enable_stamped_cmd_vel: false`, which would publish
+    unstamped `Twist` onto the stamped `/cmd_vel_controller`.
+
+    `nav2_loopback.launch.py` does not use the remap. Its parameter file
+    chains the commands the upstream way and has no `twist_mux` (see
+    [Test goal logic without physics](#test-goal-logic-without-physics)).
+
+### Collision monitor
+
+The collision monitor checks its sources against three zones, all in the
+`base_footprint` frame:
+
+- `VelocityPolygonStop`: a direction-aware stop. The monitor picks one stop
+  polygon from the direction of the command. Each polygon covers only the
+  side of the footprint the robot drives to, up to 0.35 m from the base
+  center.
+- `PolygonSlow`: a circle of 0.55 m. With 4 or more points in it, the robot
+  moves at 40 % speed.
+- `FootprintApproach`: the static physical footprint, checked 2 s ahead. It
+  slows the robot down as it approaches an obstacle.
+
+Near an obstacle, the robot behaves like this:
+
+- **Driving toward the obstacle:** the robot slows down and stops before it.
+  In the MuJoCo test, it stopped 0.045 to 0.053 m before a wall in front, and
+  about 0.11 m before a wall at the side.
+- **Driving away from the obstacle or along it:** the command passes, so Nav2
+  can drive the robot on after a stop.
+- **Rotating in place:** blocked only when points are inside the rotation
+  polygon, just outside the circle that the footprint sweeps.
+
+What the stop polygons see depends on the data each source delivers:
+
+- **`/scan` in MuJoCo and on the real robot.** The merged scan has no points
+  closer than 0.30 m to the base center: the merger uses `range_min: 0.3` in
+  `merged_lidar_link`, which sits at the base center. The footprint front is
+  at x = 0.30 m, so in front the stop polygon sees `/scan` points only 0 to
+  5 cm ahead of the footprint. At the sides, the footprint edge is 0.239 m
+  from the center, and obstacles 0.239 to 0.30 m from the center are not in
+  `/scan` at all. The rotation polygon sees `/scan` points only 0.30 to
+  0.31 m (simulation file) or 0.30 to 0.336 m (real and restaurant files)
+  from the center.
+- **The front lidar in MuJoCo.** `front_lidar` sits at x = 0.235 m and has a
+  `range_min` of 0.18 m (`bringup/config/mujoco/mujoco_plugins.yaml`), so
+  straight ahead it sees nothing closer than 0.415 m from the base center. A
+  wall is still detected, because its points off to the side are farther
+  from the lidar. A narrow obstacle dead ahead (narrower than about 0.28 m)
+  closer than 0.415 m is missed. This is a limit of the MuJoCo setup. The
+  minimum ranges of the real Hokuyo and Lakibeam were not checked.
+- **The 3D lidar on the real robot.** The `pointcloud` source
+  (`/unilidar/cloud/filtered`, 0.3 to 1.5 m high) has no 0.30 m limit, so the
+  stop polygons also see closer obstacles at that height, such as tabletops.
+  This has not been tested on the robot.
+- **Gazebo.** The default simulated lidar has a minimum range of 0.6 m, so
+  neither the stop polygons nor `PolygonSlow` trigger. Only
+  `FootprintApproach` acts, on obstacles that are still farther than 0.6 m.
+  This follows from the configuration; Gazebo was not run.
+- **`nav2_mppi_walkie_real_restaurant_param.yaml`** (used by
+  `mapping_Nav2_real.launch.py`). Its local footprint has the padding built
+  in: 0.10 m at the front and sides (front at x = 0.40 m, half width
+  0.339 m), 0.02 m at the rear. The stop polygons and `FootprintApproach`
+  use the physical footprint instead, so the monitor no longer enforces this
+  padding. Only the costmaps keep that distance.
+
+All polygons cover the base only, not the arms or anything the robot carries.
+
+!!! warning "What can still block Nav2 near an obstacle"
+    The monitor sets the Nav2 commands to zero, and goals abort with error 105
+    (`Failed to make progress`), when:
+
+    - every direction Nav2 tries points at an obstacle in reach, for example
+      when the robot is boxed in
+    - parts of the robot or sensor noise put 4 or more points into the
+      selected band or the rotation polygon
+    - a source is invalid (no new data for 2 s, or no transform)
+
+    The behavior tree has no BackUp recovery, so Nav2 does not reverse out by
+    itself. It moves away only when MPPI picks a command away from the
+    obstacle. To free the robot, drive it with the joystick or keyboard.
+    `twist_mux` gives them priority 100, and they bypass the collision
+    monitor. See
+    [Troubleshooting](../troubleshooting.md#nav2-stuck-after-a-stop).
+
+??? info "How the stop polygon is chosen"
+    The monitor picks the sub-polygon from the command that enters it on
+    `/cmd_vel_smoothed`, not from odometry. With `holonomic: true`, it
+    compares the speed hypot(vx, vy) with `linear_min` and `linear_max`, and
+    the direction atan2(vy, vx) with `direction_start_angle` and
+    `direction_end_angle`. It uses the first sub-polygon in
+    `velocity_polygons` that matches. There is no hysteresis.
+
+    `rotation` is first in the list, so it applies at 0.01 m/s or less. The
+    eight translation bands are 45° wide each and cover any speed up to
+    10 m/s. Angles are in `base_footprint`: 0° is forward (+x), 90° is left
+    (+y).
+
+    | Sub-polygon | Command direction | Polygon in `base_footprint` (m) |
+    | --- | --- | --- |
+    | `rotation` | Any, at 0.01 m/s or less (rotation in place or standing still) | 12-gon just outside the footprint's rotation sweep |
+    | `forward` | -22.5° to 22.5° | Rectangle x 0 to 0.35, y -0.26 to 0.26 |
+    | `forward_left` | 22.5° to 67.5° | L-shape: front strip x 0 to 0.35 (y -0.239 to 0.35), plus left strip y 0 to 0.35 (x -0.285 to 0.35) |
+    | `left` | 67.5° to 112.5° | Rectangle y 0 to 0.35, x -0.305 to 0.32 |
+    | `backward_left` | 112.5° to 157.5° | L-shape: rear strip x -0.35 to 0, plus left strip y 0 to 0.35 |
+    | `backward` | 157.5° to -157.5° (through 180°) | Rectangle x -0.35 to 0, y -0.26 to 0.26 |
+    | `backward_right` | -157.5° to -112.5° | L-shape: rear strip plus right strip |
+    | `right` | -112.5° to -67.5° | Rectangle y -0.35 to 0, x -0.305 to 0.32 |
+    | `forward_right` | -67.5° to -22.5° | L-shape: front strip plus right strip |
+
+    Each band polygon covers only the footprint faces that lead in the
+    commanded direction, up to 0.35 m from `base_footprint` (the reach of the
+    former `PolygonStop` circle). The axis bands widen the leading face by
+    0.02 m per side for sideways drift within the band. The diagonal bands
+    cover both leading faces and the corner between them. A command that
+    drives away from an obstacle selects a polygon that does not contain it,
+    so the command passes.
+
+    The bands use the bounding box of the physical footprint (front
+    x = 0.30 m, rear x = -0.285 m, half width 0.239 m), which the simulation
+    and real footprints share. So all three files have the same band
+    polygons. In the restaurant file, they are deliberately based on the
+    physical footprint, not on its padded local footprint.
+
+    The `rotation` 12-gon has an apothem of the largest footprint radius plus
+    0.01 m:
+
+    | File | Apothem |
+    | --- | --- |
+    | `nav2_mppi_walkie_sim_params.yaml` | 0.30 + 0.01 = 0.31 m |
+    | `nav2_mppi_walkie_real_param.yaml`, `nav2_mppi_walkie_real_restaurant_param.yaml` | 0.326 + 0.01 = 0.336 m |
+
+    Why 8 bands, not 4: a layout with 4 bands (forward, left, backward, right,
+    90° each) left a gap. In MuJoCo, a diagonal command toward a wall closed
+    the gap to 0.001 m, and the commands away from the wall and along it were
+    then blocked completely. With 8 bands, commands within 67.5° of a wall's
+    normal are blocked when the wall is in reach. An offline check of every
+    22.5° direction against walls on each side and in corners found no
+    direction that stayed blocked while pointing away from every wall, and no
+    direction within 45° of a wall's normal that passed. The real and
+    restaurant files gave the same result.
+
+??? info "Stop and direction tests in MuJoCo (2026-10-14)"
+    The tests ran `nav_mujoco_omnibot.launch.py` headless in a walled test
+    world that is not in the repository: an 8 m by 8 m room, and a 1.2 m wall
+    whose face is at x = 1.45 m. At the start (y = 0), the robot's left side
+    was 3.7 m from the north wall. Commands were published on
+    `/cmd_vel_controller`, so they passed the velocity smoother and the
+    collision monitor. Gaps were
+    measured with MuJoCo ground truth, from the footprint bounding box (front
+    x = 0.30 m, half width 0.239 m) to the wall face.
+
+    **Forward stop.** A constant forward command of 0.25 m/s toward the wall
+    face gave this output on `/cmd_vel_nav`:
+
+    | Time | `/cmd_vel_nav` |
+    | --- | --- |
+    | Until about 4 s | 0.25 m/s |
+    | From about 4.2 s | 0.10 m/s (`PolygonSlow`, 40 %) |
+    | Around 6 s | About 0.05 m/s (`FootprintApproach`) |
+    | From about 7.1 s | 0 |
+
+    The base stopped at x = 1.105 m, with the footprint front 0.045 m before
+    the wall face (x = 1.104 m and 0.046 m in a repeat run). From the repeat
+    run's stop, a goal to (1.5, 1.0, 90°), sent as a `navigate_to_pose`
+    action goal, succeeded. The
+    behavior tree reported success 28.8 s after the start, 0.072 m and 4.0°
+    from the goal by ground truth. On the way, `follow_path` aborted twice
+    with error 105 (at 16.5 s and 24.6 s), and the behavior tree retried both
+    times.
+
+    **Direction test.** Each phase published one command for 2 s or until the
+    robot stopped:
+
+    | Command | Result |
+    | --- | --- |
+    | Toward the wall face: forward, then diagonal (+x, +y) | Stopped 0.048 m and 0.053 m before it |
+    | Toward the north wall: left, then diagonal (+x, +y) | Stopped 0.112 m and 0.114 m before it |
+    | Away from a wall, four times (straight and diagonal) | Moved 0.155 to 0.292 m |
+    | Along the wall, with the wall 0.229 m from the side | Moved 0.161 m |
+    | Rotate in place at the wall, +0.5 rad/s, then -0.5 rad/s | Rotated 21.6° in 2 s, then back; not stopped, but slowed to 40 % by `PolygonSlow` |
+
+    Then two goals were sent from beside the north wall. The first,
+    (1.5, 1.0, 90°) on `/goal_pose`, was within tolerance after 17.3 s
+    (0.058 m and 4.6° off by ground truth), after one `follow_path` abort
+    with error 105 during the slow final approach. The second,
+    (-1.0, -0.5, 0°) as an action goal, succeeded in 16.5 s. It was 0.098 m
+    off by odometry and 0.363 m by ground truth, because the odometry drifts
+    and MuJoCo has no AMCL. With an earlier 4-band layout and a 4 s progress
+    allowance, the same goals had 4 to 5 aborts with error 105.
+
+    Before the change, with the 0.35 m `PolygonStop` circle, the robot stopped
+    with its footprint front at the wall (x = 1.155 m), and two goals sent
+    after the stop both aborted with error 105, after about 120 s and 88 s.
+
+??? info "Collision monitor, velocity smoother, and progress checker settings"
+    The settings are in the `collision_monitor`, `velocity_smoother`, and
+    `controller_server` sections of the parameter files in
+    `navigation/walkie-navigation/config/nav2/`.
+    `nav2_mppi_walkie_sim_params.yaml`, `nav2_mppi_walkie_real_param.yaml`,
+    and `nav2_mppi_walkie_real_restaurant_param.yaml` use the same values,
+    except for the observation sources, the size of the `rotation` polygon,
+    and the `FootprintApproach` points.
+
+    | Component | Setting |
+    | --- | --- |
+    | `velocity_smoother` | `max_velocity` [0.3, 0.3, 1.0], `max_accel` [2.5, 2.5, 3.2]. Input `cmd_vel` (remapped to `/cmd_vel_controller`), output `cmd_vel_smoothed`. Both topic names are fixed in code. |
+    | `collision_monitor` topics | `cmd_vel_in_topic: "cmd_vel_smoothed"`, `cmd_vel_out_topic: "cmd_vel_nav"` |
+    | `polygons` | `["VelocityPolygonStop", "PolygonSlow", "FootprintApproach"]` |
+    | Observation sources | Simulation file: `scan`. Real and restaurant files: `scan` and `pointcloud` (`/unilidar/cloud/filtered`, `min_obstacle_height` 0.3 m, `max_obstacle_height` 1.5 m). |
+    | `source_timeout` | Not set, so the default of 2.0 s applies |
+    | `VelocityPolygonStop` | `velocity_polygon`, `stop`, `min_points: 4`, `holonomic: true`. Nine sub-polygons: `rotation` and eight direction bands. Topic `velocity_polygon_stop`. |
+    | `PolygonSlow` | Circle, radius 0.55 m, `slowdown`, `slowdown_ratio: 0.4`, `min_points: 4`. Topic `polygon_slowdown`. |
+    | `FootprintApproach` | `approach` with static `points`: the physical footprint without padding (simulation file: the local footprint points; real and restaurant files: the real footprint with notched rear corners). `time_before_collision: 2.0` s, `min_points: 6`. |
+    | Progress checker | `progress_checker` in `controller_server`: `nav2_controller::SimpleProgressChecker`, `required_movement_radius: 0.5`, `movement_time_allowance: 8.0` (0.5 m within 8 s) |
+    | `twist_mux` | `bringup/config/twist_mux/twist_mux.yml`: `cmd_vel_nav` priority 10, `cmd_vel_joy` and `cmd_vel_key` priority 100 |
+
+    `FootprintApproach` does not use the padded
+    `/local_costmap/published_footprint`. With 6 or more points inside its
+    polygon, the approach action computes a collision time of 0 and scales
+    every command to zero, also commands that drive away. With the padded
+    footprint, obstacles inside the padding next to the robot froze Nav2.
+
+    The progress checker allows 8 s, not 4 s: 0.5 m in 4 s needs 0.125 m/s on
+    average, more than the `PolygonSlow` limit of 0.4 x 0.3 = 0.12 m/s, so
+    goals through the slow zone aborted `follow_path` with error 105. The cost
+    is that a robot that is really stuck is detected only after 8 s.
+
+    The other parameter files keep the earlier setup: `PolygonStop`,
+    `FootprintApproach` on `/local_costmap/published_footprint`, and
+    `movement_time_allowance: 10.0`. Their collision monitors use `scan` only.
+
+    - `nav2_mppi_walkie_loopback_params.yaml`: `PolygonStop` (0.35 m) is
+      disabled. `PolygonSlow` has radius 0.40 m and `slowdown_ratio: 0.5`.
+      The progress checker needs 0.2 m within 10 s.
+    - `nav2_mppi_walkie_real_param_hero_10_04_26.yaml`: `PolygonStop`
+      (0.35 m) is active, so after a stop it blocks every Nav2 command, also
+      commands that drive away. `PolygonSlow` has radius 0.50 m and
+      `slowdown_ratio: 0.5`.
+    - `nav2_RPP_*.yaml` (three files, no launch file): `PolygonStop` is
+      active.
 
 ## Nav2 configuration
 
@@ -292,7 +725,17 @@ in `navigation/walkie-navigation/config/nav2/`.
     | `nav2_mppi_walkie_real_param.yaml` | `localization_Nav2_real.launch.py` |
     | `nav2_mppi_walkie_real_restaurant_param.yaml` | `mapping_Nav2_real.launch.py` |
     | `nav2_mppi_walkie_loopback_params.yaml` | `nav2_loopback.launch.py` |
-    | `nav2_mppi_walkie_real_param_hero_10_04_26.yaml`, `nav2_RPP_*.yaml` | No launch file |
+    | `nav2_mppi_walkie_real_param_hero_10_04_26.yaml` | No launch file. A snapshot of the real parameters from 2026-04-10. Starts with `localization_Nav2_real.launch.py nav2_config:=<full path>` since navigation `e5d33c2`. |
+    | `nav2_RPP_*.yaml` | No launch file |
+
+    Before navigation `e5d33c2`, `bt_navigator` failed to configure with the
+    hero file (`Node not recognized: ComputePathHeadingSpin`, then
+    `"spin" action server not available`). Its behavior tree,
+    `nav_to_pose_real_recovery_bt.xml`, has since gained `ComputePathHeadingSpin`
+    and `Spin`. The commit adds the three custom behavior tree plugins to
+    `plugin_lib_names` and the `spin` behavior (`nav2_behaviors::Spin`). No
+    tuning value changed. The hero file has no STVL layer, so it also starts
+    under Fast DDS.
 
 !!! note
     Nav2 uses the behavior tree set in the parameter file
@@ -304,8 +747,8 @@ in `navigation/walkie-navigation/config/nav2/`.
     | Component | Setting |
     | --- | --- |
     | AMCL | `nav2_amcl::OmniMotionModel`. `set_initial_pose: true` at (0, 0, 0). |
-    | Controller | MPPI with `motion_model: "Omni"`. `vx_max` and `vy_max` 0.3 m/s, `wz_max` 1.5 rad/s. |
-    | Footprint | Polygon about 0.6 m long and 0.48 m wide |
+    | Controller | MPPI with `motion_model: "Omni"` and `Omni.plugin: "mppi::OmniMotionModel"`. `vx_max` and `vy_max` 0.3 m/s, `wz_max` 1.5 rad/s. |
+    | Footprint | `nav2_mppi_walkie_sim_params.yaml` and `nav2_mppi_walkie_real_param.yaml`, local and global: polygon from x = -0.285 m to x = 0.30 m, half width 0.239 m (about 0.59 m by 0.48 m). `nav2_mppi_walkie_real_restaurant_param.yaml`, local: larger, with the padding built in, from x = -0.305 m to x = 0.40 m, half width 0.339 m. |
     | Behavior tree | `default_nav_to_pose_bt_xml` is `behavior_tree/nav_to_pose_real_recovery_bt.xml` |
     | BT plugins | `compute_goal_heading_spin_bt_node`, `compute_goal_bearing_spin_bt_node`, `compute_path_heading_spin_bt_node` (built from `robot_navigation`) |
 
@@ -314,6 +757,24 @@ in `navigation/walkie-navigation/config/nav2/`.
     | --- | --- | --- |
     | Local | Layers `voxel_layer` (`/scan`), `inflation_layer` | Layers `voxel_layer` (`/scan`), `stvl_layer`, `inflation_layer`. Filter `keepout_filter`. |
     | Global | Layers `static_layer`, `obstacle_layer` (`/scan`), `inflation_layer` | Layers `static_layer`, `obstacle_layer` (`/scan`), `inflation_layer`. Filter `keepout_filter`. |
+    | Local `inflation_radius` | 0.35 m (circumscribed radius 0.313 m with the default 0.01 m padding) | 0.38 m (circumscribed radius 0.354 m with 0.02 m padding) |
+    | Global `inflation_radius` | 0.45 m | 0.45 m |
+
+    The local `inflation_radius` must be at least the circumscribed radius of
+    the padded footprint. Otherwise `controller_server` logs
+    `[computeCircumscribedCost]: The inflation radius (...) is smaller than the circumscribed radius (...)`
+    every cycle, and MPPI checks the full footprint against the costmap
+    everywhere. [5. Repair Nav2 After the navigation2 Bump](../migrations/05-nav2-repair.md)
+    raised the local values from 0.25 m, and the one in
+    `nav2_mppi_walkie_real_restaurant_param.yaml` from 0.30 m to 0.45 m
+    (circumscribed radius 0.435 m, no padding). Costs now reach further from
+    obstacles, so the robot keeps a little more clearance.
+
+    In `nav2_mppi_walkie_real_param.yaml` and
+    `nav2_mppi_walkie_real_restaurant_param.yaml`, `voxel_layer` and
+    `stvl_layer` both publish `voxel_grid` with different message types. This
+    breaks `controller_server` under Fast DDS (see
+    [Known issues](#known-issues)).
 
 ## Sensors for navigation
 
@@ -325,11 +786,32 @@ Lakibeam at the rear. `dual_lidar_hokuyo_lakibeam.launch.py` starts both
 drivers and the merger.
 
 !!! warning
-    The merger publishes only when both lidars deliver data. If one lidar
-    stops, `/scan` stops too.
+    On the real robot, `/scan` stops when one lidar stops publishing, or when
+    one lidar has no valid return at all (covered, faulty, or nothing within
+    its range in any direction). Two seconds later, the collision monitor
+    stops every Nav2 command.
+
+??? info "Why the merger drops the scan when one lidar sees nothing"
+    The merger pairs `/front_lidar` and `/back_lidar` by time (approximate
+    time synchronization). If one topic is not published at all, there is no
+    `/scan`.
+
+    A lidar's cloud is empty when every beam is outside that lidar's range
+    limits or invalid. By default, the merger then returns without
+    publishing. walkie-ros `ef51b15` added the parameter
+    `publish_on_empty_cloud` (bool, default `false`). When it is `true`, the
+    merger publishes anyway, and the empty side reads as free space (`inf`
+    ranges with `use_inf: true`).
+
+    Only `mujoco_omnibot.launch.py` sets it to `true`, so Nav2 can drive in
+    the empty default MuJoCo world. `dual_lidar_hokuyo_lakibeam.launch.py`
+    keeps the default on purpose: on the real robot, an empty cloud can mean a
+    covered or faulty lidar, and no `/scan` plus a collision monitor stop is
+    the safe outcome.
 
 ??? info "Lidar driver and merger settings"
-    The settings are in `bringup/config/lidar/dual_lidar_config.yml`.
+    The driver settings are in `bringup/config/lidar/dual_lidar_config.yml`.
+    The merger parameters are set in `dual_lidar_hokuyo_lakibeam.launch.py`.
 
     | Lidar | Position | Driver | Address | Frame | Topic | Field of view |
     | --- | --- | --- | --- | --- | --- | --- |
@@ -337,21 +819,49 @@ drivers and the merger.
     | Lakibeam | Rear | `lakibeam1_scan_node` | Sensor `10.0.0.102`, host `10.0.0.201`, port 2368 | `back_lidar_link` | `/back_lidar` | `scan_range_start: 60`, `scan_range_stop: 300`, `scanfreq: 30` |
 
     `dual_laser_merger` (`merger_node::MergerNode`) publishes the merged scan
-    in `merged_lidar_link`, with ranges from 0.3 to 25 m. Its output is
-    remapped to `/scan`. It pairs messages by time (approximate time
-    synchronization).
+    in `merged_lidar_link`, with ranges from 0.3 to 25 m. `merged_lidar_link`
+    is at x = 0, y = 0 of `base_link`, 0.282 m above it, so `/scan` has no points
+    closer than 0.30 m to the base center. The merger output is remapped to
+    `/scan`.
 
 ### Robot self filter
 
 The depth cameras and the 3D lidar see parts of the robot, such as the arms.
 `robot_self_filter` removes points that fall inside the robot's collision
-geometry from the URDF. `real_omnibot.launch.py` runs up to three instances.
+geometry from the URDF. `real_omnibot.launch.py` runs two instances, for the
+L2 lidar and the ZED camera; the D415 camera and its instance are commented
+out. `mujoco_omnibot.launch.py`, and with it `nav_mujoco_omnibot.launch.py`,
+runs the `/unilidar/cloud` instance on the simulated head lidar
+([MuJoCo Simulation](simulation-mujoco.md#topics)).
+
+With `keep_organized: false`, which every instance config sets, the output is
+an unorganized list without the points that have no return (NaN or inf
+coordinates), and it is marked dense (`is_dense: true`). The ZED cloud has
+such a point for every pixel without valid depth, and the simulated head lidar
+one for every ray without a hit; the L2 driver sends none.
+
+??? info "Change of 2026-10-16: non-finite points are dropped"
+    Before, the filter kept NaN and inf points in its unorganized output and
+    still marked the output dense. A consumer that trusts the flag, such as many
+    PCL algorithms, then reads NaN coordinates. On the real robot, the MoveIt
+    octomap (`sensors_3d.yaml`) skipped NaN points but not inf points, and the
+    STVL voxel filter (`filter: "voxel"`) trusted the dense flag when it
+    computed its bounds. The simulated head lidar showed the problem
+    ([2.8 Head 3D Lidar](../migrations/02-mujoco/08-3d-lidar.md#the-self-filter-and-nan-points)).
+
+    Since the change, `/zed_head/zed_node/point_cloud/cloud_registered/filtered`
+    has fewer points per cloud and is dense, so its consumers get only finite
+    points. `cloud_to_map_node` only transforms the cloud, so its
+    `filtered_map` output changes the same way. The L2 output does not change.
+
+    With `keep_organized: true`, the output keeps one entry per input point and
+    is marked not dense.
 
 ??? info "Self filter instances"
     | Input | Output | Config | Runs when |
     | --- | --- | --- | --- |
     | `/unilidar/cloud` | `/unilidar/cloud/filtered` | `bringup/config/lidar/unitree_self_filter.yaml` | `use_unitree_lidar:=true` (default) |
-    | `/camera/camera/depth/color/points` | `/camera/camera/depth/color/points/filtered` | `bringup/config/camera/d415_bottom_self_filter.yaml` | Always |
+    | `/camera/camera/depth/color/points` | `/camera/camera/depth/color/points/filtered` | `bringup/config/camera/d415_bottom_self_filter.yaml` | Not started: commented out in `real_omnibot.launch.py` |
     | `/zed_head/zed_node/point_cloud/cloud_registered` | `/zed_head/zed_node/point_cloud/cloud_registered/filtered` | `bringup/config/camera/zed2i_self_filter.yaml` | `use_zed:=true` (default) |
 
 ### Spatio-Temporal Voxel Layer
@@ -416,12 +926,51 @@ footprint of furniture, which helps when drawing keepout zones.
   error, even when its ABI changed. After a change of the RoboStack build set,
   rebuild the whole workspace with `pixi run clean && pixi run build` (see
   [Changing the build set](pixi.md#changing-the-build-set)).
+- When the `navigation2` commit changes, rebuild all of Nav2 with
+  `pixi run build`, not only `pixi run build-pkg robot_navigation`. The
+  update of 2026-10-15 (`32861197`) needs it: the default behavior trees use a
+  node and subtrees that only the new `nav2_behavior_tree` and
+  `nav2_bt_navigator` provide.
 
 ??? info "Nav2 on behaviortree_cpp 4.10"
     Since [4. Move to RoboStack Build Set _25](../migrations/04-robostack-build-25.md),
     the pixi environment has `behaviortree_cpp` 4.10.0 (it was 4.9.1). All
     Nav2 packages build against it. On 2026-10-13, `bt_navigator` on 4.10.0
     completed navigation goals in MuJoCo (`nav_mujoco_omnibot.launch.py`).
+
+??? info "navigation2 update of 2026-10-15 (`32861197`)"
+    The `navigation` submodule moved `navigation2` from `e48c3296` to
+    `32861197` (10 upstream commits). The Walkie parameter files and behavior
+    trees need no change for it. `nav2_behavior_tree` gained a `Log` node and
+    `nav2_bt_navigator` gained `behavior_trees/subtrees/`, and the default
+    trees already use both.
+
+    - **Transform staleness checks**
+      ([#6391](https://github.com/ros-navigation/navigation2/pull/6391),
+      [#6500](https://github.com/ros-navigation/navigation2/pull/6500),
+      [#6514](https://github.com/ros-navigation/navigation2/pull/6514),
+      [#6529](https://github.com/ros-navigation/navigation2/pull/6529)):
+      the static layer, the asymmetric inflation layer, costmap filters
+      (including `keepout_filter`), docking, following and route server get
+      `transform_staleness_threshold`, default `0.0` (check off). The
+      collision monitor's default is `1.0` s, but it applies only with
+      `base_shift_correction: false` and to exclusion zones. The Walkie files
+      keep the default `true` and use only the `scan` and `pointcloud` sources.
+    - **Empty observation clouds**
+      ([#6641](https://github.com/ros-navigation/navigation2/pull/6641)):
+      the obstacle and voxel layers skip an observation without points. In
+      the empty MuJoCo world every `/scan` beam is `inf` and is dropped
+      (`inf_is_valid` defaults to `false`), so the observation neither marks
+      nor clears, as before.
+    - **BackUp recovery**
+      ([#6559](https://github.com/ros-navigation/navigation2/pull/6559),
+      [#6635](https://github.com/ros-navigation/navigation2/pull/6635)):
+      the default Nav2 trees call the `BackupWithReset` subtree (backs up
+      again only after the robot moved 1 m) from `behavior_trees/subtrees/`,
+      which the default `bt_search_directories` now includes.
+      `nav_to_pose_real_recovery_bt.xml` has no BackUp and is unaffected. A
+      params file that sets `bt_search_directories` and uses a default Nav2
+      tree must list `$(find-pkg-share nav2_bt_navigator)/behavior_trees/subtrees`.
 
 ??? info "Why the Jazzy release of Nav2 is not enough"
     The custom behavior tree plugins in `robot_navigation` need this build.
@@ -455,9 +1004,8 @@ launch files are in `launch/`, the Nav2 parameter files and behavior trees in
 
 ## Launch files
 
-`slam_toolbox.launch.py`, `slam_cartographer.launch.py`, and
-`octomap_3d_mapping.launch.py` have known problems. See
-[Known issues](#known-issues).
+`slam_cartographer.launch.py` and `octomap_3d_mapping.launch.py` have known
+problems. See [Known issues](#known-issues).
 
 ??? info "All navigation launch files"
     | Launch file | Package | Purpose |
@@ -465,7 +1013,7 @@ launch files are in `launch/`, the Nav2 parameter files and behavior trees in
     | `localization_Nav2_sim.launch.py` | `robot_navigation` | Nav2 with AMCL on a saved map, for Gazebo |
     | `localization_Nav2_real.launch.py` | `robot_navigation` | Nav2 with AMCL on a saved map, plus keepout zones, for the real robot |
     | `mapping_Nav2_real.launch.py` | `robot_navigation` | SLAM Toolbox mapping plus Nav2, for the real robot |
-    | `slam_toolbox.launch.py` | `robot_navigation` | SLAM Toolbox only. Does not load the Walkie parameters. |
+    | `slam_toolbox.launch.py` | `robot_navigation` | SLAM Toolbox only (`online_sync_launch.py` with `config/slam/slam_toolbox_params.yaml`). `use_sim_time` defaults to `false`. |
     | `nav2_loopback.launch.py` | `robot_navigation` | Nav2 with the loopback simulator, no physics |
     | `slam_cartographer.launch.py` | `robot_navigation` | Cartographer. Does not run. |
     | `nav_sim_omnibot.launch.py` | `robot_bringup` | Gazebo plus `localization_Nav2_sim.launch.py` |
@@ -478,13 +1026,13 @@ launch files are in `launch/`, the Nav2 parameter files and behavior trees in
     `robot_navigation`.
 
     **`localization_Nav2_sim.launch.py`** includes `nav2_bringup`'s
-    `bringup_launch.py` (map server, AMCL, and the Nav2 servers) and starts
-    `nav_commander`.
+    `bringup_launch.py` (map server, AMCL, and the Nav2 servers) with
+    `use_composition:=False` and starts `nav_commander`.
 
     | Argument | Default |
     | --- | --- |
     | `use_sim_time` | `true` |
-    | `map` | `<robot_navigation share>/map/8_23102025_SimWalkie_awssmallhouse_slam_toolbox/map.yaml` (missing, see [The simulation map](#the-simulation-map)) |
+    | `map` | `<robot_navigation share>/map/08_23102025_SimWalkie_awssmallhouse_slam_toolbox/map.yaml` (see [The simulation map](#the-simulation-map)) |
     | `nav2_config` | `<robot_navigation share>/config/nav2/nav2_mppi_walkie_sim_params.yaml` |
     | `nav_debug` | `false` |
 
@@ -511,7 +1059,7 @@ launch files are in `launch/`, the Nav2 parameter files and behavior trees in
 
     | Argument | Default |
     | --- | --- |
-    | `map` | `<robot_navigation share>/map/8_23102025_SimWalkie_awssmallhouse_slam_toolbox/map.yaml` (missing, see [The simulation map](#the-simulation-map)) |
+    | `map` | `<robot_navigation share>/map/08_23102025_SimWalkie_awssmallhouse_slam_toolbox/map.yaml` (see [The simulation map](#the-simulation-map)) |
     | `nav2_config` | `<robot_navigation share>/config/nav2/nav2_mppi_walkie_loopback_params.yaml` |
     | `use_rviz` | `true` (uses `nav2_bringup`'s `nav2_default_view.rviz`) |
     | `nav_debug` | `false` |
@@ -528,13 +1076,22 @@ launch files are in `launch/`, the Nav2 parameter files and behavior trees in
 
 ## Known issues
 
+[5. Repair Nav2 After the navigation2 Bump](../migrations/05-nav2-repair.md)
+fixed the missing MPPI plugin key, the missing lifecycle managers, the bypassed
+collision monitor, the missing simulation map, the missing `/scan` in the
+empty MuJoCo world, and the loopback and hero configurations.
+
 | Issue | Effect | Workaround |
 | --- | --- | --- |
-| The MPPI parameter files do not set `FollowPath.Omni.plugin` | `controller_server` fails to configure, and Nav2 stops during bringup. Affects every launch except `nav_mujoco_omnibot.launch.py`. | Add the key to the parameter file ([details](#mppi-omni-motion-model-plugin)) |
-| `bringup_launch.py` runs all Nav2 servers on one thread when composed | Bringup can hang at `Waiting for service smoother_server/get_state...` | `use_composition:=False` ([details](#nav2-composition-deadlock)) |
-| Default simulation map is missing | Nav2 in simulation and loopback cannot load its map | Extract the map and pass `map:=` ([The simulation map](#the-simulation-map)) |
-| Collision monitor and velocity smoother are bypassed | The collision monitor's stop and slow-down zones never act | None in the repository. The topic wiring in the parameter files needs a fix. |
-| `slam_toolbox.launch.py` ignores the Walkie parameters | SLAM Toolbox runs with its own defaults and `use_sim_time: true` | Run `online_sync_launch.py` with `slam_params_file:=` ([Mapping in simulation](#mapping-in-simulation)) |
+| Near an obstacle, the collision monitor can still block every Nav2 command: every direction Nav2 tries points at an obstacle in reach, robot parts or noise are inside the selected stop polygon, or a source is invalid. The behavior tree has no BackUp recovery. | The robot stays next to the obstacle. Goals abort with error 105. | Drive out with the joystick or keyboard ([Collision monitor](#collision-monitor)) |
+| `follow_path` occasionally aborts with error 105 near an obstacle or during the slow final approach | The behavior tree retries. In the MuJoCo tests, the goals were still reached. | None |
+| `/scan` has no points closer than 0.30 m to the base center. In MuJoCo, the front lidar sees nothing closer than 0.415 m straight ahead. The stop polygons cover the base only. | In MuJoCo, a narrow obstacle dead ahead is missed. The arms and carried objects are not protected. | None ([Collision monitor](#collision-monitor)) |
+| `nav2_mppi_walkie_real_param_hero_10_04_26.yaml` and the `nav2_RPP_*.yaml` files keep an active `PolygonStop` circle | With these files, a stop blocks every Nav2 command, also commands that drive away | Drive out with the joystick or keyboard, or use the default parameter files |
+| In `nav2_mppi_walkie_real_param.yaml` and `nav2_mppi_walkie_real_restaurant_param.yaml`, `voxel_layer` and `stvl_layer` both publish `voxel_grid` with different types | Under Fast DDS, `controller_server` fails to configure in `localization_Nav2_real.launch.py` and `mapping_Nav2_real.launch.py` | Use `rmw_zenoh_cpp`, as the team does. Not fixed in the parameter files. |
+| The Gazebo lidar has a minimum range of 0.6 m | The collision monitor's stop polygons and slow-down circle never trigger in Gazebo | None. Only `FootprintApproach` acts. |
+| After `bt_navigator` rejects a goal, for example with error 9002, it copies that error code into the result of the next goal of the same action that it accepts, also when that goal succeeds (upstream navigation2). `NavigateToPose` and `NavigateThroughPoses` each keep their own error. | A client that reads only `error_code` treats a successful goal as failed | Judge a goal by its status. In an accepted goal, an `error_code` of 9002 (9102 for `NavigateThroughPoses`) can be left over ([Troubleshooting](../troubleshooting.md#nav2-map-frame-does-not-exist)) |
+| `nav_mujoco_omnibot.launch.py` has no AMCL | The pose drifts with the odometry. A goal sent while the robot is already at it by odometry aborts with error 103 (`Resulting plan has 0 poses in it`). | None |
+| `nav2_bringup`'s `bringup_launch.py` runs all Nav2 servers on one thread when composed (its default) | Bringup can hang at `Waiting for service smoother_server/get_state...` | `use_composition:=False`. `localization_Nav2_sim.launch.py` and `nav_mujoco_omnibot.launch.py` set it. ([details](#nav2-composition-deadlock)) |
 | `slam_cartographer.launch.py` needs `cartographer_ros`, which `pixi.toml` does not install | The launch fails | Use SLAM Toolbox |
 | `octomap_3d_mapping.launch.py` needs `octomap_server` and `topic_tools`, which are not in `pixi.toml` | The launch fails with "package not found" under pixi | Add both packages to the environment |
 | `scripts/bringup/real_slam_nav.sh` is broken | The Nav2 tab fails | Use the launch files in [Localization and mapping on the real robot](#localization-and-mapping-on-the-real-robot) |
@@ -542,23 +1099,17 @@ launch files are in `launch/`, the Nav2 parameter files and behavior trees in
 | The fixture of the Nav2 test `test_action_follow_path_action` never sets `cancel_timeout` | The test can hang until CTest stops it. `bt_navigator` is not affected. | Skip the test: `pixi run test --packages-select nav2_behavior_tree --ctest-args -E test_action_follow_path_action` |
 
 ??? info "Causes of the known issues"
-    - **Missing simulation map.** `localization_Nav2_sim.launch.py` and
-      `nav2_loopback.launch.py` default to
-      `8_23102025_SimWalkie_awssmallhouse_slam_toolbox`. The map commit pinned
-      by the `navigation` submodule removed that directory. The map
-      collection's `main` branch has it as
-      `08_23102025_SimWalkie_awssmallhouse_slam_toolbox`, but the pin does not
-      point there.
-    - **Bypassed collision monitor and velocity smoother.** The parameter files
-      set `controller_server.cmd_vel_topic` to `/cmd_vel_controller` and
-      connect `collision_monitor` from `/cmd_vel_controller` to `/cmd_vel_nav`.
-      The pinned controller server does not read `cmd_vel_topic`. It publishes
-      on `cmd_vel`, which `navigation_launch.py` remaps to `/cmd_vel_nav`. So
-      the controller output goes straight to `twist_mux`, and the collision
-      monitor gets no input. The velocity smoother output,
-      `/cmd_vel_smoothed`, has no subscriber.
-    - **`slam_toolbox.launch.py`.** It passes its parameter file as
-      `params_file`, but `online_sync_launch.py` expects `slam_params_file`.
+    - **`voxel_grid` under Fast DDS.** In the real and restaurant files, the
+      local costmap has `voxel_layer` (publishes `nav2_msgs/VoxelGrid`) and
+      `stvl_layer` (publishes `sensor_msgs/PointCloud2`), both with
+      `publish_voxel_map: true`. Both publish `voxel_grid` from the same node.
+      Fast DDS rejects two types on one topic, so `controller_server` fails
+      with `Failed to initialize costmap plugin stvl_layer! could not create publisher: create_publisher() called for existing topic name rt/local_costmap/voxel_grid with incompatible type`.
+      `rmw_zenoh_cpp` accepts it: on 2026-10-14, without hardware, both
+      launch files started on Zenoh. The problem predates entry 5. A possible
+      fix, not applied, is `voxel_layer.publish_voxel_map: False`, which drops
+      the `VoxelGrid` visualization. The simulation, loopback, and hero files
+      have no STVL layer.
     - **`real_slam_nav.sh`.** It starts `localization_Nav2_stvl_real.launch.py`,
       which does not exist, and starts SLAM Toolbox (`online_async_launch.py`)
       in a second tab. If the Nav2 tab did start, AMCL and SLAM Toolbox would
@@ -573,7 +1124,7 @@ launch files are in `launch/`, the Nav2 parameter files and behavior trees in
       that has no initial value. The hang was seen on RoboStack build sets
       `_21` and `_25`. `bt_navigator` is not affected, because the behavior
       tree action server always sets `cancel_timeout`. The fix is to set
-      `cancel_timeout` in the test fixture of the Nav2 fork.
+      `cancel_timeout` in the test fixture in `navigation/navigation2/`.
 
 ### controller_server cannot load the Omni motion model { #mppi-omni-motion-model-plugin }
 
@@ -585,7 +1136,8 @@ Can not get 'plugin' param value for FollowPath.Omni
 Failed to load motion model plugin 'Omni'
 ```
 
-Add the plugin key under `FollowPath` in the MPPI parameter file:
+The MPPI parameter file sets `motion_model: "Omni"` without a plugin key. Add
+the key under `FollowPath`, as the repository files do:
 
 ```yaml title="config/nav2/nav2_mppi_walkie_sim_params.yaml"
 controller_server:
@@ -596,22 +1148,19 @@ controller_server:
         plugin: "mppi::OmniMotionModel"
 ```
 
-- Every MPPI file in `config/nav2/` sets `motion_model: "Omni"` without this
-  key. The Gazebo, real robot, mapping, and loopback launches use these
-  files, so all of them fail until the files are fixed.
-- The files are in the `navigation` submodule, so the fix is a commit in the
-  `navigation` repository (see
-  [Project Structure](../reference/project-structure.md#git-submodules)).
-- `nav_mujoco_omnibot.launch.py` works without the fix. It adds the key to a
-  temporary copy of the file with `nav2_common`'s `RewrittenYaml`.
+- Every MPPI file in `config/nav2/` sets this key since
+  [5. Repair Nav2 After the navigation2 Bump](../migrations/05-nav2-repair.md).
+- Any custom MPPI parameter file needs it too, for example one passed with
+  `nav2_config:=` or `params_file:=`, or one written for the Jazzy release of
+  Nav2. The launch files do not add it.
 
 ??? info "Why the Omni motion model needs a plugin key"
-    The `navigation` submodule moved its Nav2 fork to upstream `main` on
+    The `navigation` submodule moved navigation2 to upstream `main` on
     2026-10-08 (`navigation` commit `02a697a`). Since upstream PR
     [#6076](https://github.com/ros-navigation/navigation2/pull/6076), MPPI
-    loads its motion models as plugins: `motion_model` names a plugin, and
-    `<name>.plugin` gives its class. The parameter files were written before
-    this change and set only `motion_model`.
+    loads its motion models as plugins: `motion_model` is an instance name,
+    and `<name>.plugin` gives its class. The repository parameter files were
+    written before this change and set only `motion_model` until entry 5.
 
 ### Nav2 bringup hangs at smoother_server/get_state { #nav2-composition-deadlock }
 
@@ -623,11 +1172,12 @@ Waiting for service smoother_server/get_state...
 
 Start Nav2 without composition: pass `use_composition:=False` to
 `nav2_bringup`'s `bringup_launch.py`. Each Nav2 server then runs as its own
-process. `nav_mujoco_omnibot.launch.py` does this.
+process. `localization_Nav2_sim.launch.py` (included by
+`nav_sim_omnibot.launch.py`) and `nav_mujoco_omnibot.launch.py` do this.
 
-- `bringup_launch.py` defaults to `use_composition:=True`.
-  `localization_Nav2_sim.launch.py`, which `nav_sim_omnibot.launch.py`
-  includes, does not set it, so Gazebo can hit this hang.
+- `bringup_launch.py` defaults to `use_composition:=True`. The hang can still
+  happen when you run it directly, or from your own launch file, without the
+  argument.
 - The real robot, mapping, and loopback launches are not affected. They
   include `navigation_launch.py` and `localization_launch.py` instead, which
   default to `use_composition:=False`.
@@ -635,7 +1185,7 @@ process. `nav_mujoco_omnibot.launch.py` does this.
   it does not happen on every start.
 
 ??? info "Why the composed bringup hangs"
-    `bringup_launch.py` of the Nav2 fork starts `nav2_container` as
+    `bringup_launch.py` of the bumped navigation2 starts `nav2_container` as
     `component_container --isolated --executor-type single-threaded`. The
     Jazzy `component_container` ignores both flags. They belong to a newer
     `rclcpp_components`; Jazzy has the separate executables
@@ -652,5 +1202,11 @@ process. `nav_mujoco_omnibot.launch.py` does this.
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | Keepout zones from the Arena appear on another map | Only `map` was changed | Also pass `keepout_mask:=` or `use_keepout_zones:=false` |
-| `/scan` stops on the real robot | One of the two lidars stopped. The merger needs both. | Check both `/front_lidar` and `/back_lidar` |
+| `/scan` stops on the real robot | One lidar stopped publishing, or one lidar has no valid return at all. The merger needs data from both. | Check both `/front_lidar` and `/back_lidar`, and that neither lidar is covered ([Dual 2D lidar](#dual-2d-lidar)) |
 | `/move_robot` returns success but the robot does not move | Nav2 is not running, or the goal failed later | Check the node log and the Nav2 logs |
+| The robot stops or crawls near obstacles, or does not move under Nav2 at all | A collision monitor zone has enough points, possibly from the robot's own parts, or a source has no data | Check the `collision_monitor` log, and `velocity_polygon_stop` and `polygon_slowdown` in RViz ([Troubleshooting: The robot stops or slows near obstacles](../troubleshooting.md#nav2-robot-stops-near-obstacles)) |
+| The robot stays next to an obstacle, and every goal aborts with error 105 | Every direction Nav2 tries is blocked (the robot is boxed in), robot parts or noise are inside a stop polygon, or a source is invalid. The progress checker then aborts `follow_path` with error 105, because the robot moves less than 0.5 m within 8 s. | Check the `collision_monitor` log. Drive out with the joystick or keyboard ([Troubleshooting: Stuck near an obstacle](../troubleshooting.md#nav2-stuck-after-a-stop)). |
+| `controller_server` fails with `create_publisher() called for existing topic name rt/local_costmap/voxel_grid with incompatible type` | Fast DDS and the two `voxel_grid` publishers of the real and restaurant files | Use `rmw_zenoh_cpp` ([Known issues](#known-issues)) |
+| `nav2_loopback.launch.py`: Nav2 never finishes activating | The loopback simulator has no initial pose yet, so it publishes no transforms | Set one with **2D Pose Estimate** or on `/initialpose` ([Test goal logic without physics](#test-goal-logic-without-physics)) |
+| Nav2 nodes stay unconfigured, and the log shows `Waiting on external lifecycle transitions to activate` | A launch file includes `navigation_launch.py` or `localization_launch.py` without starting a lifecycle manager | Start `lifecycle_manager_nav2` as the Walkie launch files do ([Localization and mapping on the real robot](#localization-and-mapping-on-the-real-robot)) |
+| `bt_navigator` rejects goals and logs `"map" passed to lookupTransform argument target_frame does not exist` and `Initial robot pose is not available` (error 9002) | `bt_navigator` has no transform from `map` to `odom` | With AMCL or SLAM Toolbox, check that they publish it: `pixi run ros2 run tf2_ros tf2_echo map odom`. With a `static_transform_publisher` that publishes it once, as in `nav_mujoco_omnibot.launch.py`: start a second publisher. Never add one next to AMCL or SLAM Toolbox. ([Troubleshooting](../troubleshooting.md#nav2-map-frame-does-not-exist)) |

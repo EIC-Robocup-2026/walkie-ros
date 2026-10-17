@@ -3,15 +3,18 @@
 
 Starts robot_state_publisher with the URDF expanded for ros2_control:=mujoco,
 mujoco_ros2_control's ros2_control_node (simulator and controller manager in one
-process), the controller spawners, twist_mux, dual_laser_merger for /scan, the
-walkie_tf server, and RViz. Every node runs on simulated time from /clock.
+process, which also publishes the sensors), the controller spawners, twist_mux,
+dual_laser_merger for /scan, robot_self_filter for the head 3D lidar cloud
+(/unilidar/cloud to /unilidar/cloud/filtered), the walkie_tf server, and RViz.
+Every node runs on simulated time from /clock.
 """
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, Shutdown
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, Shutdown
 from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -27,6 +30,9 @@ def generate_launch_description():
     )
     plugins_yaml = os.path.join(pkg_robot_bringup, "config", "mujoco", "mujoco_plugins.yaml")
     twist_mux_yaml = os.path.join(pkg_robot_bringup, "config", "twist_mux", "twist_mux.yml")
+    unitree_self_filter_yaml = os.path.join(
+        pkg_robot_bringup, "config", "lidar", "unitree_self_filter.yaml"
+    )
 
     mujoco_model = LaunchConfiguration("mujoco_model")
     headless = LaunchConfiguration("headless")
@@ -56,27 +62,29 @@ def generate_launch_description():
 
     # robot_state_publisher.launch.py does not forward mujoco_model or
     # mujoco_headless to xacro, so the URDF is expanded here.
-    robot_description = ParameterValue(
-        Command(
-            [
-                FindExecutable(name="xacro"),
-                " ",
-                robot_xacro,
-                " ros2_control:=mujoco",
-                " mujoco_model:=",
-                mujoco_model,
-                " mujoco_headless:=",
-                headless,
-            ]
-        ),
-        value_type=str,
+    robot_description_content = Command(
+        [
+            FindExecutable(name="xacro"),
+            " ",
+            robot_xacro,
+            " ros2_control:=mujoco",
+            " mujoco_model:=",
+            mujoco_model,
+            " mujoco_headless:=",
+            headless,
+        ]
     )
 
     robot_state_publisher = Node(
         package="robot_state_publisher",
         executable="robot_state_publisher",
         output="screen",
-        parameters=[{"robot_description": robot_description, "use_sim_time": True}],
+        parameters=[
+            {
+                "robot_description": ParameterValue(robot_description_content, value_type=str),
+                "use_sim_time": True,
+            }
+        ],
     )
 
     # Simulator and controller manager. It reads the URDF from /robot_description
@@ -131,9 +139,10 @@ def generate_launch_description():
         remappings=[("/cmd_vel_out", "/omni_wheel_drive_controller/cmd_vel")],
     )
 
-    # Same merger parameters as the real robot (dual_lidar_hokuyo_lakibeam.launch.py).
-    # The merger publishes only when both lidars report at least one hit, so the
-    # empty default scene produces no /scan.
+    # Same merger parameters as the real robot (dual_lidar_hokuyo_lakibeam.launch.py),
+    # plus publish_on_empty_cloud: in the empty default scene neither lidar has a
+    # return in range, and without /scan Nav2's collision_monitor stops the robot.
+    # The real robot keeps the default (no scan when a lidar has no valid return).
     dual_laser_merger = Node(
         package="dual_laser_merger",
         executable="dual_laser_merger_node",
@@ -167,9 +176,30 @@ def generate_launch_description():
                 "allowed_radius": 0.45,
                 "enable_shadow_filter": False,
                 "enable_average_filter": False,
+                "publish_on_empty_cloud": True,
             }
         ],
         remappings=[("/merged_lidar", "/scan")],
+    )
+
+    # The head 3D lidar cloud (/unilidar/cloud, published by mujoco_ros2_control)
+    # hits the robot itself. Same self-filter as the real robot (real_omnibot.launch.py).
+    unitree_self_filter = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(
+                get_package_share_directory("robot_self_filter"),
+                "launch",
+                "self_filter.launch.py",
+            )
+        ),
+        launch_arguments={
+            "robot_description": robot_description_content,
+            "filter_config": unitree_self_filter_yaml,
+            "in_pointcloud_topic": "/unilidar/cloud",
+            "out_pointcloud_topic": "/unilidar/cloud/filtered",
+            "lidar_sensor_type": "0",
+            "use_sim_time": "true",
+        }.items(),
     )
 
     walkie_tf_server = Node(
@@ -202,6 +232,7 @@ def generate_launch_description():
     ld.add_action(upper_body_controllers_spawner)
     ld.add_action(twist_mux)
     ld.add_action(dual_laser_merger)
+    ld.add_action(unitree_self_filter)
     ld.add_action(walkie_tf_server)
     ld.add_action(rviz)
 

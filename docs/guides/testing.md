@@ -268,6 +268,11 @@ short physics simulation.
 The file uses `pytest.importorskip('mujoco')`. Outside the pixi environment,
 where `mujoco` is not installed, the whole file is skipped instead of failing.
 
+A `mujoco` without the `mujoco_3d_lidar` extension (`ros-jazzy-mujoco-3d-lidar`),
+for example one from `pip`, is not skipped: every test that loads `walkie.xml`
+fails with `plugin mujoco.plugin.lidar not found`. Run `pixi install` and use
+the pixi environment.
+
 ??? info "All tests in test_mjcf.py"
     | Test | Checks |
     | --- | --- |
@@ -281,6 +286,9 @@ where `mujoco` is not installed, the whole file is skipped instead of failing.
     | `test_lidar_beam_layout[front_lidar/back_lidar]` | Beam count, angles, and update rate match the URDF and the `walkie.xml` header |
     | `test_lidar_sees_nothing_in_empty_scene[front_lidar/back_lidar]` | No beam hits the robot or the floor |
     | `test_lidar_ranges_to_wall` | Readings match the distance to a wall 1 m in front of the robot |
+    | `test_lidar_3d_layout` | The head 3D lidar `unitree_l2` is one extension sensor on the site `unitree4d_l2_imu_initial` with 180 x 32 readings. Its plugin config and the `walkie.xml` header match the generator, and its rays cover the hemisphere z ≥ 0 of the site. |
+    | `test_lidar_3d_sees_floor` | Empty scene: every hit is within range and no farther than the floor along its ray. More than 60 % of the rays end on the floor. Every hit on the robot lies inside the self-filter box of `unitree_self_filter.yaml`. |
+    | `test_lidar_3d_ranges_to_box` | Readings match the distance to a box 1.5 m to the left of the robot |
     | `test_ros2_control_contract` | MuJoCo actuators and the ros2_control joints match one to one. Mimic joints become equality constraints. The IMU sensors exist. |
     | `test_home_keyframe_matches_initial_positions` | The `home` keyframe uses the `initial_value` positions from the ros2_control block |
     | `test_cameras_at_optical_frames` | Each MuJoCo camera sits at its ROS optical frame and has the same horizontal field of view as the Gazebo sensor |

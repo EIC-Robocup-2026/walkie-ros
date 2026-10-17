@@ -437,27 +437,261 @@ Set the same `ROS_DOMAIN_ID` everywhere. The team uses domain 23. See
 
 ## Nav2 and launch files
 
-These problems come from the Nav2 fork in `navigation/navigation2/` and hit
-more than one launch file.
+The first three problems below come from navigation2 (upstream main) in
+`navigation/navigation2/`. The Walkie launch and parameter files avoid them
+since [5. Repair Nav2 After the navigation2 Bump](migrations/05-nav2-repair.md).
+They still hit a custom parameter file, a launch file of your own, or
+`nav2_bringup` started directly.
 
 ### Nav2 stops with Failed to load motion model plugin 'Omni' { #nav2-fails-to-load-the-omni-motion-model }
 
 `controller_server` fails to configure, Nav2 stops during bringup, and the log
 shows `Can not get 'plugin' param value for FollowPath.Omni` and
-`Failed to load motion model plugin 'Omni'`. Every Nav2 launch except
-`nav_mujoco_omnibot.launch.py` stops this way.
+`Failed to load motion model plugin 'Omni'`. The MPPI parameter file sets
+`motion_model: "Omni"` without a plugin key. The files in `robot_navigation`
+set it, but a custom or older file may not.
 
 Add `Omni: plugin: "mppi::OmniMotionModel"` under `FollowPath` in the MPPI
 parameter file. See
 [Navigation: controller_server cannot load the Omni motion model](guides/navigation.md#mppi-omni-motion-model-plugin).
 
+### Nav2 nodes stay unconfigured { #nav2-nodes-stay-unconfigured }
+
+Every Nav2 node logs `Waiting on external lifecycle transitions to activate`,
+and nothing follows. No lifecycle manager runs. `nav2_bringup`'s
+`navigation_launch.py` and `localization_launch.py` no longer start one; only
+its `bringup_launch.py` does.
+
+Start Nav2 with `bringup_launch.py`, or start a lifecycle manager next to the
+included files, as `localization_Nav2_real.launch.py`,
+`mapping_Nav2_real.launch.py`, and `nav2_loopback.launch.py` do. Name it
+`lifecycle_manager_nav2`: the RViz Nav2 panel talks to that name.
+
+The Walkie launch files start `lifecycle_manager_nav2` themselves; see
+[Navigation: Localization and mapping on the real robot](guides/navigation.md#localization-and-mapping-on-the-real-robot).
+
 ### Nav2 waits forever for smoother_server/get_state { #nav2-waits-for-smoother-server }
 
 Nav2 never becomes active, and the log repeats
-`Waiting for service smoother_server/get_state...`.
+`Waiting for service smoother_server/get_state...`. The Walkie launch files
+avoid this. It happens when you run `nav2_bringup`'s `bringup_launch.py`
+directly, with its default `use_composition:=True`.
 
-Pass `use_composition:=False` to `nav2_bringup`'s `bringup_launch.py`. See
+Pass `use_composition:=False` to `bringup_launch.py`. See
 [Navigation: Nav2 bringup hangs at smoother_server/get_state](guides/navigation.md#nav2-composition-deadlock).
+
+### The robot stops or slows near obstacles under Nav2 { #nav2-robot-stops-near-obstacles }
+
+Under Nav2, the robot stops at obstacles, crawls through narrow passages, or
+does not move at all, while joystick driving works. Nav2
+commands pass the collision monitor before `twist_mux`; joystick and keyboard
+commands do not (see
+[Navigation: Velocity command path](guides/navigation.md#velocity-command-path)).
+
+Find the cause in the `collision_monitor` log. It logs a line each time its
+action changes:
+
+| Log line | Cause |
+| --- | --- |
+| `Robot to stop due to VelocityPolygonStop polygon` | 4 or more points in the stop polygon of the commanded direction: the footprint faces that lead in that direction, up to 0.35 m from the base center, or the rotation polygon when the robot turns in place or stands still. The line does not name the direction. `/scan` has no points closer than 0.30 m to the base center; on the real robot, the 3D lidar cloud has no such limit. |
+| `Robot to slowdown for 40.000000 percents due to PolygonSlow polygon` | 4 or more points within 0.55 m |
+| `Robot to approach for 2.000000 seconds away from collision` | At the commanded speed, the footprint would reach 6 or more points within 2 s, so the monitor slows the robot |
+| `Robot to stop due to invalid source` | A source had no new data for 2 s, or its frame cannot be transformed to `base_footprint`. The causes are listed below. |
+
+The invalid-source stop blocks every Nav2 command. Its causes:
+
+- A lidar topic is not published. The merger needs both `/front_lidar` and
+  `/back_lidar`; without one of them, there is no `/scan`.
+- On the real robot, a lidar has no valid return at all: it is covered, it is
+  faulty, or nothing is within its range in any direction. The merger then
+  drops the scan, because the real robot keeps its default
+  `publish_on_empty_cloud: false`. MuJoCo sets it to `true`, so the empty
+  MuJoCo world still has `/scan`.
+- On the real robot with `use_unitree_lidar:=false`, the `pointcloud` source
+  (`/unilidar/cloud/filtered`) has no data.
+- A TF failure: the source frame cannot be transformed to `base_footprint`.
+  The log then also shows `Failed to get "..."->"..." frame transform`,
+  followed by the TF error.
+
+More checks:
+
+- In RViz, add `Polygon` displays for `/velocity_polygon_stop` and
+  `/polygon_slowdown` to see the zones, and a `MarkerArray` display for
+  `/collision_monitor/collision_points_marker` to see the points the monitor
+  checks. `/velocity_polygon_stop` shows only the stop polygon of the current
+  command, and stays empty until the first Nav2 command arrives.
+  `bringup/config/rviz/default.rviz`, which `real_omnibot.launch.py` opens,
+  already has both polygon displays.
+- If the stop line appears with no obstacle nearby, a source sees parts of
+  the robot, or noise, inside a stop polygon. Check where those points lie in
+  RViz.
+- In Gazebo, the stop polygons and the slow-down circle never trigger: the
+  simulated lidar's minimum range is 0.6 m. See
+  [Gazebo Simulation: Run Gazebo with Nav2](guides/simulation-gazebo.md#gazebo-with-nav2).
+
+The zones, the sources, and all settings are in
+[Navigation: Collision monitor](guides/navigation.md#collision-monitor).
+
+??? info "Switch the polygons off to test them"
+    To test whether a polygon stops the robot, switch the polygons off and on
+    again:
+
+    ```bash
+    pixi run ros2 service call /collision_monitor/toggle nav2_msgs/srv/Toggle "{enable: false}"
+    pixi run ros2 service call /collision_monitor/toggle nav2_msgs/srv/Toggle "{enable: true}"
+    ```
+
+    While the polygons are off, nothing stops the robot before an obstacle.
+    The switch does not affect the invalid-source stop.
+
+### The robot stays stuck near an obstacle, and goals abort with error 105 { #nav2-stuck-after-a-stop }
+
+The robot does not move under Nav2 near an obstacle, and goals abort with
+error 105 (`Failed to make progress`). After a normal collision monitor stop,
+Nav2 can drive the robot away: the monitor blocks only commands toward the
+obstacle. If the robot stays stuck, or a goal reports 105, check these causes:
+
+- **Boxed in.** Obstacles lie in the stop polygon of every direction Nav2
+  tries. The behavior tree has no back-up recovery, so Nav2 does not reverse
+  out by itself; it relies on MPPI choosing a free direction.
+- **Robot parts or noise.** A source sees 4 or more points of the robot, or
+  noise, inside a direction's stop polygon or the rotation polygon. The
+  monitor then blocks every command that selects that polygon.
+- **Invalid source.** The log shows `Robot to stop due to invalid source`.
+  See [The robot stops or slows near obstacles under Nav2](#nav2-robot-stops-near-obstacles).
+- **Progress checker.** `controller_server` aborts `follow_path` with 105
+  when the robot moves less than 0.5 m within 8 s. An occasional 105 near the
+  goal, during the slow final approach, is expected: the behavior tree
+  retries, and the goal is reached.
+
+To get the robot moving:
+
+1. Check the `collision_monitor` log and the RViz displays listed in
+   [The robot stops or slows near obstacles under Nav2](#nav2-robot-stops-near-obstacles).
+2. Drive the robot away with the joystick or keyboard. `twist_mux` gives them
+   priority 100, and their commands do not pass the collision monitor.
+3. Send the goal again.
+
+??? info "Why Nav2 can drive away after a stop"
+    The stop polygon is chosen from the direction of the commanded velocity.
+    A command that drives away from an obstacle selects a polygon that does
+    not contain it, so the command passes. In a MuJoCo test on 2026-10-14,
+    the robot stopped 0.045 m before a wall, and a Nav2 goal from there
+    succeeded. Before, a fixed 0.35 m stop circle zeroed every Nav2 command
+    while it held points, including commands that drive away, and the goals
+    after a stop aborted with error 105. See
+    [Navigation: Collision monitor](guides/navigation.md#collision-monitor).
+
+### controller_server fails with an incompatible type for voxel_grid { #nav2-voxel-grid-incompatible-type }
+
+`localization_Nav2_real.launch.py` or `mapping_Nav2_real.launch.py` does not
+become active, and `controller_server` cannot configure:
+
+```text
+Failed to initialize costmap plugin stvl_layer! could not create publisher: create_publisher() called for existing topic name rt/local_costmap/voxel_grid with incompatible type
+```
+
+Run on `rmw_zenoh_cpp`, the team middleware. Start a router and export
+`RMW_IMPLEMENTATION` in every terminal (see
+[Nodes cannot see each other](#nodes-cannot-see-each-other)).
+
+??? info "Why only Fast DDS fails"
+    The message comes from Fast DDS (`rmw_fastrtps_cpp`), the default when
+    `RMW_IMPLEMENTATION` is not set. In `nav2_mppi_walkie_real_param.yaml` and
+    `nav2_mppi_walkie_real_restaurant_param.yaml`, two local costmap layers
+    publish `voxel_grid` from the same node with different message types.
+    Fast DDS rejects that; `rmw_zenoh_cpp` does not. The parameter files are
+    not fixed yet. See
+    [Navigation: Known issues](guides/navigation.md#known-issues).
+
+### Nav2 never activates in nav2_loopback.launch.py { #nav2-loopback-never-activates }
+
+After `nav2_loopback.launch.py` starts, `lifecycle_manager_nav2` never reports
+that the managed nodes are active, and `local_costmap` waits for the transform
+from `odom` to `base_footprint`.
+
+Set an initial pose with the **2D Pose Estimate** tool in RViz, or publish
+one:
+
+```bash
+pixi run ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped \
+  "{header: {frame_id: map}, pose: {pose: {orientation: {w: 1.0}}}}"
+```
+
+??? info "Why the loopback simulator waits for an initial pose"
+    `nav2_loopback_sim` publishes the `map` to `odom` to `base_footprint`
+    transforms only after it receives an initial pose. This is upstream
+    behavior. See
+    [Navigation: Test goal logic without physics](guides/navigation.md#test-goal-logic-without-physics).
+
+### bt_navigator says "map" does not exist, and goals fail with error 9002 { #nav2-map-frame-does-not-exist }
+
+`bt_navigator` rejects `NavigateToPose` goals, and its log shows:
+
+```text
+Failed to get transform: "map" passed to lookupTransform argument target_frame does not exist.
+Setting internal error error_code:9002, error_msg:Initial robot pose is not available.
+```
+
+`bt_navigator` has no transform from `map` to `odom`, so it cannot place the
+robot in the map. Other nodes can still have it: the costmaps work, and a new
+`pixi run ros2 run tf2_ros tf2_echo map base_footprint` prints the transform.
+
+If the launch file publishes `map` to `odom` once with
+`static_transform_publisher`, as `nav_mujoco_omnibot.launch.py` does, start a
+second publisher. Running nodes receive its transform:
+
+```bash
+pixi run ros2 run tf2_ros static_transform_publisher --frame-id map --child-frame-id odom \
+  --ros-args -r __node:=map_to_odom_2
+```
+
+Never start one next to AMCL or SLAM Toolbox: they publish `map` to `odom`
+themselves, and a second source overrides the localization.
+
+!!! warning "A later goal can report the old error 9002"
+    After such a rejection, the next `NavigateToPose` goal that `bt_navigator`
+    accepts carries error 9002 in its result, even when it succeeds. Judge a
+    goal by its status. In an accepted goal, an `error_code` of 9002 can be left
+    over.
+
+??? info "Why a later goal reports the old error"
+    - This is upstream navigation2 behavior. A goal rejected in `handle_goal`
+      never reaches `executeCallback`, which clears the error after each goal
+      it runs
+      (`navigation/navigation2/nav2_behavior_tree/include/nav2_behavior_tree/bt_action_server_impl.hpp`).
+    - Each action keeps its own error. A `NavigateThroughPoses` goal in
+      between does not clear it, and a rejected `NavigateThroughPoses` goal
+      leaves its error, 9102, in the same way.
+    - On 2026-10-15, a goal ended `SUCCEEDED` with `error_code` 9002 from a
+      goal rejected 12 minutes earlier.
+
+??? info "Why a node can miss a transform that is published once"
+    - `static_transform_publisher` publishes on `/tf_static` once. A node that
+      subscribes later gets the copy the middleware stores for late
+      subscribers (transient local durability).
+    - `bt_navigator` creates its TF listener when the lifecycle manager
+      configures it, after `static_transform_publisher` has sent its one
+      message, so it depends on that stored copy.
+    - On 2026-10-15, with `rmw_zenoh_cpp` and a `static_transform_publisher`
+      for `map` to `odom`, `bt_navigator` had no `map` frame 4 minutes after
+      the start, while the costmaps had it. 12 minutes later it had the frame.
+      The ROS logs show no other `map` to `odom` publisher in between, so it is
+      not known why the frame was missing or how it arrived.
+    - Tests did not reproduce it. 90 late subscribers under `rmw_zenoh_cpp`
+      0.2.11 and 90 under `rmw_fastrtps_cpp`, 16 processes started at once,
+      all got the stored copy within 0.26 s. In 8 headless runs of
+      `nav_mujoco_omnibot.launch.py` under `rmw_zenoh_cpp` on 2026-10-16,
+      `bt_navigator` accepted and completed a goal every time, and a client
+      that created its TF listener 15 s before, together with, or 50 s after
+      the launch always had the `map` frame.
+    - Publishing the transform again every second would not depend on the
+      stored copy. The launch file does not do that, because the failure was
+      seen only once.
+    - On the real robot, AMCL publishes `map` to `odom` on `/tf` continuously,
+      so this case does not apply there. `robot_state_publisher` publishes the
+      fixed robot frames once, in the same way; no node has been seen missing
+      them.
 
 ## Tests
 

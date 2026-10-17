@@ -709,6 +709,7 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-moveit-ros-warehouse-2.12.4-hb0f4dca_21.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-moveit-setup-assistant-2.12.4-hb0f4dca_21.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-moveit-simple-controller-manager-2.12.4-hb0f4dca_21.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-mujoco-3d-lidar-0.1.2-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-mujoco-ros2-control-0.1.2-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-nav-msgs-5.3.8-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-nav2-minimal-tb3-sim-1.0.1-hb0f4dca_25.conda
@@ -963,6 +964,7 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-setup-framework-2.12.4-np2py312h4bd2163_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-setup-srdf-plugins-2.12.4-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-simple-controller-manager-2.12.4-np2py312h1bab3cf_25.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-mujoco-3d-lidar-0.1.2-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-mujoco-ros2-control-0.1.2-np2py312hd1a05b5_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-mujoco-ros2-control-msgs-0.1.2-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-mujoco-ros2-control-plugins-0.1.2-np2py312h1bab3cf_25.conda
@@ -12159,6 +12161,14 @@ packages:
   run_exports: {}
   size: 2131
   timestamp: 1788271772448
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-mujoco-3d-lidar-0.1.2-hb0f4dca_25.conda
+  sha256: 4f5527c570f328ac532e34c71c99074743719d6d928a34ec32f5f5c510573389
+  md5: 0e2b883634ba6d369d8cb805a6370556
+  depends:
+  - ros2-mujoco-3d-lidar ==0.1.2
+  run_exports: {}
+  size: 2046
+  timestamp: 1791429574865
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-mujoco-ros2-control-0.1.2-hb0f4dca_25.conda
   sha256: b0beaa7d95249010a2daaa71e600f66e888f1119ec6d071baf6e8cc951b1ba94
   md5: d7849fe3566cc100a43dec35ec01c11e
@@ -17100,6 +17110,24 @@ packages:
   run_exports: {}
   size: 204468
   timestamp: 1791445476971
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-mujoco-3d-lidar-0.1.2-np2py312h1bab3cf_25.conda
+  sha256: e5bedb2c2f16dc053b101396713517bb473b4bb922a7a23904f6377ef0ce659a
+  md5: e2c8eb9d995a1993f0328f1ed5140767
+  depends:
+  - python
+  - ros2-distro-mutex 0.19.* jazzy_*
+  - ros2-mujoco-vendor
+  - ros2-ros-workspace
+  - libstdcxx >=15
+  - libgcc >=15
+  - __glibc >=2.28,<3.0.a0
+  - ros2-distro-mutex >=0.19.0,<0.20.0a0
+  - python_abi 3.12.* *_cp312
+  - numpy >=1.25,<3
+  license: Apache-2.0
+  run_exports: {}
+  size: 48001
+  timestamp: 1791429317227
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-mujoco-ros2-control-0.1.2-np2py312hd1a05b5_25.conda
   sha256: 69cdd7160f3a8249062be11fd924744f7d054024a5c34f615e2cf407c021d728
   md5: 9dec2b9553a5322b1ffc9b679252e1cb

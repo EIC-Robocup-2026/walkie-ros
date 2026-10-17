@@ -2,6 +2,7 @@
 #ifndef FILTERS_SELF_SEE_H_
 #define FILTERS_SELF_SEE_H_
 
+#include <cmath>
 #include <memory>
 #include <string>
 #include <vector>
@@ -196,6 +197,12 @@ protected:
 
     for (size_t i = 0; i < data_in.points.size(); ++i)
     {
+      // An unorganized output drops points without a return (non-finite coordinates, such as
+      // the NaN that marks a missed ray in an organized cloud), so it is dense.
+      const PointT &pt = data_in.points[i];
+      if (!keep_organized_ && !(std::isfinite(pt.x) && std::isfinite(pt.y) && std::isfinite(pt.z)))
+        continue;
+
       bool outside = (keep[i] == robot_self_filter::OUTSIDE);
       if (outside && !invert_)
       {
@@ -215,11 +222,13 @@ protected:
     {
       data_out.width  = data_in.width;
       data_out.height = data_in.height;
+      data_out.is_dense = false;
     }
     else
     {
       data_out.width  = static_cast<uint32_t>(data_out.points.size());
       data_out.height = 1;
+      data_out.is_dense = true;
     }
   }
 

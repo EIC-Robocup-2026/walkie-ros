@@ -29,12 +29,14 @@
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>dual_laser_merger</exec_depend>
+  <exec_depend>robot_self_filter</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>nav2_rviz_plugins</exec_depend>
   <exec_depend>robot_navigation</exec_depend>
-  <!-- mujoco_omnibot.launch.py also needs mujoco_ros2_control, which the pixi
-       environment provides. It is not declared so that rosdep does not install
-       MuJoCo into the physical Docker image. -->
+  <!-- mujoco_omnibot.launch.py also needs mujoco_ros2_control and the MuJoCo
+       extension mujoco_3d_lidar (head 3D lidar), which the pixi environment
+       provides. They are not declared so that rosdep does not install MuJoCo
+       into the physical Docker image. -->
   <export>
     <build_type>ament_cmake</build_type>
   </export>

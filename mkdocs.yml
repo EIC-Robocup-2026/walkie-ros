@@ -100,6 +100,8 @@ nav:
           - 2.5 ros2_control: migrations/02-mujoco/05-ros2-control.md
           - 2.6 Tests: migrations/02-mujoco/06-tests.md
           - 2.7 Launch Files and Nav2: migrations/02-mujoco/07-launch.md
+          - 2.8 Head 3D Lidar: migrations/02-mujoco/08-3d-lidar.md
       - 3. Add the Documentation Site: migrations/03-documentation.md
       - 4. Move to RoboStack Build Set _25: migrations/04-robostack-build-25.md
+      - 5. Repair Nav2 After the navigation2 Bump: migrations/05-nav2-repair.md
   - Troubleshooting: troubleshooting.md

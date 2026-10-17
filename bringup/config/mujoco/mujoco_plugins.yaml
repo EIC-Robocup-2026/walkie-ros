@@ -25,9 +25,20 @@
           info_topic: /bottom_camera/camera_info
           image_topic: /bottom_camera/image_raw
           depth_topic: /bottom_camera/depth/image_raw
-      # RangefinderLidarPlugin is deprecated upstream in favor of Mujoco3dLidarPlugin,
-      # which needs the mujoco_3d_lidar MuJoCo extension (not in the pixi environment).
-      # A beam with no hit reads -1.0. The plugin instance must keep this name.
+      # Head 3D lidar (Unitree 4D L2). Publishes every sensor of the MuJoCo extension
+      # mujoco.plugin.lidar (ros-jazzy-mujoco-3d-lidar); the sensor key is the MJCF sensor
+      # name. The cloud is organized (180 x 32 rays, xyz only, NaN where nothing is hit) and
+      # stamped with the real driver's frame; it includes points on the robot, which
+      # robot_self_filter removes (/unilidar/cloud/filtered). Rate: update_rate in walkie.xml.
+      mujoco_3d_lidar_plugin:
+        type: "mujoco_ros2_control_plugins/Mujoco3dLidarPlugin"
+        unitree_l2:
+          frame_name: unitree4d_l2_imu_initial
+          topic: /unilidar/cloud
+      # The 2D lidars stay on RangefinderLidarPlugin, which upstream deprecates in favor of
+      # Mujoco3dLidarPlugin: the extension cannot exclude the robot's own geoms, so the 2D
+      # beams would hit the base around them. A beam with no hit reads -1.0. The plugin
+      # instance must keep this name.
       rangefinder_lidar_plugin:
         type: "mujoco_ros2_control_plugins/RangefinderLidarPlugin"
         lidar_publish_rate: 40.0
