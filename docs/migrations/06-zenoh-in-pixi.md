@@ -126,6 +126,17 @@ For the runs without a router, the test processes connected to an unused
 port, through a scratch copy of the default session config. The router of
 the computer kept running.
 
+## Commits
+
+| Repository | Commit | Subject |
+| --- | --- | --- |
+| walkie-ros | `446ad49` | fix: select Zenoh in every pixi command and start a router in CI |
+| walkie-agent-ros | `a7e1953` | feat: use rmw_zenoh_cpp in every pixi environment |
+| walkie-database | `31b2aa1` | feat: use rmw_zenoh_cpp in every pixi environment |
+
+walkie-agent-ros and walkie-database made the same change on the same day,
+so all three repositories select Zenoh in every Pixi environment.
+
 ## Still open
 
 - The **Start the Zenoh router** step and the split **Test** step have not
