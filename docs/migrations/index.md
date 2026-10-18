@@ -15,6 +15,7 @@ as a capsule-shaped wheel or a version pin, usually has a reason recorded here.
 | [3. Add the Documentation Site](03-documentation.md) | This site: MkDocs Material, built by pixi and published to GitHub Pages |
 | [4. Move to RoboStack Build Set _25](04-robostack-build-25.md) | From RoboStack build set `_21` to `_25`, pinned with `ros2-distro-mutex`. Installs `mujoco_ros2_control` 0.1.2 and `rmw_zenoh_cpp` 0.2.11, and moves OpenCV to 5.0 |
 | [5. Repair Nav2 After the navigation2 Bump](05-nav2-repair.md) | Fixes the Nav2 launches for upstream `navigation2`: MPPI plugin key, lifecycle managers, no composition, loopback and hero configurations. Nav2 commands now pass the velocity smoother and the collision monitor, which stops and slows the robot. The stop is direction-aware, so Nav2 can drive away after a stop. A new `dual_laser_merger` parameter, `publish_on_empty_cloud`, gives `/scan` in the empty MuJoCo world |
+| [6. Select Zenoh in Every Pixi Command](06-zenoh-in-pixi.md) | `pixi.toml` sets `RMW_IMPLEMENTATION=rmw_zenoh_cpp`, so every `pixi run` and `pixi shell` uses Zenoh, and an exported value no longer changes it. CI starts a Zenoh router before the tests |
 
 ## Adding an entry
 

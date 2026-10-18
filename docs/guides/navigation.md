@@ -27,6 +27,11 @@ guide to run navigation in simulation or on the robot, and to send goals.
 
 ## Navigate in simulation { #localization-and-mapping-in-simulation }
 
+Start the Zenoh router first, in its own terminal
+(`pixi run ros2 run rmw_zenoh_cpp rmw_zenohd`). `pixi run` selects Zenoh, and
+without a router the Nav2 nodes cannot find each other. See
+[Middleware (Zenoh)](middleware.md#simulation-on-one-machine).
+
 ### The simulation map
 
 `localization_Nav2_sim.launch.py` and `nav2_loopback.launch.py` default to the

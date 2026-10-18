@@ -237,6 +237,12 @@ scripts = ["install/setup.bash"]
 CUDA_HOME = "/usr/local/cuda"
 PATH = "/usr/local/cuda/bin:$PATH"
 LD_LIBRARY_PATH = "/usr/local/cuda/lib64:$LD_LIBRARY_PATH"
+# Zenoh is the team middleware, so every `pixi run` and `pixi shell` uses it. Nodes
+# still need a Zenoh router: pixi run ros2 run rmw_zenoh_cpp rmw_zenohd. This value
+# replaces one exported in the calling shell. To use another middleware for one
+# command: pixi run env RMW_IMPLEMENTATION=rmw_fastrtps_cpp <command>.
+# See docs/guides/middleware.md.
+RMW_IMPLEMENTATION = "rmw_zenoh_cpp"
 
 # Documentation site (MkDocs Material). The docs environment excludes the default
 # feature, so it installs without ROS: pixi run docs / pixi run docs-build.
@@ -248,6 +254,12 @@ mkdocs = ">=1.6,<2"
 [feature.docs.tasks]
 docs = {cmd = "mkdocs serve", description = "Preview the documentation site at http://127.0.0.1:8000"}
 docs-build = {cmd = "mkdocs build --strict", description = "Build the documentation site into site/, failing on any warning"}
+
+# The docs environment leaves out the default feature, and with it the
+# [activation.env] above. It has no ROS, but sets the same middleware so that
+# every environment agrees, as in walkie-agent-ros and walkie-database.
+[feature.docs.activation.env]
+RMW_IMPLEMENTATION = "rmw_zenoh_cpp"
 
 [environments]
 docs = {features = ["docs"], no-default-feature = true}

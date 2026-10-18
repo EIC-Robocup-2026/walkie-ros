@@ -100,9 +100,8 @@ differently from the same launch command run with `pixi run`.
 Run the launch command directly. For example, instead of `sim_nav_gazebo.sh`:
 
 ```bash
-pixi run ros2 run rmw_zenoh_cpp rmw_zenohd          # terminal 1
-export RMW_IMPLEMENTATION=rmw_zenoh_cpp             # terminal 2
-pixi run ros2 launch robot_bringup nav_sim_omnibot.launch.py
+pixi run ros2 run rmw_zenoh_cpp rmw_zenohd                     # terminal 1
+pixi run ros2 launch robot_bringup nav_sim_omnibot.launch.py   # terminal 2
 ```
 
 ??? info "Why some scripts mix the two installations"
@@ -418,11 +417,11 @@ environment. See [Changing the build set](guides/pixi.md#changing-the-build-set)
 `pixi run ros2 topic list` in one terminal does not show topics from a node in
 another terminal, or from the robot.
 
-Start one router, and use the same settings in every terminal:
+Start one router in its own terminal, and run every ROS command with
+`pixi run`, which selects Zenoh:
 
 ```bash
-pixi run ros2 run rmw_zenoh_cpp rmw_zenohd   # in its own terminal
-export RMW_IMPLEMENTATION=rmw_zenoh_cpp      # in every other terminal
+pixi run ros2 run rmw_zenoh_cpp rmw_zenohd
 ```
 
 Set the same `ROS_DOMAIN_ID` everywhere. The team uses domain 23. See
@@ -432,7 +431,7 @@ Set the same `ROS_DOMAIN_ID` everywhere. The team uses domain 23. See
     | Cause | How to recognize it |
     | --- | --- |
     | No Zenoh router is running | A node using Zenoh prints ``Unable to connect to a Zenoh router. Have you started a router with `ros2 run rmw_zenoh_cpp rmw_zenohd`?`` |
-    | `RMW_IMPLEMENTATION` is not set in one terminal | pixi does not set it. Without it, ROS 2 Jazzy uses its default DDS middleware (`rmw_fastrtps_cpp`), which cannot talk to Zenoh nodes |
+    | One process does not use Zenoh | It ran outside pixi, or with a DDS override such as `pixi run env RMW_IMPLEMENTATION=rmw_fastrtps_cpp`. Without `RMW_IMPLEMENTATION`, ROS 2 Jazzy uses its default DDS middleware (`rmw_fastrtps_cpp`), which cannot talk to Zenoh nodes. Check the process itself: a new `pixi run printenv RMW_IMPLEMENTATION` always prints `rmw_zenoh_cpp`. Find the process ID with `pgrep -af <node name>`, then run `grep -az '^RMW_IMPLEMENTATION=' /proc/<pid>/environ`. No output, or a DDS value, means that the process does not use Zenoh. |
     | Different `ROS_DOMAIN_ID` values | The team uses domain 23. `scripts/bringup/connect_walkie_zenoh_router.sh` sets it only for its own router process; an unset variable means domain 0 |
 
 ## Nav2 and launch files
@@ -591,8 +590,8 @@ become active, and `controller_server` cannot configure:
 Failed to initialize costmap plugin stvl_layer! could not create publisher: create_publisher() called for existing topic name rt/local_costmap/voxel_grid with incompatible type
 ```
 
-Run on `rmw_zenoh_cpp`, the team middleware. Start a router and export
-`RMW_IMPLEMENTATION` in every terminal (see
+Run on `rmw_zenoh_cpp`, the team middleware: start a router, and start the
+launch file with `pixi run`, which selects Zenoh (see
 [Nodes cannot see each other](#nodes-cannot-see-each-other)).
 
 ??? info "Why only Fast DDS fails"

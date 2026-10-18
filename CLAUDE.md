@@ -26,8 +26,7 @@ Add dependencies with `pixi add ros-jazzy-<name>` and commit `pixi.toml` and `pi
 ## Running
 
 ```bash
-export RMW_IMPLEMENTATION=rmw_zenoh_cpp            # every shell that runs nodes
-pixi run ros2 run rmw_zenoh_cpp rmw_zenohd          # one Zenoh router per machine
+pixi run ros2 run rmw_zenoh_cpp rmw_zenohd          # one Zenoh router per machine; pixi sets RMW_IMPLEMENTATION=rmw_zenoh_cpp
 
 pixi run ros2 launch robot_simulation gzsim_omnibot.launch.py     # Gazebo
 pixi run ros2 launch robot_bringup nav_sim_omnibot.launch.py      # Gazebo + Nav2
@@ -87,11 +86,11 @@ New pages must be added to `nav` in `mkdocs.yml`. Admonition bodies are indented
 
 **Lift homing**: `bringup/scripts/lift_homing_node.py` homes against the upper hard stop (current spike), then shapes commands with a software trapezoidal trajectory. `lift_homing_mock_node.py` provides the topics without CAN but not the `follow_joint_trajectory` action.
 
-**Middleware**: `rmw_zenoh_cpp`. Team router config: `scripts/bringup/WALKIE_RMW_ZENOH_ROUTER_CONFIG.json5`, started by `scripts/bringup/connect_walkie_zenoh_router.sh`.
+**Middleware**: `rmw_zenoh_cpp`. `pixi.toml` sets `RMW_IMPLEMENTATION=rmw_zenoh_cpp` in `[activation.env]`, so every `pixi run` and `pixi shell` uses Zenoh and replaces a value exported in the calling shell; override one command with `pixi run env RMW_IMPLEMENTATION=rmw_fastrtps_cpp <cmd>`. Nodes in separate processes need a running `rmw_zenohd` to discover each other. Team router config: `scripts/bringup/WALKIE_RMW_ZENOH_ROUTER_CONFIG.json5`, started by `scripts/bringup/connect_walkie_zenoh_router.sh`.
 
 **Submodules**: `description/` and `navigation/` (with nested `navigation2` and `map`) use SSH URLs. Clone with `--recurse-submodules`, then `git submodule foreach --recursive git lfs pull`.
 
-**CI**: `.github/workflows/ci.yml` runs on pushes to `main` and on every pull request. It checks out all submodules with their LFS files, installs the pixi environment from `pixi.lock` (`--locked`), builds the whole workspace including Nav2 (ccache, `BUILD_TESTING=OFF` except for the tested packages), and runs the tests of `walkie_description`, `openarm_bimanual_moveit_config` and `topic_based_ros2_control` without their lint tests. Lint tests of the first-party packages run but do not fail the job. `.github/workflows/docs.yml` publishes the docs site from `main`. CI no longer builds the Docker images in `docker/`. See `docs/guides/testing.md#ci`.
+**CI**: `.github/workflows/ci.yml` runs on pushes to `main` and on every pull request. It checks out all submodules with their LFS files, installs the pixi environment from `pixi.lock` (`--locked`), builds the whole workspace including Nav2 (ccache, `BUILD_TESTING=OFF` except for the tested packages), starts a Zenoh router with the default config (the `topic_based_ros2_control` launch test needs it), and runs the tests of `walkie_description`, `openarm_bimanual_moveit_config` and `topic_based_ros2_control` without their lint tests. The gtest `topic_based_system_test` runs on Fast DDS, because it never calls `rclcpp::shutdown()` and aborts at exit under Zenoh. Lint tests of the first-party packages run but do not fail the job. `.github/workflows/docs.yml` publishes the docs site from `main`. CI no longer builds the Docker images in `docker/`. See `docs/guides/testing.md#ci`.
 
 ### Lift homing launch arguments
 

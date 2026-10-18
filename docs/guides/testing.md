@@ -30,6 +30,24 @@ option works after it.
     which needs a real Hokuyo lidar. Use `--packages-select`, or add
     `--packages-skip urg_node2`. See [Known issues](#known-issues).
 
+!!! note "Some tests need a Zenoh router"
+    Pixi sets `RMW_IMPLEMENTATION=rmw_zenoh_cpp`, so nodes in separate
+    processes find each other only through a Zenoh router. A test that starts
+    nodes in more than one process needs one. Two examples, checked on
+    2026-10-19: the launch test of `topic_based_ros2_control`, and the launch
+    test `test_collision_checker` of `nav2_costmap_2d`. Without a router, each
+    one waits until CTest stops it at its timeout (120 s and 60 s). Other
+    `nav2_costmap_2d` integration tests and the tests in `nav2_system_tests`
+    also start several nodes from a launch file. Start the router in another
+    terminal before `pixi run test`:
+
+    ```bash
+    pixi run ros2 run rmw_zenoh_cpp rmw_zenohd
+    ```
+
+    The `walkie_description` and `openarm_bimanual_moveit_config` tests start
+    no nodes and need no router.
+
 !!! note "CI runs the tests of three packages"
     On every pull request and every push to `main`, CI builds the workspace
     and runs the tests of `walkie_description`,
@@ -134,25 +152,53 @@ also start it by hand in the Actions tab of the repository.
 | Checkout | All submodules, recursively, then the Git LFS files inside them (the meshes in `description/`) |
 | pixi | Installs the `default` environment from `pixi.lock` with `--locked`. The job fails if `pixi.toml` and `pixi.lock` disagree. |
 | Build | `colcon build` of the whole workspace, Nav2 included |
-| Test | The tests of `walkie_description`, `openarm_bimanual_moveit_config`, and `topic_based_ros2_control`, without their lint tests. A failure fails the job. |
+| Start the Zenoh router | Starts `rmw_zenohd` with the default config (port 7447) in the background and waits until the port accepts connections. The router runs until the job ends. |
+| Test | The tests of `walkie_description`, `openarm_bimanual_moveit_config`, and `topic_based_ros2_control`, without their lint tests. `topic_based_system_test` runs on Fast DDS, the others on Zenoh (see [Known issues](#known-issues)). A failure fails the job. |
 | Lint (not enforced) | The lint tests of `robot_bringup`, `robot_simulation`, `robot_navigation`, `dual_laser_merger`, and `joy_interface`. A failure is reported, but the job still passes. |
 
-Run the enforced tests the way CI does:
+Run the enforced tests the way CI does. Start a Zenoh router in another
+terminal first (`pixi run ros2 run rmw_zenoh_cpp rmw_zenohd`), because the
+launch test of `topic_based_ros2_control` needs one:
 
 ```bash
 pixi run build
-pixi run test --packages-select walkie_description openarm_bimanual_moveit_config topic_based_ros2_control --ctest-args " -LE" linter
+pixi run test --packages-select walkie_description openarm_bimanual_moveit_config topic_based_ros2_control --ctest-args " -LE" linter " -E" "^topic_based_system_test$"
+pixi run env RMW_IMPLEMENTATION=rmw_fastrtps_cpp colcon test --packages-select topic_based_ros2_control --ctest-args " -R" "^topic_based_system_test$"
 pixi run colcon test-result --verbose
 ```
 
 `-LE linter` tells CTest to skip the tests with the label `linter`, which
-every ament lint test has. colcon passes an argument that starts with `-`
-on to CTest only with a space in front of it, so keep the quotes.
+every ament lint test has. `-E` skips the tests whose name matches, and `-R`
+runs only those. So the second command runs `topic_based_system_test` alone,
+on Fast DDS (see [Known issues](#known-issues)). colcon passes an argument
+that starts with `-` on to CTest only with a space in front of it, so keep
+the quotes.
 
 To see why a run failed, open the failed step in the job log. The Test step
 prints `colcon test-result --verbose`. The run summary shows the test counts
 of both test steps. The artifact `colcon-logs`, kept for 14 days, holds the
-colcon logs (`log/`) and the result files (`build/*/test_results/`).
+colcon logs (`log/`), the router log (`log/rmw_zenohd.log`), and the result
+files (`build/*/test_results/`).
+
+??? info "Why CI starts a Zenoh router"
+    Pixi sets `RMW_IMPLEMENTATION=rmw_zenoh_cpp` for every step that runs
+    with `pixi run`. The launch test `test/ros2_control.test.py` of
+    `topic_based_ros2_control` starts `robot_state_publisher`,
+    `ros2_control_node`, two spawners, and a test node, each in its own
+    process. Without a router they cannot find each other:
+    `ros2_control_node` waits for `robot_description` until CTest stops the
+    test after 120 s.
+
+    CI starts one router instead of switching the tests to DDS, so the tests
+    run on the same middleware as the robot and as a local `pixi run test`.
+    The one exception is `topic_based_system_test`, which aborts at exit
+    under Zenoh (see [Known issues](#known-issues)). It runs in one process,
+    so Fast DDS changes nothing that it checks. A step-level `env:` could not
+    switch the middleware, because pixi replaces the value from the calling
+    shell. The Test step sets it inside `pixi run` instead.
+
+    GitHub Actions keeps a background process from one step running in the
+    later steps, and stops it when the job ends.
 
 ??? info "Tests that CI does not run"
     - The upstream Nav2 tests in `navigation/navigation2/`: slow, and not
@@ -385,6 +431,7 @@ aborts. Keep the pin until the RoboStack Jazzy packages work with pytest 9.
 | `urg_node2_test` connects to a Hokuyo lidar at `192.168.0.10`. Per the `urg_node2` README, it expects a connected, powered-on UTM-30LX-EW. | Without that lidar the test does not pass. CTest stops it after 200 seconds at most. | `pixi run test --packages-skip urg_node2`, or use `--packages-select` for the packages you changed |
 | `mock` with `real_controllers.yaml` (`test_zed.launch.py`) does not work | `test_controller_config_matches_ros2_control[mock-real_controllers]` is a strict expected failure | None yet. See [Strict expected failure](#strict-expected-failure). |
 | The fixture of `test_action_follow_path_action` in `nav2_behavior_tree` never sets `cancel_timeout`. See [Navigation: Known issues](navigation.md#known-issues). | The test can hang until CTest stops it | `pixi run test --packages-skip nav2_behavior_tree`, or skip only this test with `--packages-select nav2_behavior_tree --ctest-args -E test_action_follow_path_action` |
+| The `main()` of the gtest `topic_based_system_test` (in the `topic_based_ros2_control` submodule) calls `rclcpp::init()` but never `rclcpp::shutdown()`. ROS then shuts down only at process exit, which `rmw_zenoh_cpp` does not support. | Under Zenoh, the test passes, then the process aborts with `The Thread Local Storage inside Tokio is destroyed`. CTest reports a failure. Checked on 2026-10-19 with `rmw_zenoh_cpp` 0.2.11: 6 of 6 runs aborted, and with Fast DDS 3 of 3 passed. | Run this test on Fast DDS, as CI does: `pixi run env RMW_IMPLEMENTATION=rmw_fastrtps_cpp colcon test --packages-select topic_based_ros2_control --ctest-args " -R" "^topic_based_system_test$"`. A `rclcpp::shutdown()` call at the end of `main()` fixes it under Zenoh, but the file is in the upstream submodule. |
 
 ## Troubleshooting
 
@@ -402,4 +449,6 @@ aborts. Keep the pin until the RoboStack Jazzy packages work with pytest 9.
 | `test_mjcf.py` is reported as skipped | `mujoco` cannot be imported, for example outside pixi | Run it with `pixi run python -m pytest ...` |
 | `urg_node2_test` fails or times out | No Hokuyo UTM-30LX-EW at `192.168.0.10` | `pixi run test --packages-skip urg_node2` |
 | `pixi run test` takes a long time | It also runs the Nav2 tests | Use `--packages-select` |
+| A launch test, such as the one of `topic_based_ros2_control`, fails after its timeout. Its log shows `Unable to connect to a Zenoh router`. | No Zenoh router runs, so the test nodes cannot find each other | Start `pixi run ros2 run rmw_zenoh_cpp rmw_zenohd` in another terminal and run the test again |
+| `topic_based_system_test` fails with `return code -6` after `[  PASSED  ] 1 test.` | It ran on Zenoh, and its process aborts at exit | Run it on Fast DDS. See [Known issues](#known-issues). |
 | CI fails in the `setup-pixi` step with `lock-file not up-to-date with the workspace` | `pixi.toml` changed, but `pixi.lock` was not updated and committed | Run `pixi install`, then commit `pixi.lock` together with `pixi.toml` |

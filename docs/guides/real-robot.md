@@ -6,8 +6,8 @@ and the rest of the stack on the physical robot.
 You need a workspace built with `pixi run build`
 ([Getting Started](../getting-started.md)). Read
 [Middleware (Zenoh)](middleware.md) first: every terminal on the robot needs
-the Zenoh settings. On a new robot computer, do the one-time steps below
-first.
+the team `ROS_DOMAIN_ID`, and `pixi run` selects Zenoh. On a new robot
+computer, do the one-time steps below first.
 
 ## Safety notes
 
@@ -207,11 +207,10 @@ export ROBOT_BRINGUP_VENV_SITE=$PWD/bringup/.venv/lib/python3.12/site-packages
 
 ## Start the robot { #bringup-order }
 
-In every terminal, export the Zenoh settings first (see
-[Middleware (Zenoh)](middleware.md)):
+In every terminal, export the team domain first. `pixi run` already selects
+Zenoh (see [Middleware (Zenoh)](middleware.md)):
 
 ```bash
-export RMW_IMPLEMENTATION=rmw_zenoh_cpp
 export ROS_DOMAIN_ID=23
 ```
 
@@ -237,8 +236,8 @@ Then start each step in its own terminal, in this order:
   longer do. Without it, every Nav2 node waits with
   `Waiting on external lifecycle transitions to activate` (see
   [Troubleshooting](../troubleshooting.md#nav2-nodes-stay-unconfigured)).
-- Step 4 needs the Zenoh settings above. Under Fast DDS, `controller_server`
-  fails to configure (see
+- Step 4 needs Zenoh, which `pixi run` selects. Under Fast DDS (outside pixi,
+  or with a DDS override), `controller_server` fails to configure (see
   [Troubleshooting](../troubleshooting.md#nav2-voxel-grid-incompatible-type)).
 
 !!! warning "Step 4: the collision monitor now stops and slows the robot"

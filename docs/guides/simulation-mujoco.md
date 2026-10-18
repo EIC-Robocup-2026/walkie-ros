@@ -348,18 +348,17 @@ Run the commands from the repository root.
     pixi run ros2 run rmw_zenoh_cpp rmw_zenohd
     ```
 
-3. In a second terminal, select Zenoh and start a launch file:
+3. In a second terminal, start a launch file:
 
     ```bash
-    export RMW_IMPLEMENTATION=rmw_zenoh_cpp
     pixi run ros2 launch robot_bringup mujoco_omnibot.launch.py
     ```
 
     For Nav2, start `nav_mujoco_omnibot.launch.py` instead. It includes
     `mujoco_omnibot.launch.py`. See [Drive with Nav2 and RViz](#drive-with-nav2-and-rviz).
 
-- Export `RMW_IMPLEMENTATION` in every terminal that runs ROS 2 commands. See
-  [Middleware (Zenoh)](middleware.md#simulation-on-one-machine).
+- `pixi run` selects Zenoh (`RMW_IMPLEMENTATION=rmw_zenoh_cpp`) for every ROS 2 command.
+  See [Middleware (Zenoh)](middleware.md#simulation-on-one-machine).
 - The MuJoCo viewer window and RViz open. Closing the MuJoCo window stops the whole
   launch. Add `headless:=true` to run without the window.
 - Every node runs on simulated time from `/clock`, which the simulator publishes.

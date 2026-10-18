@@ -6,14 +6,21 @@ newer MuJoCo simulation, see [MuJoCo Simulation](simulation-mujoco.md).
 ## Quick start
 
 Build the workspace first (see [Getting Started](../getting-started.md)). Then
-start Gazebo with the robot, its controllers, and RViz:
+start a Zenoh router, and in a second terminal start Gazebo with the robot, its
+controllers, and RViz:
 
 ```bash
+# Terminal 1
+pixi run ros2 run rmw_zenoh_cpp rmw_zenohd
+```
+
+```bash
+# Terminal 2
 pixi run ros2 launch robot_simulation gzsim_omnibot.launch.py
 ```
 
-- The command works with any middleware. To use Zenoh like the real robot,
-  start a router and export `RMW_IMPLEMENTATION` first. See
+- Pixi selects the Zenoh middleware, so the nodes find each other only through
+  the router. See
   [Middleware (Zenoh)](middleware.md#simulation-on-one-machine).
 - Closing Gazebo or RViz stops the whole launch. Use `use_rviz:=false` if you
   want to restart RViz on its own.

@@ -112,12 +112,27 @@ jobs:
           path: ${{ env.CCACHE_DIR }}
           key: ccache-${{ github.run_id }}-${{ github.run_attempt }}
 
+      # pixi sets RMW_IMPLEMENTATION=rmw_zenoh_cpp. The launch test of topic_based_ros2_control
+      # starts nodes in separate processes, which find each other only through a Zenoh router.
+      # The router uses the default config (port 7447) and keeps running after this step;
+      # the runner stops it when the job ends.
+      - name: Start the Zenoh router
+        shell: pixi run bash -e {0}
+        run: |
+          ros2 run rmw_zenoh_cpp rmw_zenohd > log/rmw_zenohd.log 2>&1 &
+          timeout 30 bash -c 'until (: < /dev/tcp/localhost/7447) 2>/dev/null; do sleep 1; done'
+
+      # topic_based_system_test passes, then aborts at exit under rmw_zenoh_cpp, because its
+      # main() never calls rclcpp::shutdown(). It talks to no other process, so it runs on Fast DDS.
+      # See docs/guides/testing.md#known-issues.
       - name: Test
         shell: pixi run bash -e {0}
         run: |
           rc=0
           colcon test --packages-select $TEST_PACKAGES --return-code-on-test-failure \
-            --ctest-args " -LE" linter || rc=$?
+            --ctest-args " -LE" linter " -E" "^topic_based_system_test$" || rc=$?
+          RMW_IMPLEMENTATION=rmw_fastrtps_cpp colcon test --packages-select topic_based_ros2_control \
+            --return-code-on-test-failure --ctest-args " -R" "^topic_based_system_test$" || rc=$?
           colcon test-result --verbose || true
           echo "Tests: $(colcon test-result | tail -n 1)" >> "$GITHUB_STEP_SUMMARY"
           exit $rc
@@ -141,6 +156,7 @@ jobs:
           path: |
             log/build_*/
             log/test_*/
+            log/rmw_zenohd.log
             build/*/test_results/
           if-no-files-found: ignore
           retention-days: 14

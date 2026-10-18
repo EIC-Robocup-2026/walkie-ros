@@ -152,8 +152,8 @@ WARN Could not find activation scripts: .../install/setup.bash
 ## 6. Run the simulation
 
 Walkie uses the Zenoh middleware (`rmw_zenoh_cpp`) instead of the default DDS.
-Zenoh needs a router process, and the `RMW_IMPLEMENTATION` variable in every
-terminal that runs ROS nodes.
+`pixi run` selects it for every command (`RMW_IMPLEMENTATION=rmw_zenoh_cpp`).
+Zenoh needs a router process: without one, the nodes cannot find each other.
 
 In the first terminal, start the Zenoh router and leave it running:
 
@@ -164,7 +164,6 @@ pixi run ros2 run rmw_zenoh_cpp rmw_zenohd
 In a second terminal, start the Gazebo simulation:
 
 ```bash
-export RMW_IMPLEMENTATION=rmw_zenoh_cpp
 pixi run ros2 launch robot_simulation gzsim_omnibot.launch.py
 ```
 
@@ -174,7 +173,6 @@ controllers, the ros_gz bridge, and RViz. Add `use_rviz:=false` to skip RViz.
 To run the MuJoCo simulation instead, start this in the second terminal:
 
 ```bash
-export RMW_IMPLEMENTATION=rmw_zenoh_cpp
 pixi run ros2 launch robot_bringup mujoco_omnibot.launch.py
 ```
 

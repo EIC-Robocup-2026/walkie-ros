@@ -62,7 +62,13 @@ exit
 - Tasks always run from the repository root. Other commands run in your
   current directory.
 - `pixi run` keeps your terminal's variables, such as an exported
-  `RMW_IMPLEMENTATION=rmw_zenoh_cpp`.
+  `ROS_DOMAIN_ID=23`. The variables in `[activation.env]` of `pixi.toml` are
+  the exception, because pixi sets them after your terminal's values.
+  `RMW_IMPLEMENTATION=rmw_zenoh_cpp` and `CUDA_HOME` replace your values.
+  `PATH` and `LD_LIBRARY_PATH` keep your values and get a CUDA folder in
+  front. See
+  [How the environment finds your built packages](#activation-and-the-workspace-packages)
+  and [Middleware (Zenoh)](middleware.md#turn-on-zenoh-in-every-terminal).
 - `pixi run` activates the environment for every command. `pixi shell`
   activates once, when it starts. This matters
   [after a build](#activation-and-the-workspace-packages).
@@ -141,6 +147,17 @@ in normal use you never source it yourself. Two consequences:
     colcon's `setup.bash` adds each package in `install/` one by one, at the
     moment it is sourced. A package built later is not in the lists of an
     older shell.
+
+    After the script, pixi sets the variables in `[activation.env]`.
+    `CUDA_HOME` and `RMW_IMPLEMENTATION` replace the values from your
+    terminal and from the script. `PATH` and `LD_LIBRARY_PATH` keep those
+    values and get a CUDA folder in front:
+
+    | Variable | Value | Why |
+    | --- | --- | --- |
+    | `CUDA_HOME` | `/usr/local/cuda` | CUDA builds find the system CUDA toolkit |
+    | `PATH`, `LD_LIBRARY_PATH` | `/usr/local/cuda/bin` or `/usr/local/cuda/lib64` added in front | The same |
+    | `RMW_IMPLEMENTATION` | `rmw_zenoh_cpp` | Every command uses Zenoh. See [Middleware (Zenoh)](middleware.md#turn-on-zenoh-in-every-terminal). |
 
 ## Build and run other tasks { #tasks }
 
@@ -453,7 +470,7 @@ pixi run uv sync
 | Environment | Contents | Size |
 | --- | --- | --- |
 | `default` | ROS 2 Jazzy, Gazebo, MoveIt, compilers, MuJoCo, and the other build and simulation dependencies | 1188 packages, about 1.7 GB download |
-| `docs` | MkDocs and the Material theme. No ROS, and it does not source `install/setup.bash`. | 63 packages, about 70 MB download |
+| `docs` | MkDocs and the Material theme. No ROS. It does not source `install/setup.bash` or set the CUDA variables. It sets `RMW_IMPLEMENTATION=rmw_zenoh_cpp`, like `default`. | 63 packages, about 70 MB download |
 
 How pixi chooses the environment:
 
@@ -467,7 +484,7 @@ How pixi chooses the environment:
     pixi groups packages and tasks into **features**. An **environment** is a
     set of features that is installed together. The `default` environment
     uses the default feature: everything at the top level of `pixi.toml`
-    (`[dependencies]`, `[tasks]`, and `[activation]`). The `docs` environment
+    (`[dependencies]`, `[tasks]`, `[activation]`, and `[activation.env]`). The `docs` environment
     uses only the `docs` feature, because it is declared with
     `no-default-feature = true`:
 
@@ -475,6 +492,10 @@ How pixi chooses the environment:
     [environments]
     docs = {features = ["docs"], no-default-feature = true}
     ```
+
+    The `docs` feature has its own `[feature.docs.activation.env]` table,
+    which sets only `RMW_IMPLEMENTATION`, so both environments use the same
+    middleware.
 
     This keeps `docs` a small download, which keeps the documentation CI fast.
     [3. Add the Documentation Site](../migrations/03-documentation.md) explains

@@ -48,6 +48,13 @@ pixi run ros2 launch robot_bringup mujoco_omnibot.launch.py        # MuJoCo, con
 pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py    # the same plus Nav2
 ```
 
+!!! note "Update 2026-10-19: pixi selects Zenoh"
+    `pixi.toml` now sets `RMW_IMPLEMENTATION=rmw_zenoh_cpp`, so the `export` line above is
+    no longer needed. It also has no effect on `pixi run` any more, because pixi replaces
+    the value from the shell. The router is still needed. See
+    [Middleware (Zenoh)](../../guides/middleware.md#turn-on-zenoh-in-every-terminal)
+    and [6. Select Zenoh in Every Pixi Command](../06-zenoh-in-pixi.md).
+
 Run one of the two launch files. With Nav2, set a goal with **2D Goal Pose** in RViz.
 [MuJoCo Simulation](../../guides/simulation-mujoco.md#drive-with-nav2-and-rviz) explains
 how to drive, the [launch arguments](../../guides/simulation-mujoco.md#launch-arguments),

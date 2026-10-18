@@ -4,30 +4,46 @@ Walkie uses the Zenoh middleware (`rmw_zenoh_cpp`) instead of the default DDS
 middleware. This page shows how to turn it on, run the Zenoh router, and
 connect a laptop to the robot.
 
-## Turn on Zenoh in every terminal
+## Zenoh is on in every pixi command { #turn-on-zenoh-in-every-terminal }
 
-Export these two variables in every terminal that runs ROS nodes:
+`pixi run` and `pixi shell` set `RMW_IMPLEMENTATION=rmw_zenoh_cpp`. You do not
+need to export it. To talk to the robot, export the team domain in every
+terminal that runs ROS nodes:
 
 ```bash
-export RMW_IMPLEMENTATION=rmw_zenoh_cpp
 export ROS_DOMAIN_ID=23
 ```
 
+- Every node needs a running Zenoh router. See [Start the router](#start-the-router).
 - `pixi.toml` installs `ros-jazzy-rmw-zenoh-cpp` (`>=0.2.11,<0.3`; the lock
-  has 0.2.11), but pixi does not set `RMW_IMPLEMENTATION`. Without it, ROS 2
+  has 0.2.11) and sets `RMW_IMPLEMENTATION` in `[activation.env]`.
+- The pixi value replaces a value that you export in your terminal. To use
+  another middleware for one command, set it inside the pixi environment:
+  `pixi run env RMW_IMPLEMENTATION=rmw_fastrtps_cpp <command>`.
+- Commands that run outside pixi do not get the variable. Without it, ROS 2
   Jazzy uses its default DDS middleware (`rmw_fastrtps_cpp`).
 - All processes that must talk to each other need the same middleware and the
   same `ROS_DOMAIN_ID`. A node that uses DDS cannot see a node that uses Zenoh.
-- `pixi run` keeps the variables of the terminal it starts from, so the
-  exports work with `pixi run ros2 ...`.
-- `docker/compose.physical.yml` and `docker/compose.simulation.yml` already
+- `docker/compose.physical.yml` and `docker/compose.simulation.yml` also
   set `RMW_IMPLEMENTATION=rmw_zenoh_cpp` for the containers. See
   [Docker Images](docker.md).
 
-!!! tip
-    You can add the two `export` lines to your shell profile (for example
-    `~/.bashrc`). They then apply to every terminal, including terminals for
-    other ROS workspaces.
+??? info "How pixi sets RMW_IMPLEMENTATION"
+    `pixi.toml` sets the variable in `[activation.env]`. Pixi applies it after
+    the activation script (`install/setup.bash`) and after the variables of
+    your terminal, so it always wins. A task that sets the variable in its own
+    `env` table would win over it. Checked with pixi 0.80.0 on 2026-10-19:
+
+    | Command | `RMW_IMPLEMENTATION` in the command |
+    | --- | --- |
+    | `pixi run printenv RMW_IMPLEMENTATION` | `rmw_zenoh_cpp` |
+    | `RMW_IMPLEMENTATION=rmw_fastrtps_cpp pixi run printenv RMW_IMPLEMENTATION` | `rmw_zenoh_cpp` |
+    | `pixi run env RMW_IMPLEMENTATION=rmw_fastrtps_cpp printenv RMW_IMPLEMENTATION` | `rmw_fastrtps_cpp` |
+    | `export RMW_IMPLEMENTATION=rmw_fastrtps_cpp` inside `pixi shell`, then a command | `rmw_fastrtps_cpp` |
+    | `pixi run -e docs printenv RMW_IMPLEMENTATION` | `rmw_zenoh_cpp` (set by the `docs` feature; the environment has no ROS) |
+
+    An `export RMW_IMPLEMENTATION=...` line in your shell profile therefore has
+    no effect on `pixi run`. It still applies to other ROS workspaces.
 
 ??? info "Why Zenoh instead of DDS"
     With DDS, ROS 2 nodes find each other with multicast messages on the local
@@ -103,16 +119,15 @@ pixi run ros2 run rmw_zenoh_cpp rmw_zenohd
 
 ```bash
 # Terminal 2
-export RMW_IMPLEMENTATION=rmw_zenoh_cpp
 pixi run ros2 launch robot_simulation gzsim_omnibot.launch.py
 ```
 
 - `ROS_DOMAIN_ID` can stay unset on one computer, as long as every terminal
   uses the same value. Set it to `23` when you also want to talk to the robot.
 - To add Nav2, see [Run Gazebo with Nav2](simulation-gazebo.md#gazebo-with-nav2).
-- If you leave `RMW_IMPLEMENTATION` unset everywhere, all nodes use DDS and the
-  router is not needed. This also works on one machine, but it is not the setup
-  used on the robot.
+- To run without a router, use DDS for every command:
+  `pixi run env RMW_IMPLEMENTATION=rmw_fastrtps_cpp ros2 launch ...`. This also
+  works on one machine, but it is not the setup used on the robot.
 
 `scripts/bringup/sim_nav_gazebo.sh` and `scripts/bringup/isaac_sim_bringup.sh`
 start a router when none is running. Read [Known issues](#known-issues) before
@@ -158,11 +173,10 @@ On the laptop:
     pixi run bash scripts/bringup/connect_walkie_zenoh_router.sh
     ```
 
-3. In a second terminal, set the same middleware and domain as the robot, then
-   list the robot's topics:
+3. In a second terminal, set the same domain as the robot, then list the
+   robot's topics. Pixi already selects Zenoh.
 
     ```bash
-    export RMW_IMPLEMENTATION=rmw_zenoh_cpp
     export ROS_DOMAIN_ID=23
     pixi run ros2 topic list
     ```
@@ -196,7 +210,8 @@ pixi run bash scripts/bringup/connect_walkie_zenoh_router.sh
 
 !!! note
     The exports in the script only apply to the router process. Your other
-    terminals still need `RMW_IMPLEMENTATION` and `ROS_DOMAIN_ID`.
+    terminals still need `ROS_DOMAIN_ID=23`. Pixi sets `RMW_IMPLEMENTATION`
+    for them.
 
 ??? info "What the script does"
     1. Exports `RMW_IMPLEMENTATION=rmw_zenoh_cpp` and `ROS_DOMAIN_ID=23`.
@@ -248,7 +263,7 @@ echo $ROS_DOMAIN_ID
 | Issue | Effect | Workaround |
 | --- | --- | --- |
 | `connect_walkie_zenoh_router.sh` has its `#!/usr/bin/env bash` line on line 4, not line 1 | Started as `./connect_walkie_zenoh_router.sh` from a shell other than bash, it prints `Bad substitution` and uses the wrong config path | Run `pixi run bash scripts/bringup/connect_walkie_zenoh_router.sh` |
-| `sim_nav_gazebo.sh` and `isaac_sim_bringup.sh` do not set `RMW_IMPLEMENTATION` | The nodes only use the router the script starts if you exported the variable first | Export `RMW_IMPLEMENTATION=rmw_zenoh_cpp` first, or run the launch command directly |
+| `sim_nav_gazebo.sh` and `isaac_sim_bringup.sh` do not set `RMW_IMPLEMENTATION` | Started outside pixi, the nodes use DDS and ignore the router that the script starts. Under `pixi run`, they get Zenoh from pixi. | Run the launch command directly with `pixi run` |
 | The same scripts start the router in the background and never stop it | The router keeps running after the launch ends | Stop it with `pkill -x rmw_zenohd` |
 | The same scripts source `/opt/ros/$ROS_DISTRO/setup.bash` when it exists | On a computer with a system ROS 2 Jazzy, the system and pixi installations are mixed | See [A helper script mixes in the system ROS](../troubleshooting.md#a-helper-script-mixes-in-the-system-ros) |
 
@@ -267,6 +282,6 @@ For the general case, see
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | A node logs `Unable to connect to a Zenoh router` | No router runs on this machine | Start `pixi run ros2 run rmw_zenoh_cpp rmw_zenohd` |
-| `ros2 topic list` on the laptop shows only `/parameter_events` and `/rosout` | Different `ROS_DOMAIN_ID` or `RMW_IMPLEMENTATION` than the robot, or the laptop router uses the default config | Export the same values as the robot. Start the router with `connect_walkie_zenoh_router.sh`. |
+| `ros2 topic list` on the laptop shows only `/parameter_events` and `/rosout` | Different `ROS_DOMAIN_ID` than the robot, a command that ran outside pixi (DDS), or the laptop router uses the default config | Export `ROS_DOMAIN_ID=23` and run the command with `pixi run`. Start the router with `connect_walkie_zenoh_router.sh`. |
 | `connect_walkie_zenoh_router.sh` prints `Bad substitution` or cannot find `ros2` | The script ran without bash or without pixi | Run `pixi run bash scripts/bringup/connect_walkie_zenoh_router.sh` |
-| Topics from the simulation appear on another computer on the network | Both use DDS (no `RMW_IMPLEMENTATION`) with the same domain ID, and DDS found the other machine by multicast | Use Zenoh, or set a different `ROS_DOMAIN_ID` |
+| Topics from the simulation appear on another computer on the network | Both use DDS (commands outside pixi, or a DDS override) with the same domain ID, and DDS found the other machine by multicast | Run the commands with `pixi run` so they use Zenoh, or set a different `ROS_DOMAIN_ID` |
