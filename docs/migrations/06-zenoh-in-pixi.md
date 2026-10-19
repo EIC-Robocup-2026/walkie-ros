@@ -23,9 +23,8 @@ after pulling. For day-to-day use, read
 - **Watch out:** a value exported in your terminal no longer changes
   `pixi run`. To use another middleware for one command, set it inside pixi
   ([Another middleware for one command](#another-middleware-for-one-command)).
-- **Result:** checked on 2026-10-19 in a shell without the variable
-  ([Verification](#verification)). The new CI step has not run on GitHub yet
-  ([Still open](#still-open)).
+- **Result:** checked on 2026-10-19 in a shell without the variable, and in
+  the first CI run with a router ([Verification](#verification)).
 
 ## After pulling this change
 
@@ -126,6 +125,14 @@ For the runs without a router, the test processes connected to an unused
 port, through a scratch copy of the default session config. The router of
 the computer kept running.
 
+The first CI run with the router,
+[run 39168201723](https://github.com/EIC-Robocup-2026/walkie-ros/actions/runs/39168201723)
+on `4e0b20b`, passed on 2026-10-19. **Start the Zenoh router** and **Test**
+both passed. **Test** reported 121 tests, 0 failures and 1 skipped, the same
+as on the laptop. The router step creates `log/rmw_zenohd.log` before the
+router starts, and the upload step lists that path for the `colcon-logs`
+artifact.
+
 ## Commits
 
 | Repository | Commit | Subject |
@@ -139,9 +146,6 @@ so all three repositories select Zenoh in every Pixi environment.
 
 ## Still open
 
-- The **Start the Zenoh router** step and the split **Test** step have not
-  run on a GitHub runner yet. On the first run, check that **Test** passes
-  and that the `colcon-logs` artifact contains `log/rmw_zenohd.log`.
 - `topic_based_system_test` runs on Fast DDS until its `main()` calls
   `rclcpp::shutdown()`. That needs a change in the upstream
   `topic_based_ros2_control` repository and a submodule update.
