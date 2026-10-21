@@ -770,6 +770,7 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-tf2-sensor-msgs-0.36.23-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-tinyxml2-vendor-0.9.2-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-topic-tools-1.3.4-hb0f4dca_25.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-trac-ik-kinematics-plugin-2.0.2-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-twist-mux-4.5.0-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-unique-identifier-msgs-2.5.1-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-urdf-2.10.1-hb0f4dca_25.conda
@@ -1175,6 +1176,8 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-tl-expected-1.3.2-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-topic-tools-1.3.4-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-topic-tools-interfaces-1.3.4-np2py312h1bab3cf_25.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-trac-ik-kinematics-plugin-2.0.2-np2py312h1bab3cf_25.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-trac-ik-lib-2.0.2-np2py312h077ffd7_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-tracetools-8.2.6-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-trajectory-msgs-5.3.8-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-transmission-interface-4.49.0-np2py312h4bd2163_25.conda
@@ -12649,6 +12652,14 @@ packages:
   run_exports: {}
   size: 2022
   timestamp: 1791436888207
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-trac-ik-kinematics-plugin-2.0.2-hb0f4dca_25.conda
+  sha256: 224c74b84d2732068ecdf1e4eaa09216833e03cc18c4bfbeed5582310fd62d96
+  md5: 3d1038ea933adec1da804b50173e3757
+  depends:
+  - ros2-trac-ik-kinematics-plugin ==2.0.2
+  run_exports: {}
+  size: 2098
+  timestamp: 1791446965870
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-twist-mux-4.5.0-hb0f4dca_25.conda
   sha256: 315eab6a44d2db9a607027838edbc1d13a59dea8c947e1e02fb92876e0b6d828
   md5: 2333e9b4349e4f235b62e9e04cc3797d
@@ -22196,6 +22207,58 @@ packages:
   run_exports: {}
   size: 327047
   timestamp: 1791432306607
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-trac-ik-kinematics-plugin-2.0.2-np2py312h1bab3cf_25.conda
+  sha256: 36c8dba545cdfda3bd68571d6eb687e73d04c68c5763aa019a1479c2a0947a0c
+  md5: c07666fcfc8a7a6343880508d19a1166
+  depends:
+  - python
+  - ros2-class-loader
+  - ros2-distro-mutex 0.19.* jazzy_*
+  - ros2-generate-parameter-library
+  - ros2-moveit-core
+  - ros2-pluginlib
+  - ros2-rclcpp
+  - ros2-ros-workspace
+  - ros2-tf2-kdl
+  - ros2-trac-ik-lib
+  - ros2-urdf
+  - __glibc >=2.28,<3.0.a0
+  - libstdcxx >=15
+  - libgcc >=15
+  - python_abi 3.12.* *_cp312
+  - numpy >=1.25,<3
+  - ros2-distro-mutex >=0.19.0,<0.20.0a0
+  license: BSD-3-Clause
+  run_exports: {}
+  size: 129743
+  timestamp: 1791445853264
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-trac-ik-lib-2.0.2-np2py312h077ffd7_25.conda
+  sha256: 7379cd42cc5ba9efd98cdb8b94592309d070ee841924a1aa48c4e97eb3e88c90
+  md5: e4aa9e22c60f2039c989728cda66b249
+  depends:
+  - eigen
+  - eigen-abi-devel
+  - nlopt
+  - pkg-config
+  - python
+  - ros2-distro-mutex 0.19.* jazzy_*
+  - ros2-geometry-msgs
+  - ros2-kdl-parser
+  - ros2-rclcpp
+  - ros2-ros-workspace
+  - ros2-urdf
+  - libstdcxx >=15
+  - libgcc >=15
+  - __glibc >=2.28,<3.0.a0
+  - ros2-distro-mutex >=0.19.0,<0.20.0a0
+  - eigen-abi >=5.0.1.80,<5.0.1.81.0a0
+  - python_abi 3.12.* *_cp312
+  - numpy >=1.25,<3
+  - nlopt >=2.11.0,<2.12.0a0
+  license: BSD-3-Clause
+  run_exports: {}
+  size: 167719
+  timestamp: 1791434897324
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-tracetools-8.2.6-np2py312h1bab3cf_25.conda
   sha256: 76c53fecda75ac11e58fe0a10604b76f8b2425da50cceb2e38a1a7a0f1879eb0
   md5: 3e0b617335978a381cf9ae0177d90c99

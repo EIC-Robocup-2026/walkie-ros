@@ -133,6 +133,26 @@ the bringup switches.
     `enactic/openarm_can`). It is a SocketCAN library for Damiao motors over
     CAN and CAN FD.
 
+### Move the arms in RViz
+
+The RViz window of `moveit_demo.launch.py` and `moveit_only.launch.py` has
+the **MotionPlanning** panel:
+
+1. Choose the group to move in **Planning Group**. RViz starts on
+   `both_arms_lift`.
+2. Set the goal. Drag the interactive marker at a hand, pick a named state in
+   **Goal State**, or set single joints in the **Joints** tab.
+3. Click **Plan** to preview the motion, then **Execute**. **Plan & Execute**
+   does both.
+
+Dragging a marker solves inverse kinematics with TRAC-IK. If `move_group`
+logs `The kinematics plugin (trac_ik_kinematics_plugin/TRAC_IKKinematicsPlugin)
+failed to load`, the environment is older than `pixi.lock`: run
+`pixi install`.
+
+!!! warning "On the real robot, Execute moves the arms"
+    Check the planned motion in RViz before you click **Execute**.
+
 ## Send goals with the commander
 
 The commander node (`bimanual_commander`) wraps a `MoveGroupInterface` for each
@@ -424,16 +444,14 @@ Named states, for `go_to_home` and for the MoveIt RViz panel:
 
 ### Kinematics, planners, and controllers
 
-- **Inverse kinematics:** TRAC-IK, set in `config/kinematics.yaml`.
+- **Inverse kinematics:** TRAC-IK, set in `config/kinematics.yaml`. The
+  plugin comes from `ros-jazzy-trac-ik-kinematics-plugin` in `pixi.toml`.
 - **Planner:** `RRTConnect` for every arm group, set in
   `config/ompl_planning.yaml`. The commander can switch planners at runtime
   with its `planner_id` parameter.
 - **Controllers:** `config/moveit_controllers.yaml` tells MoveIt which
   controller actions to use. MoveIt does not start or switch these
   controllers; the launch file or bringup must spawn them.
-
-!!! warning
-    The TRAC-IK plugin is not in the pixi environment, so pose goals fail. See [Known issues](#known-issues).
 
 ??? info "Kinematics settings"
     `config/kinematics.yaml` sets TRAC-IK
@@ -542,7 +560,6 @@ the largest gain.
 
 | Issue | Effect | Workaround |
 | --- | --- | --- |
-| The TRAC-IK plugin is not in `pixi.toml` | `move_group` cannot load `trac_ik_kinematics_plugin` (set in `config/kinematics.yaml`). Pose goals and Cartesian paths fail; named states and joint goals work | `pixi add ros-jazzy-trac-ik-kinematics-plugin` (on the RoboStack channel), or switch the groups to the commented KDL entries |
 | MoveIt with `hardware_type:=mujoco` is untested, and `moveit_demo.launch.py` does not start the MuJoCo simulator (`mujoco_ros2_control`) | `moveit_demo.launch.py` starts no `ros2_control_node`. The spawners have no timeout and wait forever | Start `mujoco_omnibot.launch.py` in `robot_bringup` ([MuJoCo Simulation: Run with ROS 2](simulation-mujoco.md#run-with-ros-2)), then `moveit_only.launch.py hardware_type:=mujoco`. Untested. |
 | The description has no `isaac` ros2_control block | With `hardware_type:=isaac` the URDF has no hardware, so no controller starts | None in this repository |
 | `moveit_demo_with_commander.launch.py` passes xacro arguments the description does not declare, and has no `right_joint2_fixed` | With `hardware_type:=real_robot` both arms stay mock, and `right_joint2_fixed` cannot be set | Use `moveit_demo.launch.py` plus `commander.launch.py` |
