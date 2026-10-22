@@ -7,12 +7,18 @@
   <maintainer email="armmy2530@todo.todo">armmy2530</maintainer>
   <license>TODO: License declaration</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>ament_index_python</test_depend>
+  <test_depend>python3-numpy</test_depend>
+  <test_depend>python3-pytest</test_depend>
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
   <depend>std_msgs</depend>
   <depend>ros2_control</depend>
   <depend>ros2_controllers</depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>control_msgs</exec_depend>
   <exec_depend>controller_manager</exec_depend>
@@ -33,10 +39,13 @@
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>nav2_rviz_plugins</exec_depend>
   <exec_depend>robot_navigation</exec_depend>
+  <exec_depend>walkie_mujoco_worlds</exec_depend>
   <!-- mujoco_omnibot.launch.py also needs mujoco_ros2_control and the MuJoCo
        extension mujoco_3d_lidar (head 3D lidar), which the pixi environment
        provides. They are not declared so that rosdep does not install MuJoCo
-       into the physical Docker image. -->
+       into the physical Docker image. For the same reason the MuJoCo Python
+       bindings used by test/test_mujoco_world_assets.py are not declared;
+       that test is skipped without them. -->
   <export>
     <build_type>ament_cmake</build_type>
   </export>
