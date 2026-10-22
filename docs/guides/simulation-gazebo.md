@@ -80,6 +80,10 @@ pixi run ros2 launch robot_simulation gzsim_omnibot.launch.py \
 | `use_rviz` | `True` | Start RViz |
 | `dual_lidar` | `False` | Simulate two lidars instead of one. Keep the default, see [Lidar](#lidar). |
 
+Here `world` is the path of a Gazebo world file. The MuJoCo launch files take the name of a
+[named MuJoCo world](simulation-mujoco.md#add-a-named-world) instead, such as the
+[Chula Pat14 room](simulation-chula-pat14.md), which exists only for MuJoCo.
+
 ??? info "Other launch arguments"
     | Argument | Default | Meaning |
     | --- | --- | --- |
