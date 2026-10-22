@@ -201,6 +201,10 @@ ros-jazzy-nmea-msgs = ">=2.1.0,<3"
 
 ros-jazzy-laser-proc = "*"
 ros-jazzy-topic-tools = ">=1.3.4,<2"
+# The IK solver that manipulate/openarm_bimanual_moveit_config/config/kinematics.yaml sets
+# for every arm group. Without it move_group instantiates no solver, so pose goals,
+# Cartesian paths and the end-effector markers in RViz fail.
+ros-jazzy-trac-ik-kinematics-plugin = ">=2.0.2,<3"
 
 # The following packages were not found:
 # libblosc-dev = "*"
