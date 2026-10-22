@@ -1,0 +1,356 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mujoco model="chula_pat14_6_baked_visuals">
+  <compiler angle="radian" autolimits="true" inertiafromgeom="auto" />
+  <option timestep="0.002" integrator="implicitfast" cone="elliptic" gravity="0 0 -9.81" iterations="40" />
+  <size memory="8M" />
+  <statistic center="1.35 -3.4 0.7" extent="6.5" />
+  <visual>
+    <global azimuth="125" elevation="-65" offwidth="1280" offheight="960" />
+    <quality shadowsize="1024" offsamples="2" numslices="12" numstacks="6" numquads="1" />
+    <map znear="0.003" zfar="8" />
+    <headlight diffuse=".2 .2 .2" ambient=".2 .2 .2" specular=".02 .02 .02" />
+  </visual>
+  <default>
+    <default class="chula_static">
+      <geom contype="1" conaffinity="1" condim="4" friction=".65 .004 .0002" solref=".012 1" solimp=".95 .99 .001" group="0" />
+    </default>
+    <default class="chula_object">
+      <geom contype="1" conaffinity="1" condim="4" friction=".8 .005 .0003" solref=".012 1" solimp=".95 .99 .001" group="0" />
+    </default>
+    <default class="chula_visual">
+      <geom contype="0" conaffinity="0" group="1" density="0" />
+    </default>
+  </default>
+  <asset>
+    <material name="chula_wall" rgba="0.83 0.845 0.81 1" shininess="0.04" specular="0.12" emission=".3" />
+    <material name="chula_partition" rgba="0.87 0.88 0.84 1" shininess="0.05" specular="0.12" emission=".3" />
+    <texture name="chula_floor_tex" type="2d" file="../scene_assets/chula_floor_tex.png" colorspace="linear" />
+    <material name="chula_floor" rgba="1 1 1 1" shininess="0.035" specular="0.12" texture="chula_floor_tex" texrepeat="1 1" texuniform="false" emission=".3" />
+    <material name="chula_metal" rgba="0.39 0.43 0.44 1" shininess="0.125" specular="0.3475" emission=".3" />
+    <material name="chula_shelf" rgba="0.73 0.76 0.73 1" shininess="0.0875" specular="0.19" emission=".3" />
+    <material name="chula_wood" rgba="0.65 0.48 0.29 1" shininess="0.07" specular="0.12" emission=".3" />
+    <material name="chula_table" rgba="0.76 0.66 0.43 1" shininess="0.07" specular="0.12" emission=".3" />
+    <material name="chula_dark" rgba="0.045 0.053 0.055 1" shininess="0.055" specular="0.12" emission=".3" />
+    <material name="chula_sofa" rgba="0.32 0.35 0.33 1" shininess="0.0125" specular="0.12" emission=".3" />
+    <material name="chula_cushion" rgba="0.43 0.46 0.44 1" shininess="0.0125" specular="0.12" emission=".3" />
+    <material name="chula_glass" rgba="0.27 0.43 0.48 1" shininess="0.18" specular="0.12" emission=".3" />
+    <material name="chula_door" rgba=".82 .82 .82 1" shininess="0.0625" specular="0.12" emission=".3" />
+    <texture name="chula_apple_tex" type="2d" file="../scene_assets/chula_apple_tex.png" colorspace="linear" />
+    <material name="chula_apple" rgba="1 1 1 1" shininess="0.0875" specular="0.12" texture="chula_apple_tex" emission=".3" />
+    <material name="chula_red_plate" rgba="0.73 0.028 0.024 1" shininess="0.0875" specular="0.12" emission=".3" />
+    <texture name="chula_pringles_can_tex" type="2d" file="../scene_assets/chula_pringles_can_tex.png" colorspace="linear" />
+    <material name="chula_pringles_can" rgba="1 1 1 1" shininess="0.0875" specular="0.12" texture="chula_pringles_can_tex" emission=".3" />
+    <texture name="chula_chips_bag_tex" type="2d" file="../scene_assets/chula_chips_bag_tex.png" colorspace="linear" />
+    <material name="chula_chips_bag" rgba="1 1 1 1" shininess="0.0875" specular="0.12" texture="chula_chips_bag_tex" emission=".3" />
+    <texture name="chula_water_bottle_tex" type="2d" file="../scene_assets/chula_water_bottle_tex.png" colorspace="linear" />
+    <material name="chula_water_bottle" rgba="1 1 1 1" shininess="0.0875" specular="0.12" texture="chula_water_bottle_tex" emission=".3" />
+    <material name="chula_mug" rgba="0.15 0.36 0.53 1" shininess="0.0875" specular="0.12" emission=".3" />
+    <texture name="chula_baked_lightmap" type="2d" file="../scene_assets/chula_baked_lightmap.png" colorspace="linear" />
+    <material name="chula_baked" texture="chula_baked_lightmap" rgba="1 1 1 1" emission="0.7" specular="0" shininess="0" reflectance="0" texuniform="false" />
+    <texture name="chula_realistic_background" type="skybox" builtin="gradient" rgb1=".70 .70 .70" rgb2=".82 .82 .82" width="32" height="192" />
+    <mesh name="chula_baked_static_visual_authored_mesh" file="../scene_assets/chula_baked_static_visual_authored_mesh.obj" inertia="shell" />
+    <mesh name="task_apple_1_00_authored_mesh" file="../scene_assets/task_apple_1_00_authored_mesh.obj" inertia="shell" />
+    <mesh name="task_chips_bag_1_00_authored_mesh" file="../scene_assets/task_chips_bag_1_00_authored_mesh.obj" inertia="shell" />
+    <mesh name="task_mug_1_00_authored_mesh" file="../scene_assets/task_mug_1_00_authored_mesh.obj" inertia="shell" />
+    <mesh name="task_pringles_can_1_00_authored_mesh" file="../scene_assets/task_pringles_can_1_00_authored_mesh.obj" inertia="shell" />
+    <mesh name="task_red_plate_1_00_authored_mesh" file="../scene_assets/task_red_plate_1_00_authored_mesh.obj" inertia="shell" />
+    <mesh name="task_water_bottle_1_00_authored_mesh" file="../scene_assets/task_water_bottle_1_00_authored_mesh.obj" inertia="shell" />
+  </asset>
+  <custom>
+    <text name="chula_source_revision" data="281dc635b2d6a3d80177f2c1d24973869719060e" />
+    <text name="chula_frame" data="ROS map meters Z-up; source origin preserved" />
+  </custom>
+  <worldbody>
+    <camera name="chula_top" pos="1.4 -3.5 12" quat="1 0 0 0" fovy="48" />
+    <camera name="chula_living" pos="1.65 .10 1.45" xyaxes="-1 0 0 0 -.15 .988686" fovy="65" />
+    <camera name="chula_kitchen" pos="1.3 -3.60 1.45" xyaxes="-1 0 0 0 -.17 .985444" fovy="65" />
+    <body name="chula_floor" pos="0 0 0" quat="1 0 0 0" childclass="chula_static">
+      <geom name="floor" type="plane" pos="0 0 0" material="chula_floor" size="5 8 0.05" rgba="0 0 0 0" group="3" contype="1" conaffinity="1" condim="4" />
+    </body>
+    <body name="chula_living_west_partition" pos="0.82 -1.735 0" quat="0.707106781 0 0 0.707106781" childclass="chula_static">
+      <geom name="chula_living_west_partition_00" type="box" pos="0 0 1.325" material="chula_wall" size="1.385 0.05 1.325" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_north_west_return" pos="1.035 0.4 0" quat="1 0 0 0" childclass="chula_static">
+      <geom name="chula_north_west_return_00" type="box" pos="0 0 1.325" material="chula_wall" size="0.215 0.05 1.325" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_north_step_west" pos="1.25 0.515 0" quat="0.707106781 0 0 0.707106781" childclass="chula_static">
+      <geom name="chula_north_step_west_00" type="box" pos="0 0 1.325" material="chula_wall" size="0.115 0.05 1.325" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_north_alcove" pos="1.945 0.655 0" quat="0.999838403 0 0 0.0179768918" childclass="chula_static">
+      <geom name="chula_north_alcove_00" type="box" pos="0 0 1.325" material="chula_wall" size="0.695449495 0.05 1.325" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_north_step_east" pos="2.655 0.515 0" quat="0.738422557 0 0 -0.674338288" childclass="chula_static">
+      <geom name="chula_north_step_east_00" type="box" pos="0 0 1.325" material="chula_wall" size="0.165680415 0.05 1.325" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_north_east_return" pos="3.125 0.375 0" quat="0.999623412 0 0 0.0274414861" childclass="chula_static">
+      <geom name="chula_north_east_return_00" type="box" pos="0 0 1.325" material="chula_wall" size="0.455686296 0.05 1.325" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_east_wall" pos="3.515 -3.085 0" quat="0.700482648 0 0 -0.713669433" childclass="chula_static">
+      <geom name="chula_east_wall_00" type="box" pos="0 0 1.325" material="chula_wall" size="3.48560612 0.05 1.325" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_southeast_jog" pos="3.275 -6.57 0" quat="6.123234e-17 0 0 1" childclass="chula_static">
+      <geom name="chula_southeast_jog_00" type="box" pos="0 0 1.325" material="chula_wall" size="0.175 0.05 1.325" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_southeast_wall" pos="3.1 -7.125 0" quat="0.707106781 0 0 -0.707106781" childclass="chula_static">
+      <geom name="chula_southeast_wall_00" type="box" pos="0 0 1.325" material="chula_wall" size="0.555 0.05 1.325" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_kitchen_west_wall" pos="-0.38 -6.05 0" quat="0.702530372 0 0 0.711653761" childclass="chula_static">
+      <geom name="chula_kitchen_west_wall_00" type="box" pos="0 0 1.325" material="chula_wall" size="1.55012903 0.05 1.325" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_west_diagonal" pos="0.21 -3.81 0" quat="0.911685134 0 0 0.410889542" childclass="chula_static">
+      <geom name="chula_west_diagonal_00" type="box" pos="0 0 0.4" material="chula_wall" size="0.920977741 0.04 0.4" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_room_divider" pos="2.625 -3.28 0" quat="1 0 0 0" childclass="chula_static">
+      <geom name="chula_room_divider_00" type="box" pos="0 0 0.4" material="chula_wall" size="0.895 0.04 0.4" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_south_window" pos="1.37 -7.65 0" quat="0.999933876 0 0 -0.0114997465" childclass="chula_static">
+      <geom name="chula_south_window_00" type="box" pos="0 0 0.4" material="chula_wall" size="1.735 0.05 0.4" group="3" rgba="0 0 0 0" />
+      <geom name="chula_south_window_01" type="box" pos="0 0 2.505" material="chula_wall" size="1.735 0.05 0.145" group="3" rgba="0 0 0 0" />
+      <geom name="chula_south_window_02" type="box" pos="-1.66 0 1.58" material="chula_wall" size="0.075 0.05 0.78" group="3" rgba="0 0 0 0" />
+      <geom name="chula_south_window_03" type="box" pos="1.66 0 1.58" material="chula_wall" size="0.075 0.05 0.78" group="3" rgba="0 0 0 0" />
+      <geom name="chula_south_window_04" type="box" pos="0 0 1.58" material="chula_glass" size="1.59 0.0125 0.78" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_entrance_frame" pos="0.82 -0.35 0" quat="1 0 0 0" childclass="chula_static">
+      <geom name="chula_entrance_frame_00" type="box" pos="0 -0.025 1.06" material="chula_metal" size="0.055 0.025 1.06" group="3" rgba="0 0 0 0" />
+      <geom name="chula_entrance_frame_01" type="box" pos="0 0.775 1.06" material="chula_metal" size="0.055 0.025 1.06" group="3" rgba="0 0 0 0" />
+      <geom name="chula_entrance_frame_02" type="box" pos="0 0.375 2.145" material="chula_metal" size="0.055 0.425 0.025" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="entrance_door" pos="0.9 -0.335 0" quat="0.737277337 0 0 -0.675590208" childclass="chula_object">
+      <joint name="entrance_door_hinge" type="hinge" axis="0 0 1" range="-1.91986218 0" limited="true" ref="-1.4835298641951802" damping="1.2" frictionloss="0.2" armature="0.02" />
+      <inertial pos="0 0.34 1.05" mass="7.5" diaginertia="2.89 2.60176563 0.289765625" />
+      <geom name="entrance_door_00" type="box" pos="0 0.34 1.05" material="chula_door" size="0.0175 0.34 1.02" />
+      <geom name="entrance_door_01" type="cylinder" pos="0 0 0.3" material="chula_metal" size="0.024 0.05" class="chula_visual" />
+      <geom name="entrance_door_02" type="cylinder" pos="0 0 1.75" material="chula_metal" size="0.024 0.05" class="chula_visual" />
+    </body>
+    <body name="chula_sofa" pos="3.17 -1.65 0" quat="1 0 0 0" childclass="chula_static">
+      <geom name="chula_sofa_00" type="box" pos="0 0 0.27" material="chula_sofa" size="0.285 0.94 0.11" group="3" rgba="0 0 0 0" />
+      <geom name="chula_sofa_01" type="box" pos="0.225 0 0.61" material="chula_sofa" size="0.06 0.94 0.225" group="3" rgba="0 0 0 0" />
+      <geom name="chula_sofa_02" type="box" pos="-0.04 -0.87 0.47" material="chula_sofa" size="0.25 0.07 0.16" group="3" rgba="0 0 0 0" />
+      <geom name="chula_sofa_03" type="box" pos="-0.04 0.87 0.47" material="chula_sofa" size="0.25 0.07 0.16" group="3" rgba="0 0 0 0" />
+      <geom name="chula_sofa_04" type="box" pos="-0.055 -0.55 0.405" material="chula_cushion" size="0.215 0.265 0.0525" group="3" rgba="0 0 0 0" />
+      <geom name="chula_sofa_05" type="box" pos="0.145 -0.55 0.635" material="chula_cushion" size="0.05 0.26 0.14" group="3" rgba="0 0 0 0" />
+      <geom name="chula_sofa_06" type="box" pos="-0.055 0 0.405" material="chula_cushion" size="0.215 0.265 0.0525" group="3" rgba="0 0 0 0" />
+      <geom name="chula_sofa_07" type="box" pos="0.145 0 0.635" material="chula_cushion" size="0.05 0.26 0.14" group="3" rgba="0 0 0 0" />
+      <geom name="chula_sofa_08" type="box" pos="-0.055 0.55 0.405" material="chula_cushion" size="0.215 0.265 0.0525" group="3" rgba="0 0 0 0" />
+      <geom name="chula_sofa_09" type="box" pos="0.145 0.55 0.635" material="chula_cushion" size="0.05 0.26 0.14" group="3" rgba="0 0 0 0" />
+      <geom name="chula_sofa_10" type="cylinder" pos="-0.2 -0.78 0.09" material="chula_wood" size="0.028 0.09" group="3" rgba="0 0 0 0" />
+      <geom name="chula_sofa_11" type="cylinder" pos="-0.2 0.78 0.09" material="chula_wood" size="0.028 0.09" group="3" rgba="0 0 0 0" />
+      <geom name="chula_sofa_12" type="cylinder" pos="0.19 -0.78 0.09" material="chula_wood" size="0.028 0.09" group="3" rgba="0 0 0 0" />
+      <geom name="chula_sofa_13" type="cylinder" pos="0.19 0.78 0.09" material="chula_wood" size="0.028 0.09" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_tv_desk" pos="1.08 -1.65 0" quat="1 0 0 0" childclass="chula_static">
+      <geom name="chula_tv_desk_00" type="box" pos="0 0 0.7275" material="chula_wood" size="0.17 0.82 0.0225" group="3" rgba="0 0 0 0" />
+      <geom name="chula_tv_desk_01" type="box" pos="-0.1 -0.75 0.3525" material="chula_shelf" size="0.0225 0.0225 0.3525" group="3" rgba="0 0 0 0" />
+      <geom name="chula_tv_desk_02" type="box" pos="-0.1 0.75 0.3525" material="chula_shelf" size="0.0225 0.0225 0.3525" group="3" rgba="0 0 0 0" />
+      <geom name="chula_tv_desk_03" type="box" pos="0.1 -0.75 0.3525" material="chula_shelf" size="0.0225 0.0225 0.3525" group="3" rgba="0 0 0 0" />
+      <geom name="chula_tv_desk_04" type="box" pos="0.1 0.75 0.3525" material="chula_shelf" size="0.0225 0.0225 0.3525" group="3" rgba="0 0 0 0" />
+      <geom name="chula_tv_desk_05" type="box" pos="-0.185 0 0.42" material="chula_partition" size="0.0175 0.84 0.4" group="3" rgba="0 0 0 0" />
+      <geom name="chula_tv_desk_06" type="box" pos="-0.02 0 1.065" material="chula_dark" size="0.0175 0.34 0.19" group="3" rgba="0 0 0 0" />
+      <geom name="chula_tv_desk_08" type="box" pos="-0.02 0 0.7625" material="chula_dark" size="0.085 0.12 0.0125" group="3" rgba="0 0 0 0" />
+      <geom name="chula_tv_desk_09" type="box" pos="-0.035 0 0.835" material="chula_dark" size="0.0125 0.0275 0.06" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_coffee_table" pos="2.715 -1.67 0" quat="1 0 0 0" childclass="chula_static">
+      <geom name="chula_coffee_table_00" type="box" pos="0 0 0.3975" material="chula_metal" size="0.15 0.57 0.0225" group="3" rgba="0 0 0 0" />
+      <geom name="chula_coffee_table_01" type="box" pos="-0.08 -0.5 0.1875" material="chula_dark" size="0.0225 0.0225 0.1875" group="3" rgba="0 0 0 0" />
+      <geom name="chula_coffee_table_02" type="box" pos="-0.08 0.5 0.1875" material="chula_dark" size="0.0225 0.0225 0.1875" group="3" rgba="0 0 0 0" />
+      <geom name="chula_coffee_table_03" type="box" pos="0.08 -0.5 0.1875" material="chula_dark" size="0.0225 0.0225 0.1875" group="3" rgba="0 0 0 0" />
+      <geom name="chula_coffee_table_04" type="box" pos="0.08 0.5 0.1875" material="chula_dark" size="0.0225 0.0225 0.1875" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_kitchen_table" pos="1.45 -5.34 0" quat="1 0 0 0" childclass="chula_static">
+      <geom name="chula_kitchen_table_00" type="box" pos="0 0 0.7275" material="chula_table" size="0.825 0.45 0.0225" group="3" rgba="0 0 0 0" />
+      <geom name="chula_kitchen_table_01" type="box" pos="-0.755 -0.38 0.3525" material="chula_shelf" size="0.0225 0.0225 0.3525" group="3" rgba="0 0 0 0" />
+      <geom name="chula_kitchen_table_02" type="box" pos="-0.755 0.38 0.3525" material="chula_shelf" size="0.0225 0.0225 0.3525" group="3" rgba="0 0 0 0" />
+      <geom name="chula_kitchen_table_03" type="box" pos="0.755 -0.38 0.3525" material="chula_shelf" size="0.0225 0.0225 0.3525" group="3" rgba="0 0 0 0" />
+      <geom name="chula_kitchen_table_04" type="box" pos="0.755 0.38 0.3525" material="chula_shelf" size="0.0225 0.0225 0.3525" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_bar" pos="0.23 -7.25 0" quat="1 0 0 0" childclass="chula_static">
+      <geom name="chula_bar_00" type="box" pos="0 0 0.7275" material="chula_wood" size="0.52 0.285 0.0225" group="3" rgba="0 0 0 0" />
+      <geom name="chula_bar_01" type="box" pos="-0.45 -0.215 0.3525" material="chula_shelf" size="0.0225 0.0225 0.3525" group="3" rgba="0 0 0 0" />
+      <geom name="chula_bar_02" type="box" pos="-0.45 0.215 0.3525" material="chula_shelf" size="0.0225 0.0225 0.3525" group="3" rgba="0 0 0 0" />
+      <geom name="chula_bar_03" type="box" pos="0.45 -0.215 0.3525" material="chula_shelf" size="0.0225 0.0225 0.3525" group="3" rgba="0 0 0 0" />
+      <geom name="chula_bar_04" type="box" pos="0.45 0.215 0.3525" material="chula_shelf" size="0.0225 0.0225 0.3525" group="3" rgba="0 0 0 0" />
+      <geom name="chula_bar_05" type="box" pos="0 -0.17 0.44" material="chula_dark" size="0.455 0.0175 0.255" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_shelf" pos="2.39 -7.34 0" quat="1 0 0 0" childclass="chula_static">
+      <geom name="chula_shelf_00" type="box" pos="-0.605 -0.205 0.91" material="chula_shelf" size="0.0175 0.0175 0.91" group="3" rgba="0 0 0 0" />
+      <geom name="chula_shelf_01" type="box" pos="-0.605 0.205 0.91" material="chula_shelf" size="0.0175 0.0175 0.91" group="3" rgba="0 0 0 0" />
+      <geom name="chula_shelf_02" type="box" pos="0.605 -0.205 0.91" material="chula_shelf" size="0.0175 0.0175 0.91" group="3" rgba="0 0 0 0" />
+      <geom name="chula_shelf_03" type="box" pos="0.605 0.205 0.91" material="chula_shelf" size="0.0175 0.0175 0.91" group="3" rgba="0 0 0 0" />
+      <geom name="chula_shelf_04" type="box" pos="0 0 0.108" material="chula_shelf" size="0.64 0.235 0.012" group="3" rgba="0 0 0 0" />
+      <geom name="chula_shelf_05" type="box" pos="0 0 0.508" material="chula_shelf" size="0.64 0.235 0.012" group="3" rgba="0 0 0 0" />
+      <geom name="chula_shelf_06" type="box" pos="0 0 0.908" material="chula_shelf" size="0.64 0.235 0.012" group="3" rgba="0 0 0 0" />
+      <geom name="chula_shelf_07" type="box" pos="0 0 1.308" material="chula_shelf" size="0.64 0.235 0.012" group="3" rgba="0 0 0 0" />
+      <geom name="chula_shelf_08" type="box" pos="0 0 1.708" material="chula_shelf" size="0.64 0.235 0.012" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_stool_1" pos="0.95 -4.53 0" quat="1 0 0 0" childclass="chula_static">
+      <geom name="chula_stool_1_00" type="cylinder" pos="0 0 0.475" material="chula_wood" size="0.155 0.02" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_1_01" type="cylinder" pos="-0.105 -0.105 0.23" material="chula_dark" size="0.014 0.23" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_1_02" type="cylinder" pos="-0.105 0.105 0.23" material="chula_dark" size="0.014 0.23" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_1_03" type="cylinder" pos="0.105 -0.105 0.23" material="chula_dark" size="0.014 0.23" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_1_04" type="cylinder" pos="0.105 0.105 0.23" material="chula_dark" size="0.014 0.23" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_1_05" type="box" pos="-0.105 0 0.2" material="chula_dark" size="0.009 0.115 0.009" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_1_06" type="box" pos="0.105 0 0.2" material="chula_dark" size="0.009 0.115 0.009" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_1_07" type="box" pos="0 -0.105 0.2" material="chula_dark" size="0.115 0.009 0.009" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_1_08" type="box" pos="0 0.105 0.2" material="chula_dark" size="0.115 0.009 0.009" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_stool_2" pos="1.91 -4.53 0" quat="1 0 0 0" childclass="chula_static">
+      <geom name="chula_stool_2_00" type="cylinder" pos="0 0 0.475" material="chula_wood" size="0.155 0.02" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_2_01" type="cylinder" pos="-0.105 -0.105 0.23" material="chula_dark" size="0.014 0.23" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_2_02" type="cylinder" pos="-0.105 0.105 0.23" material="chula_dark" size="0.014 0.23" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_2_03" type="cylinder" pos="0.105 -0.105 0.23" material="chula_dark" size="0.014 0.23" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_2_04" type="cylinder" pos="0.105 0.105 0.23" material="chula_dark" size="0.014 0.23" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_2_05" type="box" pos="-0.105 0 0.2" material="chula_dark" size="0.009 0.115 0.009" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_2_06" type="box" pos="0.105 0 0.2" material="chula_dark" size="0.009 0.115 0.009" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_2_07" type="box" pos="0 -0.105 0.2" material="chula_dark" size="0.115 0.009 0.009" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_2_08" type="box" pos="0 0.105 0.2" material="chula_dark" size="0.115 0.009 0.009" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="chula_stool_3" pos="1.45 -6.06 0" quat="1 0 0 0" childclass="chula_static">
+      <geom name="chula_stool_3_00" type="cylinder" pos="0 0 0.475" material="chula_wood" size="0.155 0.02" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_3_01" type="cylinder" pos="-0.105 -0.105 0.23" material="chula_dark" size="0.014 0.23" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_3_02" type="cylinder" pos="-0.105 0.105 0.23" material="chula_dark" size="0.014 0.23" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_3_03" type="cylinder" pos="0.105 -0.105 0.23" material="chula_dark" size="0.014 0.23" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_3_04" type="cylinder" pos="0.105 0.105 0.23" material="chula_dark" size="0.014 0.23" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_3_05" type="box" pos="-0.105 0 0.2" material="chula_dark" size="0.009 0.115 0.009" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_3_06" type="box" pos="0.105 0 0.2" material="chula_dark" size="0.009 0.115 0.009" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_3_07" type="box" pos="0 -0.105 0.2" material="chula_dark" size="0.115 0.009 0.009" group="3" rgba="0 0 0 0" />
+      <geom name="chula_stool_3_08" type="box" pos="0 0.105 0.2" material="chula_dark" size="0.115 0.009 0.009" group="3" rgba="0 0 0 0" />
+    </body>
+    <body name="task_red_plate_1" pos="0.93 -5.1 0.761" quat="1 0 0 0" childclass="chula_object">
+      <freejoint name="task_red_plate_1_free" />
+      <inertial pos="0 0 0" mass="0.25" diaginertia="0.00110883333 0.00110883333 0.00220416667" />
+      <geom name="task_red_plate_1_00" type="mesh" pos="0 0 0" material="chula_red_plate" mesh="task_red_plate_1_00_authored_mesh" class="chula_visual" />
+      <geom name="task_red_plate_1_01" type="cylinder" pos="0 0 -0.006" material="chula_red_plate" size="0.082 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_1_02" type="box" pos="0.096 0 0.0005" material="chula_red_plate" quat="0.985584767 0 -0.169182349 0" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_1_03" type="box" pos="0.0831384388 0.048 0.0005" material="chula_red_plate" quat="0.95200178 0.043787614 -0.1634176 0.255088108" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_1_04" type="box" pos="0.048 0.0831384388 0.0005" material="chula_red_plate" quat="0.853541446 0.0845911745 -0.146516212 0.492792383" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_1_05" type="box" pos="5.87830464e-18 0.096 0.0005" material="chula_red_plate" quat="0.696913672 0.119629986 -0.119629986 0.696913672" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_1_06" type="box" pos="-0.048 0.0831384388 0.0005" material="chula_red_plate" quat="0.492792383 0.146516212 -0.0845911745 0.853541446" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_1_07" type="box" pos="-0.0831384388 0.048 0.0005" material="chula_red_plate" quat="0.255088108 0.1634176 -0.043787614 0.95200178" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_1_08" type="box" pos="-0.096 1.17566093e-17 0.0005" material="chula_red_plate" quat="6.03496615e-17 0.169182349 -1.03594311e-17 0.985584767" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_1_09" type="box" pos="-0.0831384388 -0.048 0.0005" material="chula_red_plate" quat="-0.255088108 0.1634176 0.043787614 0.95200178" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_1_10" type="box" pos="-0.048 -0.0831384388 0.0005" material="chula_red_plate" quat="-0.492792383 0.146516212 0.0845911745 0.853541446" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_1_11" type="box" pos="-1.76349139e-17 -0.096 0.0005" material="chula_red_plate" quat="-0.696913672 0.119629986 0.119629986 0.696913672" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_1_12" type="box" pos="0.048 -0.0831384388 0.0005" material="chula_red_plate" quat="-0.853541446 0.0845911745 0.146516212 0.492792383" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_1_13" type="box" pos="0.0831384388 -0.048 0.0005" material="chula_red_plate" quat="-0.95200178 0.043787614 0.1634176 0.255088108" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+    </body>
+    <body name="task_apple_1" pos="1.27 -5.12 0.7895" quat="1 0 0 0" childclass="chula_object">
+      <freejoint name="task_apple_1_free" />
+      <inertial pos="0 0 0" mass="0.16" diaginertia="0.000177083333 0.000177083333 0.00015" />
+      <geom name="task_apple_1_00" type="mesh" pos="0 0 0" material="chula_apple" mesh="task_apple_1_00_authored_mesh" class="chula_visual" />
+      <geom name="task_apple_1_01" type="sphere" pos="0 0 -0.001" material="chula_apple" size="0.036" rgba="0 0 0 0" group="3" />
+    </body>
+    <body name="task_pringles_can_1" pos="1.65 -5.12 0.867" quat="1 0 0 0" childclass="chula_object">
+      <freejoint name="task_pringles_can_1_free" />
+      <inertial pos="0 0 0" mass="0.12" diaginertia="0.00058984 0.00058984 0.00012168" />
+      <geom name="task_pringles_can_1_00" type="mesh" pos="0 0 0" material="chula_pringles_can" mesh="task_pringles_can_1_00_authored_mesh" class="chula_visual" />
+      <geom name="task_pringles_can_1_01" type="cylinder" pos="0 0 0" material="chula_pringles_can" size="0.038 0.115" rgba="0 0 0 0" group="3" />
+    </body>
+    <body name="task_chips_bag_1" pos="1.98 -5.49 0.862" quat="1 0 0 0" childclass="chula_object">
+      <freejoint name="task_chips_bag_1_free" />
+      <inertial pos="0 0 0" mass="0.065" diaginertia="0.000278552083 0.000384041667 0.000138260417" />
+      <geom name="task_chips_bag_1_00" type="mesh" pos="0 0 0" material="chula_chips_bag" mesh="task_chips_bag_1_00_authored_mesh" class="chula_visual" />
+      <geom name="task_chips_bag_1_01" type="box" pos="0 0 -0.01" material="chula_chips_bag" size="0.069 0.024 0.1" rgba="0 0 0 0" group="3" />
+    </body>
+    <body name="task_water_bottle_1" pos="0.94 -5.57 0.862" quat="1 0 0 0" childclass="chula_object">
+      <freejoint name="task_water_bottle_1_free" />
+      <inertial pos="0 0 0" mass="0.4" diaginertia="0.00177666667 0.00177666667 0.000326666667" />
+      <geom name="task_water_bottle_1_00" type="mesh" pos="0 0 0" material="chula_water_bottle" mesh="task_water_bottle_1_00_authored_mesh" class="chula_visual" />
+      <geom name="task_water_bottle_1_01" type="cylinder" pos="0 0 -0.036" material="chula_water_bottle" size="0.034 0.074" rgba="0 0 0 0" group="3" />
+      <geom name="task_water_bottle_1_02" type="cylinder" pos="0 0 0.056" material="chula_water_bottle" size="0.022 0.022" rgba="0 0 0 0" group="3" />
+      <geom name="task_water_bottle_1_03" type="cylinder" pos="0 0 0.093" material="chula_water_bottle" size="0.015 0.017" rgba="0 0 0 0" group="3" />
+    </body>
+    <body name="task_mug_1" pos="1.43 -5.56 0.802" quat="1 0 0 0" childclass="chula_object">
+      <freejoint name="task_mug_1_free" />
+      <inertial pos="0 0 0" mass="0.22" diaginertia="0.000306606667 0.000472087917 0.000412027917" />
+      <geom name="task_mug_1_00" type="mesh" pos="0 0 0" material="chula_mug" mesh="task_mug_1_00_authored_mesh" class="chula_visual" />
+      <geom name="task_mug_1_01" type="cylinder" pos="0 0 -0.046" material="chula_mug" size="0.036 0.004" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_02" type="box" pos="0.038 0 0.004" material="chula_mug" quat="1 0 0 0" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_03" type="box" pos="0.0329089653 0.019 0.004" material="chula_mug" quat="0.965925826 0 0 0.258819045" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_04" type="box" pos="0.019 0.0329089653 0.004" material="chula_mug" quat="0.866025404 0 0 0.5" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_05" type="box" pos="2.32682892e-18 0.038 0.004" material="chula_mug" quat="0.707106781 0 0 0.707106781" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_06" type="box" pos="-0.019 0.0329089653 0.004" material="chula_mug" quat="0.5 0 0 0.866025404" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_07" type="box" pos="-0.0329089653 0.019 0.004" material="chula_mug" quat="0.258819045 0 0 0.965925826" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_08" type="box" pos="-0.038 4.65365784e-18 0.004" material="chula_mug" quat="6.123234e-17 0 0 1" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_09" type="box" pos="-0.0329089653 -0.019 0.004" material="chula_mug" quat="-0.258819045 0 0 0.965925826" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_10" type="box" pos="-0.019 -0.0329089653 0.004" material="chula_mug" quat="-0.5 0 0 0.866025404" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_11" type="box" pos="-6.98048676e-18 -0.038 0.004" material="chula_mug" quat="-0.707106781 0 0 0.707106781" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_12" type="box" pos="0.019 -0.0329089653 0.004" material="chula_mug" quat="-0.866025404 0 0 0.5" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_13" type="box" pos="0.0329089653 -0.019 0.004" material="chula_mug" quat="-0.965925826 0 0 0.258819045" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_14" type="capsule" pos="0.0463728181 0 -0.0284427044" material="chula_mug" quat="0.722363962 0 0.691513056 0" size="0.0065 0.00992329138" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_15" type="capsule" pos="0.0641593411 0 -0.0219689394" material="chula_mug" quat="0.896872742 0 0.44228869 0" size="0.0065 0.00992329138" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_16" type="capsule" pos="0.0750160087 0 -0.0064640112" material="chula_mug" quat="0.98836151 0 0.152123386 0" size="0.0065 0.00992329138" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_17" type="capsule" pos="0.0750160087 0 0.0124640112" material="chula_mug" quat="0.98836151 0 -0.152123386 0" size="0.0065 0.00992329138" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_18" type="capsule" pos="0.0641593411 0 0.0279689394" material="chula_mug" quat="0.896872742 0 -0.44228869 0" size="0.0065 0.00992329138" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_1_19" type="capsule" pos="0.0463728181 0 0.0344427044" material="chula_mug" quat="0.722363962 0 -0.691513056 0" size="0.0065 0.00992329138" rgba="0 0 0 0" group="3" />
+    </body>
+    <body name="task_apple_2" pos="2.06 -7.29 0.9595" quat="1 0 0 0" childclass="chula_object">
+      <freejoint name="task_apple_2_free" />
+      <inertial pos="0 0 0" mass="0.16" diaginertia="0.000177083333 0.000177083333 0.00015" />
+      <geom name="task_apple_2_00" type="mesh" pos="0 0 0" material="chula_apple" mesh="task_apple_1_00_authored_mesh" class="chula_visual" />
+      <geom name="task_apple_2_01" type="sphere" pos="0 0 -0.001" material="chula_apple" size="0.036" rgba="0 0 0 0" group="3" />
+    </body>
+    <body name="task_pringles_can_2" pos="2.4 -7.29 1.437" quat="1 0 0 0" childclass="chula_object">
+      <freejoint name="task_pringles_can_2_free" />
+      <inertial pos="0 0 0" mass="0.12" diaginertia="0.00058984 0.00058984 0.00012168" />
+      <geom name="task_pringles_can_2_00" type="mesh" pos="0 0 0" material="chula_pringles_can" mesh="task_pringles_can_1_00_authored_mesh" class="chula_visual" />
+      <geom name="task_pringles_can_2_01" type="cylinder" pos="0 0 0" material="chula_pringles_can" size="0.038 0.115" rgba="0 0 0 0" group="3" />
+    </body>
+    <body name="task_chips_bag_2" pos="2.72 -7.29 0.632" quat="1 0 0 0" childclass="chula_object">
+      <freejoint name="task_chips_bag_2_free" />
+      <inertial pos="0 0 0" mass="0.065" diaginertia="0.000278552083 0.000384041667 0.000138260417" />
+      <geom name="task_chips_bag_2_00" type="mesh" pos="0 0 0" material="chula_chips_bag" mesh="task_chips_bag_1_00_authored_mesh" class="chula_visual" />
+      <geom name="task_chips_bag_2_01" type="box" pos="0 0 -0.01" material="chula_chips_bag" size="0.069 0.024 0.1" rgba="0 0 0 0" group="3" />
+    </body>
+    <body name="task_red_plate_2" pos="0.17 -7.19 0.761" quat="1 0 0 0" childclass="chula_object">
+      <freejoint name="task_red_plate_2_free" />
+      <inertial pos="0 0 0" mass="0.25" diaginertia="0.00110883333 0.00110883333 0.00220416667" />
+      <geom name="task_red_plate_2_00" type="mesh" pos="0 0 0" material="chula_red_plate" mesh="task_red_plate_1_00_authored_mesh" class="chula_visual" />
+      <geom name="task_red_plate_2_01" type="cylinder" pos="0 0 -0.006" material="chula_red_plate" size="0.082 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_2_02" type="box" pos="0.096 0 0.0005" material="chula_red_plate" quat="0.985584767 0 -0.169182349 0" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_2_03" type="box" pos="0.0831384388 0.048 0.0005" material="chula_red_plate" quat="0.95200178 0.043787614 -0.1634176 0.255088108" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_2_04" type="box" pos="0.048 0.0831384388 0.0005" material="chula_red_plate" quat="0.853541446 0.0845911745 -0.146516212 0.492792383" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_2_05" type="box" pos="5.87830464e-18 0.096 0.0005" material="chula_red_plate" quat="0.696913672 0.119629986 -0.119629986 0.696913672" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_2_06" type="box" pos="-0.048 0.0831384388 0.0005" material="chula_red_plate" quat="0.492792383 0.146516212 -0.0845911745 0.853541446" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_2_07" type="box" pos="-0.0831384388 0.048 0.0005" material="chula_red_plate" quat="0.255088108 0.1634176 -0.043787614 0.95200178" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_2_08" type="box" pos="-0.096 1.17566093e-17 0.0005" material="chula_red_plate" quat="6.03496615e-17 0.169182349 -1.03594311e-17 0.985584767" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_2_09" type="box" pos="-0.0831384388 -0.048 0.0005" material="chula_red_plate" quat="-0.255088108 0.1634176 0.043787614 0.95200178" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_2_10" type="box" pos="-0.048 -0.0831384388 0.0005" material="chula_red_plate" quat="-0.492792383 0.146516212 0.0845911745 0.853541446" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_2_11" type="box" pos="-1.76349139e-17 -0.096 0.0005" material="chula_red_plate" quat="-0.696913672 0.119629986 0.119629986 0.696913672" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_2_12" type="box" pos="0.048 -0.0831384388 0.0005" material="chula_red_plate" quat="-0.853541446 0.0845911745 0.146516212 0.492792383" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+      <geom name="task_red_plate_2_13" type="box" pos="0.0831384388 -0.048 0.0005" material="chula_red_plate" quat="-0.95200178 0.043787614 0.1634176 0.255088108" size="0.0175 0.0255 0.003" rgba="0 0 0 0" group="3" />
+    </body>
+    <body name="task_water_bottle_2" pos="0.55 -7.18 0.862" quat="1 0 0 0" childclass="chula_object">
+      <freejoint name="task_water_bottle_2_free" />
+      <inertial pos="0 0 0" mass="0.4" diaginertia="0.00177666667 0.00177666667 0.000326666667" />
+      <geom name="task_water_bottle_2_00" type="mesh" pos="0 0 0" material="chula_water_bottle" mesh="task_water_bottle_1_00_authored_mesh" class="chula_visual" />
+      <geom name="task_water_bottle_2_01" type="cylinder" pos="0 0 -0.036" material="chula_water_bottle" size="0.034 0.074" rgba="0 0 0 0" group="3" />
+      <geom name="task_water_bottle_2_02" type="cylinder" pos="0 0 0.056" material="chula_water_bottle" size="0.022 0.022" rgba="0 0 0 0" group="3" />
+      <geom name="task_water_bottle_2_03" type="cylinder" pos="0 0 0.093" material="chula_water_bottle" size="0.015 0.017" rgba="0 0 0 0" group="3" />
+    </body>
+    <body name="task_mug_2" pos="2.715 -1.8 0.472" quat="1 0 0 0" childclass="chula_object">
+      <freejoint name="task_mug_2_free" />
+      <inertial pos="0 0 0" mass="0.22" diaginertia="0.000306606667 0.000472087917 0.000412027917" />
+      <geom name="task_mug_2_00" type="mesh" pos="0 0 0" material="chula_mug" mesh="task_mug_1_00_authored_mesh" class="chula_visual" />
+      <geom name="task_mug_2_01" type="cylinder" pos="0 0 -0.046" material="chula_mug" size="0.036 0.004" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_02" type="box" pos="0.038 0 0.004" material="chula_mug" quat="1 0 0 0" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_03" type="box" pos="0.0329089653 0.019 0.004" material="chula_mug" quat="0.965925826 0 0 0.258819045" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_04" type="box" pos="0.019 0.0329089653 0.004" material="chula_mug" quat="0.866025404 0 0 0.5" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_05" type="box" pos="2.32682892e-18 0.038 0.004" material="chula_mug" quat="0.707106781 0 0 0.707106781" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_06" type="box" pos="-0.019 0.0329089653 0.004" material="chula_mug" quat="0.5 0 0 0.866025404" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_07" type="box" pos="-0.0329089653 0.019 0.004" material="chula_mug" quat="0.258819045 0 0 0.965925826" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_08" type="box" pos="-0.038 4.65365784e-18 0.004" material="chula_mug" quat="6.123234e-17 0 0 1" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_09" type="box" pos="-0.0329089653 -0.019 0.004" material="chula_mug" quat="-0.258819045 0 0 0.965925826" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_10" type="box" pos="-0.019 -0.0329089653 0.004" material="chula_mug" quat="-0.5 0 0 0.866025404" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_11" type="box" pos="-6.98048676e-18 -0.038 0.004" material="chula_mug" quat="-0.707106781 0 0 0.707106781" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_12" type="box" pos="0.019 -0.0329089653 0.004" material="chula_mug" quat="-0.866025404 0 0 0.5" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_13" type="box" pos="0.0329089653 -0.019 0.004" material="chula_mug" quat="-0.965925826 0 0 0.258819045" size="0.003 0.0102 0.046" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_14" type="capsule" pos="0.0463728181 0 -0.0284427044" material="chula_mug" quat="0.722363962 0 0.691513056 0" size="0.0065 0.00992329138" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_15" type="capsule" pos="0.0641593411 0 -0.0219689394" material="chula_mug" quat="0.896872742 0 0.44228869 0" size="0.0065 0.00992329138" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_16" type="capsule" pos="0.0750160087 0 -0.0064640112" material="chula_mug" quat="0.98836151 0 0.152123386 0" size="0.0065 0.00992329138" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_17" type="capsule" pos="0.0750160087 0 0.0124640112" material="chula_mug" quat="0.98836151 0 -0.152123386 0" size="0.0065 0.00992329138" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_18" type="capsule" pos="0.0641593411 0 0.0279689394" material="chula_mug" quat="0.896872742 0 -0.44228869 0" size="0.0065 0.00992329138" rgba="0 0 0 0" group="3" />
+      <geom name="task_mug_2_19" type="capsule" pos="0.0463728181 0 0.0344427044" material="chula_mug" quat="0.722363962 0 -0.691513056 0" size="0.0065 0.00992329138" rgba="0 0 0 0" group="3" />
+    </body>
+    <geom name="chula_baked_static_visual" type="mesh" mesh="chula_baked_static_visual_authored_mesh" material="chula_baked" class="chula_visual" pos="0 0 0" contype="0" conaffinity="0" density="0" group="1" />
+  </worldbody>
+</mujoco>

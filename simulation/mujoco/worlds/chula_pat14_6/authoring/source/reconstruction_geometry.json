@@ -1,0 +1,66 @@
+{
+  "units": "meters",
+  "frame": "ROS map: +X image right, +Y image up, +Z up; no origin recentering",
+  "revision": "281dc635b2d6a3d80177f2c1d24973869719060e",
+  "grid": {"width_px": 168, "height_px": 485, "resolution": 0.05, "origin": [-4.698,-7.82,0]},
+  "precision_note": "Walls fitted to edited map.pgm; plan accuracy approximately 0.05-0.10 m. Heights from photos are estimates. Semantic pose fields are navigation APPROACH goals, and furniture polygons in TOML/waypoints are degenerate repeated points, not real footprints. Three nogo polygons are actual usable footprint evidence.",
+  "wall_centerline_segments": [
+    {"name":"living_west_partition", "a":[0.82,-3.12], "b":[0.82,-0.35], "suggested_height":2.4},
+    {"name":"lower_door_jamb_return", "a":[0.35,-0.38], "b":[0.82,-0.35], "suggested_height":2.4},
+    {"name":"north_west_return", "a":[0.35,0.40], "b":[1.25,0.40], "suggested_height":2.4},
+    {"name":"north_step_west", "a":[1.25,0.40], "b":[1.25,0.63], "suggested_height":2.4},
+    {"name":"north_alcove", "a":[1.25,0.63], "b":[2.64,0.68], "suggested_height":2.4},
+    {"name":"north_step_east", "a":[2.64,0.68], "b":[2.67,0.35], "suggested_height":2.4},
+    {"name":"north_east_return", "a":[2.67,0.35], "b":[3.58,0.40], "suggested_height":2.4},
+    {"name":"east_wall", "a":[3.58,0.40], "b":[3.45,-6.57], "suggested_height":2.7},
+    {"name":"southeast_jog", "a":[3.45,-6.57], "b":[3.10,-6.57], "suggested_height":2.7},
+    {"name":"southeast_wall", "a":[3.10,-6.57], "b":[3.10,-7.68], "suggested_height":2.7},
+    {"name":"south_wall", "a":[3.10,-7.68], "b":[-0.36,-7.60], "suggested_height":2.7},
+    {"name":"kitchen_west_wall", "a":[-0.36,-7.60], "b":[-0.40,-4.50], "suggested_height":2.7},
+    {"name":"west_diagonal", "a":[-0.40,-4.50], "b":[0.82,-3.12], "suggested_height":0.8},
+    {"name":"room_divider", "a":[1.73,-3.28], "b":[3.52,-3.28], "suggested_height":0.8}
+  ],
+  "door": {
+    "map_opening_axis":"Y", "x":0.82, "y_min":-0.35, "y_max":0.40, "clear_width":0.75,
+    "suggested_hinge":[0.82,-0.35,0], "closed_leaf_direction":[0,1,0],
+    "suggested_hinge_axis":[0,0,1], "suggested_range_degrees":[-110,0], "suggested_initial_degrees":-90,
+    "suggested_height":2.05, "suggested_thickness":0.035,
+    "evidence":"entrance_door approach at [1.9935,-0.0069,-3.1227] faces west toward opening; map_og short diagonal [~0.85,-0.35] to [~1.40,-0.55] likely records opened leaf. Side and swing inferred, not surveyed."
+  },
+  "furniture": [
+    {"name":"sofa", "center":[3.28,-1.65], "size_xy":[0.59,1.91], "faces":[-1,0], "suggested_height":0.83, "evidence":"nogo e5"},
+    {"name":"shelf", "center":[2.45,-7.43], "size_xy":[1.29,0.49], "faces":[0,1], "suggested_height":1.80, "evidence":"nogo e3; metal five-level shelf photo"},
+    {"name":"bar", "center":[0.18,-7.31], "size_xy":[1.05,0.60], "faces":[0,1], "suggested_height":0.75, "evidence":"nogo e4; rear window desk photo"},
+    {"name":"kitchen_table", "center":[1.45,-5.34], "size_xy":[1.65,0.90], "suggested_height":0.75, "evidence":"original scan leg clusters at [0.75,-5.00],[2.15,-5.02],[0.74,-5.68],[2.03,-5.68], plus photo; footprint estimated"},
+    {"name":"tv_desk", "center":[1.08,-1.65], "size_xy":[0.50,1.65], "suggested_height":0.75, "evidence":"tv approach [1.607,-1.613,3.133] faces west; photo desks behind white panel; estimated footprint"},
+    {"name":"coffee_table", "center":[2.55,-1.67], "size_xy":[0.42,1.15], "suggested_height":0.42, "evidence":"photo only; estimated footprint; keep west approach lane unobstructed"}
+  ],
+  "room_polygons": {
+    "living_room":[[0.8717,0.3908],[3.5722,0.3908],[3.5722,-3.3632],[0.8717,-3.3632]],
+    "kitchen_room":[[-0.3617,-7.6095],[3.5458,-7.6095],[3.5458,-3.3951],[-0.3617,-3.3951]]
+  },
+  "exclude": "Other noisy scanned regions to west/north are outside the two semantic room polygons and photos; do not turn unknown occupancy into solid walls or map every scan point into cubes.",
+  "simulation_clearance_adjustments": {
+    "reason": "Keep the lightweight furniture separate from fitted walls and window trim; original evidence centers above are preserved.",
+    "centers_xy": {
+      "sofa": [
+        3.17,
+        -1.65
+      ],
+      "coffee_table": [
+        2.715,
+        -1.67
+      ],
+      "shelf": [
+        2.39,
+        -7.34
+      ],
+      "bar": [
+        0.23,
+        -7.25
+      ]
+    },
+    "clearance_note": "Sofa/east wall ~19 mm, sofa/coffee table 20 mm, shelf/window trim ~14 mm, bar/west wall ~21 mm. Coffee table clears the recorded sofa approach for a 0.30 m robot radius. Props move with their supports.",
+    "tv": "Foot rests at 0.75 m, visible neck joins the rear housing; active display is clear of the stand."
+  }
+}

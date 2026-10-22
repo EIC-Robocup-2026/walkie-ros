@@ -1,0 +1,6 @@
+# Reports, renders and map overlays written by the tools in tools/.
+/output/
+
+# Blender backups and exporter reports written next to an exported world.
+*.blend1
+export_report.json

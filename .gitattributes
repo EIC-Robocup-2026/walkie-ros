@@ -1,2 +1,12 @@
 # SCM syntax highlighting & preventing 3-way merges
 pixi.lock merge=binary linguist-language=YAML linguist-generated=true -diff
+
+# Blender sources and HDR images are binary; never merge or diff them as text.
+*.blend binary
+*.exr binary
+
+# MuJoCo worlds are exported from Blender. The exported scene.xml is the only
+# text record of the world's physics (friction, masses, colliders, joints), so
+# git diff shows it; GitHub collapses it as generated. Mesh text is not diffed.
+simulation/mujoco/worlds/**/scene.xml linguist-generated=true
+simulation/mujoco/worlds/**/*.obj -diff linguist-generated=true

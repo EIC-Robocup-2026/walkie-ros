@@ -1,0 +1,50 @@
+{
+  "repository": "https://github.com/EIC-Robocup-2026/map-collection",
+  "revision": "281dc635b2d6a3d80177f2c1d24973869719060e",
+  "directory": "30_16102026_ChulaPat14_6",
+  "files": [
+    {
+      "name": "30_16102026_ChulaPat14_6_element.json",
+      "size_bytes": 8245,
+      "git_blob_sha1": "ed1f5d8789b99b6f20281f87d298b67031061776",
+      "sha256": "c147c902ca4a391fa3e5abb5ae84b5fdb435461f932d083e4f6b44afe480fe57"
+    },
+    {
+      "name": "30_16102026_ChulaPat14_6_world.toml",
+      "size_bytes": 1978,
+      "git_blob_sha1": "d3aa72224ee2328369be03d3164f6b587dbacb07",
+      "sha256": "bb86ce8ab973aeec5818239023a0e0df62593370d530b93b4299a14fa843ddb7"
+    },
+    {
+      "name": "keepout.pgm",
+      "size_bytes": 81495,
+      "git_blob_sha1": "b0a33923916207376d49ddd3142fb54ffcaf3a32",
+      "sha256": "2f51eef3a03414f9ebea77415d73bbd364a94f5bc508518b870eafc5e17f0901"
+    },
+    {
+      "name": "keepout.yaml",
+      "size_bytes": 128,
+      "git_blob_sha1": "297c6bf4b4d7627c29ae9f8be83eddeffe9487d9",
+      "sha256": "b076dbe779ee3b275fcf9b7588a524ecb8950d62e29bf626719461747ab31b38"
+    },
+    {
+      "name": "map.pgm",
+      "size_bytes": 81495,
+      "git_blob_sha1": "60eca3b1597061d72e459c4be33dc5e1bc1d33fb",
+      "sha256": "f167dcfddca4dc71a755d9a5be3497a0c627878ddf3d4bbf9f30b84712b3e799"
+    },
+    {
+      "name": "map.yaml",
+      "size_bytes": 124,
+      "git_blob_sha1": "f421aa54c84992bb13986107383bf41bfd3cf422",
+      "sha256": "4838351c3c921b77d6688dfc475f29f9cc0c32a2ba884a68f4040b9f08c22fde"
+    },
+    {
+      "name": "map_og.pgm",
+      "size_bytes": 81495,
+      "git_blob_sha1": "9d37d1d485a3eaed33c184d90fd225b119080f01",
+      "sha256": "8db0f001185c8cd8180358c0b146b9d5aed5cffad17b7cceb15b75e7a42b1e6b"
+    }
+  ],
+  "verification": "Every saved source file git blob SHA-1 matches GitHub contents metadata; upstream bytes preserved."
+}
