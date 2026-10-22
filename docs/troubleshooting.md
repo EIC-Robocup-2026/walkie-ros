@@ -492,8 +492,8 @@ action changes:
 
 | Log line | Cause |
 | --- | --- |
-| `Robot to stop due to VelocityPolygonStop polygon` | 4 or more points in the stop polygon of the commanded direction: the footprint faces that lead in that direction, up to 0.35 m from the base center, or the rotation polygon when the robot turns in place or stands still. The line does not name the direction. `/scan` has no points closer than 0.30 m to the base center; on the real robot, the 3D lidar cloud has no such limit. |
-| `Robot to slowdown for 40.000000 percents due to PolygonSlow polygon` | 4 or more points within 0.55 m |
+| `Robot to stop due to VelocityPolygonStop polygon` | 4 or more points in the stop polygon of the commanded direction: the footprint faces that lead in that direction, up to 0.35 m from the base center, or the rotation polygon when the robot turns in place or stands still. The line does not name the direction. `/scan` has no points closer than 0.30 m to the base center. On the real robot, the 3D lidar cloud never triggers it: the self filter removes its points within 0.45 m. |
+| `Robot to slowdown for 40.000000 percents due to PolygonSlow polygon` | 4 or more points within 0.55 m. The number is the speed kept. With `nav2_mppi_walkie_real_param.yaml`, the line reads `80.000000`. |
 | `Robot to approach for 2.000000 seconds away from collision` | At the commanded speed, the footprint would reach 6 or more points within 2 s, so the monitor slows the robot |
 | `Robot to stop due to invalid source` | A source had no new data for 2 s, or its frame cannot be transformed to `base_footprint`. The causes are listed below. |
 
@@ -583,8 +583,9 @@ To get the robot moving:
 
 ### controller_server fails with an incompatible type for voxel_grid { #nav2-voxel-grid-incompatible-type }
 
-`localization_Nav2_real.launch.py` or `mapping_Nav2_real.launch.py` does not
-become active, and `controller_server` cannot configure:
+`mapping_Nav2_real.launch.py`, or `localization_Nav2_real.launch.py` with the
+restaurant parameter file, does not become active, and `controller_server`
+cannot configure:
 
 ```text
 Failed to initialize costmap plugin stvl_layer! could not create publisher: create_publisher() called for existing topic name rt/local_costmap/voxel_grid with incompatible type
@@ -596,11 +597,12 @@ launch file with `pixi run`, which selects Zenoh (see
 
 ??? info "Why only Fast DDS fails"
     The message comes from Fast DDS (`rmw_fastrtps_cpp`), the default when
-    `RMW_IMPLEMENTATION` is not set. In `nav2_mppi_walkie_real_param.yaml` and
+    `RMW_IMPLEMENTATION` is not set. In
     `nav2_mppi_walkie_real_restaurant_param.yaml`, two local costmap layers
     publish `voxel_grid` from the same node with different message types.
-    Fast DDS rejects that; `rmw_zenoh_cpp` does not. The parameter files are
-    not fixed yet. See
+    Fast DDS rejects that; `rmw_zenoh_cpp` does not.
+    `nav2_mppi_walkie_real_param.yaml` sets `voxel_layer.publish_voxel_map: False`
+    and starts under both. See
     [Navigation: Known issues](guides/navigation.md#known-issues).
 
 ### Nav2 never activates in nav2_loopback.launch.py { #nav2-loopback-never-activates }
