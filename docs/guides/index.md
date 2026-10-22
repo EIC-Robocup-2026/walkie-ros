@@ -9,7 +9,8 @@ workspace is built.
 | [Working with Pixi](pixi.md) | Running commands, tasks, environments, adding dependencies, and the RoboStack build set |
 | [Middleware (Zenoh)](middleware.md) | `rmw_zenoh_cpp`, the Zenoh router, and connecting to the robot |
 | [Gazebo Simulation](simulation-gazebo.md) | Running the robot in Gazebo, with or without Nav2 |
-| [MuJoCo Simulation](simulation-mujoco.md) | The MuJoCo model, the viewer, custom worlds, and the ROS 2 launch files, with or without Nav2 |
+| [MuJoCo Simulation](simulation-mujoco.md) | The MuJoCo model, the viewer, custom and named worlds, and the ROS 2 launch files, with or without Nav2 |
+| [Chula Pat14 Room Simulation](simulation-chula-pat14.md) | The captured living room and kitchen with AMCL and Nav2: variants, spawns, and Blender export |
 | [Navigation](navigation.md) | Nav2, localization, mapping, and the lidar pipeline |
 | [Manipulation](manipulation.md) | MoveIt and the commander for the bimanual OpenArm and the lift |
 | [Perception](perception.md) | Object detection, 3D poses, and grasp poses |

@@ -639,8 +639,8 @@ robot in the map. Other nodes can still have it: the costmaps work, and a new
 `pixi run ros2 run tf2_ros tf2_echo map base_footprint` prints the transform.
 
 If the launch file publishes `map` to `odom` once with
-`static_transform_publisher`, as `nav_mujoco_omnibot.launch.py` does, start a
-second publisher. Running nodes receive its transform:
+`static_transform_publisher`, as `nav_mujoco_omnibot.launch.py` does without
+`world`, start a second publisher. Running nodes receive its transform:
 
 ```bash
 pixi run ros2 run tf2_ros static_transform_publisher --frame-id map --child-frame-id odom \

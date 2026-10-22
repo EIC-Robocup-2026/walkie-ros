@@ -955,9 +955,11 @@ entry.
   Not caused by this entry. A possible fix, not applied, is
   `voxel_layer.publish_voxel_map: False`, which loses the `VoxelGrid`
   visualization. The sim, loopback and hero files have no STVL.
-- **No AMCL in MuJoCo.** `nav_mujoco_omnibot.launch.py` localizes with
-  odometry only. The measured drift against MuJoCo ground truth was 0.17 to
-  0.43 m after one or two goals (runs 3 and 4).
+- **No AMCL in MuJoCo without a world.** Without `world:=NAME`,
+  `nav_mujoco_omnibot.launch.py` localizes with odometry only. The measured
+  drift against MuJoCo ground truth was 0.17 to 0.43 m after one or two goals
+  (runs 3 and 4). With a named world, it runs AMCL on the world's map (see
+  [2.9 Named Worlds](02-mujoco/09-named-worlds.md)).
 - **Error 103 at the goal.** A goal sent while the robot is already at it by
   odometry aborts with 103, `Resulting plan has 0 poses in it`.
 - **Real robot without the 3D lidar.** With `use_unitree_lidar:=false`, the

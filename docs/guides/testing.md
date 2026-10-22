@@ -45,14 +45,14 @@ option works after it.
     pixi run ros2 run rmw_zenoh_cpp rmw_zenohd
     ```
 
-    The `walkie_description` and `openarm_bimanual_moveit_config` tests start
-    no nodes and need no router.
+    The `walkie_description`, `openarm_bimanual_moveit_config` and
+    `robot_bringup` tests start no nodes and need no router.
 
-!!! note "CI runs the tests of three packages"
+!!! note "CI runs the tests of four packages"
     On every pull request and every push to `main`, CI builds the workspace
     and runs the tests of `walkie_description`,
-    `openarm_bimanual_moveit_config`, and `topic_based_ros2_control`. Lint
-    tests run but do not fail the job. See [CI](#ci).
+    `openarm_bimanual_moveit_config`, `topic_based_ros2_control`, and
+    `robot_bringup`. Lint tests run but do not fail the job. See [CI](#ci).
 
 ??? info "Where the result files are"
     - `build/<package>/test_results/<package>/*.xunit.xml`: JUnit XML result
@@ -77,6 +77,8 @@ shell.
 | `manipulate/openarm_bimanual_moveit_config/test/test_srdf_urdf_contract.py` | yes (`walkie_description`) |
 | `description/test/test_mjcf.py` | no |
 | `description/test/test_pep257.py` | only to register it with colcon |
+| `bringup/test/test_mujoco_world.py`, `test_mujoco_launch_worlds.py` | yes (`robot_bringup`) |
+| `bringup/test/test_mujoco_world_assets.py` | yes (`robot_bringup`, `walkie_description`, `walkie_mujoco_worlds`) |
 
 ??? info "Why each file needs a build or not"
     - `test_description.py` expands `gz_walkie.urdf.xacro` from the installed
@@ -87,6 +89,10 @@ shell.
       `scripts/build_mjcf.py` from the source tree.
     - `test_pep257.py` checks the folder it runs in. See
       [Run one test file with pytest](#running-pytest-directly).
+    - The `robot_bringup` tests import the installed Python package
+      `robot_bringup`. `test_mujoco_world_assets.py` also finds `walkie.xml`
+      and every installed world through the package index, and is skipped when
+      `mujoco` cannot be imported.
 
 ## Run one test file with pytest { #running-pytest-directly }
 
@@ -94,6 +100,7 @@ shell.
 pixi run python -m pytest description/test/test_mjcf.py
 pixi run python -m pytest description/test/test_description.py -k omni -v
 pixi run python -m pytest manipulate/openarm_bimanual_moveit_config/test/test_srdf_urdf_contract.py
+pixi run python -m pytest bringup/test/test_mujoco_world.py bringup/test/test_mujoco_launch_worlds.py bringup/test/test_mujoco_world_assets.py
 ```
 
 This is faster than colcon while you work on one test. pytest options work:
@@ -119,6 +126,8 @@ one line per test.
 | Use a new controller type in a controller file | Teach `_claimed_interfaces` in `test_description.py` which interfaces it claims. Otherwise the test reports "controller type ... is not modelled". |
 | Record a pairing that cannot be fixed now | Add it to `KNOWN_PAIRING_MISMATCHES` with a reason |
 | Change the xacro files | Run `pixi run mjcf` and commit `mujoco/walkie.xml` too |
+| Add a test file to `robot_bringup` | Create `bringup/test/test_<name>.py` and add an `ament_add_pytest_test` line for it in `bringup/CMakeLists.txt`. `robot_bringup` lists its tests by name. |
+| Add a named MuJoCo world | Nothing to add. After `pixi run build-pkg walkie_mujoco_worlds`, `test_mujoco_world_assets` checks every variant of the new world. |
 
 ??? info "How walkie_description registers its tests"
     `description/CMakeLists.txt` does not list the test files by name. It
@@ -153,8 +162,8 @@ also start it by hand in the Actions tab of the repository.
 | pixi | Installs the `default` environment from `pixi.lock` with `--locked`. The job fails if `pixi.toml` and `pixi.lock` disagree. |
 | Build | `colcon build` of the whole workspace, Nav2 included |
 | Start the Zenoh router | Starts `rmw_zenohd` with the default config (port 7447) in the background and waits until the port accepts connections. The router runs until the job ends. |
-| Test | The tests of `walkie_description`, `openarm_bimanual_moveit_config`, and `topic_based_ros2_control`, without their lint tests. `topic_based_system_test` runs on Fast DDS, the others on Zenoh (see [Known issues](#known-issues)). A failure fails the job. |
-| Lint (not enforced) | The lint tests of `robot_bringup`, `robot_simulation`, `robot_navigation`, `dual_laser_merger`, and `joy_interface`. A failure is reported, but the job still passes. |
+| Test | The tests of `walkie_description`, `openarm_bimanual_moveit_config`, `topic_based_ros2_control`, and `robot_bringup`, without their lint tests. `topic_based_system_test` runs on Fast DDS, the others on Zenoh (see [Known issues](#known-issues)). A failure fails the job. |
+| Lint (not enforced) | The lint tests (CTest label `linter`) of `robot_bringup`, `robot_simulation`, `robot_navigation`, `dual_laser_merger`, and `joy_interface`. A failure is reported, but the job still passes. |
 
 Run the enforced tests the way CI does. Start a Zenoh router in another
 terminal first (`pixi run ros2 run rmw_zenoh_cpp rmw_zenohd`), because the
@@ -162,7 +171,7 @@ launch test of `topic_based_ros2_control` needs one:
 
 ```bash
 pixi run build
-pixi run test --packages-select walkie_description openarm_bimanual_moveit_config topic_based_ros2_control --ctest-args " -LE" linter " -E" "^topic_based_system_test$"
+pixi run test --packages-select walkie_description openarm_bimanual_moveit_config topic_based_ros2_control robot_bringup --ctest-args " -LE" linter " -E" "^topic_based_system_test$"
 pixi run env RMW_IMPLEMENTATION=rmw_fastrtps_cpp colcon test --packages-select topic_based_ros2_control --ctest-args " -R" "^topic_based_system_test$"
 pixi run colcon test-result --verbose
 ```
@@ -255,7 +264,8 @@ The four suites below are in `walkie_description` and
     | Package | Tests | Registered by |
     | --- | --- | --- |
     | `openarm_bimanual_moveit_config` | `test_srdf_urdf_contract` | `ament_add_pytest_test(... TIMEOUT 120)` in its `CMakeLists.txt` |
-    | `robot_bringup`, `robot_simulation`, `robot_navigation`, `lakibeam1`, `dual_laser_merger`, `dynamixel_hardware_interface`, `dynamixel_interfaces`, `dynamixel_sdk_examples`, `spatio_temporal_voxel_layer` | Lint tests (some linters turned off per package) | `ament_lint_auto_find_test_dependencies()` |
+    | `robot_bringup` | `test_mujoco_world`, `test_mujoco_launch_worlds`, and `test_mujoco_world_assets` (`TIMEOUT 180`): the MuJoCo world loader, the world arguments of the launch files, and every installed named world. See [MuJoCo Simulation: Tests](simulation-mujoco.md#tests). Also lint tests. | `ament_add_pytest_test` in its `CMakeLists.txt`, and `ament_lint_auto_find_test_dependencies()` |
+    | `robot_simulation`, `robot_navigation`, `lakibeam1`, `dual_laser_merger`, `dynamixel_hardware_interface`, `dynamixel_interfaces`, `dynamixel_sdk_examples`, `spatio_temporal_voxel_layer` | Lint tests (some linters turned off per package) | `ament_lint_auto_find_test_dependencies()` |
     | `topic_based_ros2_control` | Lint tests, the gtest `topic_based_system_test`, and the launch test `test/ros2_control.test.py` (`TIMEOUT 120`) | Its `CMakeLists.txt` (submodule) |
     | `urg_node2` | gtest `urg_node2_test` (`TIMEOUT 200`) | Its `CMakeLists.txt`. Needs a real lidar. |
     | `joy_interface` | `test_flake8.py`, `test_pep257.py`, and `test_copyright.py` (always skipped) | ament_python: colcon runs pytest on `test/` |

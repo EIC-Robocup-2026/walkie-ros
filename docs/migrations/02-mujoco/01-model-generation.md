@@ -391,6 +391,11 @@ explains the classes.
 [MuJoCo Simulation: Build a custom world](../../guides/simulation-mujoco.md#build-a-custom-world)
 walks through these rules step by step, with a complete example world.
 
+!!! note "Update 2026-10-22: named worlds"
+    A named world, loaded with `world:=NAME`, does not include `walkie.xml` and may live
+    outside `description/`. The launch merges it with the robot and sets the floor pairs and
+    the collision classes itself. See [2.9 Named Worlds](09-named-worlds.md).
+
 ## Regenerate and view
 
 | Task | Command |

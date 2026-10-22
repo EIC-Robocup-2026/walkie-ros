@@ -187,6 +187,11 @@ This starts the MuJoCo simulation and Nav2 on a blank 20 m x 20 m map
 tool in RViz. The setup, the launch arguments, and custom worlds are in
 [MuJoCo Simulation: Drive with Nav2 and RViz](simulation-mujoco.md#drive-with-nav2-and-rviz).
 
+To navigate in a captured room with its map and AMCL, add `world:=NAME`, for
+example `world:=chula_pat14_6`. See
+[Chula Pat14 Room Simulation](simulation-chula-pat14.md). The list below
+describes the launch without `world`.
+
 Nav2 drives the robot in the default MuJoCo world (`scene.xml`), which has no
 obstacles. `mujoco_omnibot.launch.py` sets the merger parameter
 `publish_on_empty_cloud: True`, so `/scan` is published even when neither
@@ -199,9 +204,11 @@ stops every Nav2 command. The real robot keeps the default `false` (see
   wheel odometry the robot pose in the map. The robot must start at the world
   origin, and the map origin must match the world origin. The pose drifts as
   the odometry drifts: 0.17 to 0.43 m against the MuJoCo ground truth after
-  one or two goals in the 2026-10-14 tests.
+  one or two goals in the 2026-10-14 tests. With `world`, AMCL publishes
+  `map` to `odom` instead.
 - Nav2 uses `nav2_mppi_walkie_sim_params.yaml`, the same file as Gazebo,
-  passed through unchanged. Like the Gazebo and real-robot launch files, it
+  passed through unchanged. With `world`, the launch passes a generated copy
+  with the AMCL initial pose at the spawn. Like the Gazebo and real-robot launch files, it
   remaps the Nav2 `cmd_vel` output to `/cmd_vel_controller`, so commands pass
   the velocity smoother and the collision monitor (see
   [Velocity command path](#velocity-command-path)).
@@ -1065,7 +1072,7 @@ problems. See [Known issues](#known-issues).
     | `nav2_loopback.launch.py` | `robot_navigation` | Nav2 with the loopback simulator, no physics |
     | `slam_cartographer.launch.py` | `robot_navigation` | Cartographer. Does not run. |
     | `nav_sim_omnibot.launch.py` | `robot_bringup` | Gazebo plus `localization_Nav2_sim.launch.py` |
-    | `nav_mujoco_omnibot.launch.py` | `robot_bringup` | MuJoCo plus Nav2 on a blank map, with odometry-only localization (no AMCL) |
+    | `nav_mujoco_omnibot.launch.py` | `robot_bringup` | MuJoCo plus Nav2 on a blank map, with odometry-only localization (no AMCL). With `world:=NAME`: the world's map and AMCL. |
     | `dual_lidar_hokuyo_lakibeam.launch.py` | `robot_bringup` | Real lidar drivers and merger. Started by `real_omnibot.launch.py`. |
     | `octomap_3d_mapping.launch.py` | `robot_bringup` | 3D OctoMap during mapping. Does not start under pixi. |
 
@@ -1139,7 +1146,7 @@ empty MuJoCo world, and the loopback and hero configurations.
 | STVL is disabled in both real-robot parameter files until the head camera joint is repaired | The real local costmap marks only `/scan`; tabletops and other obstacles outside the 2D lidar planes are not planned around | Supervise the robot near tables: the collision monitor only slows for them while they are farther than 0.45 m, because the self filter removes closer points of `/unilidar/cloud/filtered`. Enable STVL again once the joint is repaired ([Spatio-Temporal Voxel Layer](#spatio-temporal-voxel-layer)). |
 | The Gazebo lidar has a minimum range of 0.6 m | The collision monitor's stop polygons and slow-down circle never trigger in Gazebo | None. Only `FootprintApproach` acts. |
 | After `bt_navigator` rejects a goal, for example with error 9002, it copies that error code into the result of the next goal of the same action that it accepts, also when that goal succeeds (upstream navigation2). `NavigateToPose` and `NavigateThroughPoses` each keep their own error. | A client that reads only `error_code` treats a successful goal as failed | Judge a goal by its status. In an accepted goal, an `error_code` of 9002 (9102 for `NavigateThroughPoses`) can be left over ([Troubleshooting](../troubleshooting.md#nav2-map-frame-does-not-exist)) |
-| `nav_mujoco_omnibot.launch.py` has no AMCL | The pose drifts with the odometry. A goal sent while the robot is already at it by odometry aborts with error 103 (`Resulting plan has 0 poses in it`). | None |
+| `nav_mujoco_omnibot.launch.py` has no AMCL without `world` | The pose drifts with the odometry. A goal sent while the robot is already at it by odometry aborts with error 103 (`Resulting plan has 0 poses in it`). | Use a [named world](simulation-mujoco.md#add-a-named-world), which starts AMCL on its map |
 | `nav2_bringup`'s `bringup_launch.py` runs all Nav2 servers on one thread when composed (its default) | Bringup can hang at `Waiting for service smoother_server/get_state...` | `use_composition:=False`. `localization_Nav2_sim.launch.py` and `nav_mujoco_omnibot.launch.py` set it. ([details](#nav2-composition-deadlock)) |
 | `slam_cartographer.launch.py` needs `cartographer_ros`, which `pixi.toml` does not install | The launch fails | Use SLAM Toolbox |
 | `octomap_3d_mapping.launch.py` needs `octomap_server` and `topic_tools`, which are not in `pixi.toml` | The launch fails with "package not found" under pixi | Add both packages to the environment |
@@ -1262,4 +1269,4 @@ process. `localization_Nav2_sim.launch.py` (included by
 | `controller_server` fails with `create_publisher() called for existing topic name rt/local_costmap/voxel_grid with incompatible type` | Fast DDS and the two `voxel_grid` publishers of the restaurant file | Use `rmw_zenoh_cpp` ([Known issues](#known-issues)) |
 | `nav2_loopback.launch.py`: Nav2 never finishes activating | The loopback simulator has no initial pose yet, so it publishes no transforms | Set one with **2D Pose Estimate** or on `/initialpose` ([Test goal logic without physics](#test-goal-logic-without-physics)) |
 | Nav2 nodes stay unconfigured, and the log shows `Waiting on external lifecycle transitions to activate` | A launch file includes `navigation_launch.py` or `localization_launch.py` without starting a lifecycle manager | Start `lifecycle_manager_nav2` as the Walkie launch files do ([Localization and mapping on the real robot](#localization-and-mapping-on-the-real-robot)) |
-| `bt_navigator` rejects goals and logs `"map" passed to lookupTransform argument target_frame does not exist` and `Initial robot pose is not available` (error 9002) | `bt_navigator` has no transform from `map` to `odom` | With AMCL or SLAM Toolbox, check that they publish it: `pixi run ros2 run tf2_ros tf2_echo map odom`. With a `static_transform_publisher` that publishes it once, as in `nav_mujoco_omnibot.launch.py`: start a second publisher. Never add one next to AMCL or SLAM Toolbox. ([Troubleshooting](../troubleshooting.md#nav2-map-frame-does-not-exist)) |
+| `bt_navigator` rejects goals and logs `"map" passed to lookupTransform argument target_frame does not exist` and `Initial robot pose is not available` (error 9002) | `bt_navigator` has no transform from `map` to `odom` | With AMCL or SLAM Toolbox, check that they publish it: `pixi run ros2 run tf2_ros tf2_echo map odom`. With a `static_transform_publisher` that publishes it once, as in `nav_mujoco_omnibot.launch.py` without `world`: start a second publisher. Never add one next to AMCL or SLAM Toolbox. ([Troubleshooting](../troubleshooting.md#nav2-map-frame-does-not-exist)) |
