@@ -25,6 +25,16 @@
           info_topic: /bottom_camera/camera_info
           image_topic: /bottom_camera/image_raw
           depth_topic: /bottom_camera/depth/image_raw
+        # CameraPlugin streams every camera of the model, so cameras of named worlds
+        # (simulation/mujoco/worlds) are listed here as disabled: they are viewer presets.
+        # Entries for cameras the model lacks are ignored. In 0.1.2, do not set a camera to
+        # policy: polled while another is disabled; its trigger reaches the wrong camera.
+        chula_top:
+          policy: disabled
+        chula_living:
+          policy: disabled
+        chula_kitchen:
+          policy: disabled
       # Head 3D lidar (Unitree 4D L2). Publishes every sensor of the MuJoCo extension
       # mujoco.plugin.lidar (ros-jazzy-mujoco-3d-lidar); the sensor key is the MJCF sensor
       # name. The cloud is organized (180 x 32 rays, xyz only, NaN where nothing is hit) and

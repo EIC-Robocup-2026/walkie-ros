@@ -2,21 +2,82 @@
 """Run Walkie in MuJoCo with Nav2.
 
 Includes mujoco_omnibot.launch.py and starts Nav2 (nav2_bringup) with the
-simulation parameters from robot_navigation, map_server, and no AMCL. The
+simulation rewrites of the robot_navigation parameters, map_server and
+nav_commander. A goal from the RViz "2D Goal Pose" tool (/goal_pose) or the Nav2
+panel drives the robot.
+
+Without world, the scene is the empty floor and there is no AMCL: the
 map -> odom transform is a static identity, so the robot pose in the map is the
-wheel odometry, and the robot must start at the map origin. A goal from the
-RViz "2D Goal Pose" tool (/goal_pose) or the Nav2 panel drives the robot.
+wheel odometry, and the robot must start at the map origin.
+
+With world:=NAME, the exported world (see robot_bringup.mujoco_launch) supplies
+the MuJoCo model and the map, AMCL localizes against that map, and AMCL's
+initial pose in a generated copy of nav2_config matches the world spawn.
+
+truth_map_odom:=true replaces both the static transform and AMCL with
+ground_truth_map_odom.py, which feeds map -> odom from MuJoCo's ground truth.
+The world loader writes the spawn's map X and Y into the MuJoCo world frame, so
+the two frames coincide in a world as well.
 """
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
-from launch.conditions import IfCondition, UnlessCondition
+from launch.actions import (
+    DeclareLaunchArgument, GroupAction, IncludeLaunchDescription, LogInfo, OpaqueFunction,
+    SetLaunchConfiguration,
+)
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node, SetRemap
 from nav2_common.launch import RewrittenYaml
+from robot_bringup.mujoco_launch import declare_world_arguments, prepare_world_from_context
+
+
+def _flag(context, name):
+    """Return a boolean launch argument the way IfCondition reads it."""
+    value = LaunchConfiguration(name).perform(context).strip().lower()
+    if value not in ("true", "1", "false", "0"):
+        raise ValueError(f"{name} must be true or false, not {value!r}")
+    return value in ("true", "1")
+
+
+def _resolve_world(context, *, description_dir, default_model, default_map_dir):
+    """Select the model, map, Nav2 parameters and the source of map -> odom."""
+    prepared = prepare_world_from_context(
+        context, description_dir=description_dir,
+        replaced_defaults={"mujoco_model": default_model, "map": default_map_dir},
+        nav2_params_source=LaunchConfiguration("nav2_config").perform(context),
+    )
+    truth_map_odom = _flag(context, "truth_map_odom")
+    if prepared is None:
+        map_dir = LaunchConfiguration("map").perform(context)
+        return [
+            SetLaunchConfiguration("map_yaml", os.path.join(map_dir, "map.yaml")),
+            SetLaunchConfiguration("use_localization", "False"),
+            SetLaunchConfiguration("static_map_odom", str(not truth_map_odom)),
+        ]
+
+    # A world names its map file; its directory stands in for the map argument,
+    # so a keepout mask left at its default is looked up next to the world's map.
+    world_map_dir = os.path.dirname(prepared["map_path"])
+    actions = [
+        SetLaunchConfiguration("mujoco_model", prepared["model_path"]),
+        SetLaunchConfiguration("map", world_map_dir),
+        SetLaunchConfiguration("map_yaml", prepared["map_path"]),
+        SetLaunchConfiguration("nav2_config", prepared["params_path"]),
+        SetLaunchConfiguration("use_localization", str(not truth_map_odom)),
+        SetLaunchConfiguration("static_map_odom", "False"),
+        LogInfo(msg=f"Prepared world variant {prepared['variant']}: "
+                    f"{prepared['model_path']}; map: {prepared['map_path']}"),
+    ]
+    keepout_mask = LaunchConfiguration("keepout_mask").perform(context)
+    if keepout_mask == os.path.join(default_map_dir, "keepout.yaml"):
+        actions.append(SetLaunchConfiguration(
+            "keepout_mask", os.path.join(world_map_dir, "keepout.yaml")
+        ))
+    return actions
 
 
 def generate_launch_description():
@@ -28,6 +89,7 @@ def generate_launch_description():
     default_map_dir = os.path.join(
         pkg_robot_bringup, "config", "map", "empty_floor"
     )
+    default_model = os.path.join(pkg_walkie_description, "mujoco", "scene.xml")
     default_nav2_config = os.path.join(
         pkg_robot_navigation,
         "config",
@@ -48,11 +110,13 @@ def generate_launch_description():
     )
 
     map_dir = LaunchConfiguration("map")
-    map_yaml_file = PathJoinSubstitution([map_dir, "map.yaml"])
+    # Set by _resolve_world: map.yaml in the map directory, or the world's map file.
+    map_yaml_file = LaunchConfiguration("map_yaml")
     nav2_config = LaunchConfiguration("nav2_config")
     keepout_mask_file = LaunchConfiguration("keepout_mask")
     use_keepout_zones = LaunchConfiguration("use_keepout_zones")
     mujoco_model = LaunchConfiguration("mujoco_model")
+    use_localization = LaunchConfiguration("use_localization")
     headless = LaunchConfiguration("headless")
     use_rviz = LaunchConfiguration("use_rviz")
     rviz_config = LaunchConfiguration("rviz_config")
@@ -61,12 +125,14 @@ def generate_launch_description():
     declare_map_arg = DeclareLaunchArgument(
         "map",
         default_value=default_map_dir,
-        description="Full path to the map directory containing map.yaml and keepout.yaml",
+        description="Full path to the map directory containing map.yaml and keepout.yaml, "
+                    "without world. Its origin must match the MuJoCo world origin",
     )
     declare_nav2_config_arg = DeclareLaunchArgument(
         "nav2_config",
         default_value=default_nav2_config,
-        description="Full path to the nav2 config YAML file",
+        description="Full path to the nav2 config YAML file. With world, a copy with the "
+                    "AMCL initial pose at the world spawn is used",
     )
     declare_use_keepout_zones_arg = DeclareLaunchArgument(
         "use_keepout_zones",
@@ -76,7 +142,8 @@ def generate_launch_description():
     declare_keepout_mask_arg = DeclareLaunchArgument(
         "keepout_mask",
         default_value=PathJoinSubstitution([map_dir, "keepout.yaml"]),
-        description="Full path to keepout mask YAML file to load. Defaults to keepout.yaml in map_dir.",
+        description="Full path to keepout mask YAML file to load. Defaults to keepout.yaml "
+                    "in the map directory, or next to the world's map with world",
     )
     declare_nav_debug_arg = DeclareLaunchArgument(
         "nav_debug",
@@ -85,8 +152,9 @@ def generate_launch_description():
     )
     declare_mujoco_model_arg = DeclareLaunchArgument(
         "mujoco_model",
-        default_value=os.path.join(pkg_walkie_description, "mujoco", "scene.xml"),
-        description="MJCF scene to load. It must include walkie.xml and a plane geom named floor",
+        default_value=default_model,
+        description="MJCF scene to load without world. It must include walkie.xml "
+                    "and a plane geom named floor",
     )
     declare_headless_arg = DeclareLaunchArgument(
         "headless",
@@ -108,23 +176,33 @@ def generate_launch_description():
         "truth_map_odom",
         default_value="false",
         description="Feed map -> odom from /mujoco_ground_truth/odom instead of a static "
-                    "identity, so the map pose of the base is the true one",
+                    "identity or AMCL, so the map pose of the base is the true one",
     )
 
-    mujoco_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            os.path.join(pkg_robot_bringup, "launch", "mujoco_omnibot.launch.py")
+    # The world, if any, is prepared once here; the included simulator launch
+    # receives the generated model. world and the spawn arguments are cleared
+    # because the group passes this launch's configurations to the include.
+    mujoco_launch = GroupAction(actions=[
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(pkg_robot_bringup, "launch", "mujoco_omnibot.launch.py")
+            ),
+            launch_arguments={
+                "world": "",
+                "spawn": "",
+                "spawn_pose": "",
+                "mujoco_model": mujoco_model,
+                "headless": headless,
+                "use_rviz": use_rviz,
+                "rviz_config": rviz_config,
+            }.items(),
         ),
-        launch_arguments={
-            "mujoco_model": mujoco_model,
-            "headless": headless,
-            "use_rviz": use_rviz,
-            "rviz_config": rviz_config,
-        }.items(),
-    )
+    ])
 
-    # Odometry-only localization: AMCL would have nothing to match in a world
-    # without walls. omni_wheel_drive_controller publishes odom -> base_footprint.
+    # Odometry-only localization on the empty floor: AMCL would have nothing to
+    # match in a world without walls. omni_wheel_drive_controller publishes
+    # odom -> base_footprint. With a world, AMCL publishes map -> odom, and with
+    # truth_map_odom ground_truth_map_odom.py does.
     map_to_odom = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
@@ -132,7 +210,7 @@ def generate_launch_description():
         output="screen",
         arguments=["--frame-id", "map", "--child-frame-id", "odom"],
         parameters=[{"use_sim_time": True}],
-        condition=UnlessCondition(truth_map_odom),
+        condition=IfCondition(LaunchConfiguration("static_map_odom")),
     )
     ground_truth_map_odom = Node(
         package="robot_bringup",
@@ -178,7 +256,7 @@ def generate_launch_description():
                     "map": map_yaml_file,
                     "params_file": nav2_rewritten_params,
                     "default_nav_to_pose_bt_xml": bt_xml_path,
-                    "use_localization": "false",
+                    "use_localization": use_localization,
                     "serve_static_map": "true",
                     "use_keepout_zones": use_keepout_zones,
                     "keepout_mask": keepout_mask_file,
@@ -207,6 +285,8 @@ def generate_launch_description():
 
     ld = LaunchDescription()
 
+    for declare_world_arg in declare_world_arguments(nav2=True):
+        ld.add_action(declare_world_arg)
     ld.add_action(declare_map_arg)
     ld.add_action(declare_nav2_config_arg)
     ld.add_action(declare_use_keepout_zones_arg)
@@ -217,6 +297,11 @@ def generate_launch_description():
     ld.add_action(declare_use_rviz_arg)
     ld.add_action(declare_rviz_config_arg)
     ld.add_action(declare_truth_map_odom_arg)
+    ld.add_action(OpaqueFunction(function=_resolve_world, kwargs={
+        "description_dir": pkg_walkie_description,
+        "default_model": default_model,
+        "default_map_dir": default_map_dir,
+    }))
 
     ld.add_action(mujoco_launch)
     ld.add_action(map_to_odom)
