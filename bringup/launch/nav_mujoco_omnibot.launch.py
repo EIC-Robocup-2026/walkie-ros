@@ -13,8 +13,9 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node, SetRemap
+from nav2_common.launch import RewrittenYaml
 
 
 def generate_launch_description():
@@ -23,24 +24,63 @@ def generate_launch_description():
     pkg_nav2_bringup = get_package_share_directory("nav2_bringup")
     pkg_walkie_description = get_package_share_directory("walkie_description")
 
-    map_yaml = LaunchConfiguration("map")
-    params_file = LaunchConfiguration("params_file")
+    default_map_dir = os.path.join(
+        pkg_robot_bringup, "config", "map", "empty_floor"
+    )
+    default_nav2_config = os.path.join(
+        pkg_robot_navigation,
+        "config",
+        "nav2",
+        "nav2_mppi_walkie_params.yaml",
+    )
+    bt_xml_path = os.path.join(
+        pkg_robot_navigation,
+        "config",
+        "nav2",
+        "behavior_tree",
+        "nav_to_pose_real_recovery_bt.xml",
+    )
+    walkie_nav_config = os.path.join(
+        pkg_robot_navigation,
+        "config",
+        "walkie_nav.yaml",
+    )
+
+    map_dir = LaunchConfiguration("map")
+    map_yaml_file = PathJoinSubstitution([map_dir, "map.yaml"])
+    nav2_config = LaunchConfiguration("nav2_config")
+    keepout_mask_file = LaunchConfiguration("keepout_mask")
+    use_keepout_zones = LaunchConfiguration("use_keepout_zones")
     mujoco_model = LaunchConfiguration("mujoco_model")
     headless = LaunchConfiguration("headless")
     use_rviz = LaunchConfiguration("use_rviz")
     rviz_config = LaunchConfiguration("rviz_config")
+    nav_debug = LaunchConfiguration("nav_debug")
 
     declare_map_arg = DeclareLaunchArgument(
         "map",
-        default_value=os.path.join(pkg_robot_bringup, "config", "map", "empty_floor.yaml"),
-        description="Map YAML for map_server. Its origin must match the MuJoCo world origin",
+        default_value=default_map_dir,
+        description="Full path to the map directory containing map.yaml and keepout.yaml",
     )
-    declare_params_file_arg = DeclareLaunchArgument(
-        "params_file",
-        default_value=os.path.join(
-            pkg_robot_navigation, "config", "nav2", "nav2_mppi_walkie_sim_params.yaml"
-        ),
-        description="Nav2 parameter file",
+    declare_nav2_config_arg = DeclareLaunchArgument(
+        "nav2_config",
+        default_value=default_nav2_config,
+        description="Full path to the nav2 config YAML file",
+    )
+    declare_use_keepout_zones_arg = DeclareLaunchArgument(
+        "use_keepout_zones",
+        default_value="false",
+        description="Whether to enable keepout (no-go) zone filters",
+    )
+    declare_keepout_mask_arg = DeclareLaunchArgument(
+        "keepout_mask",
+        default_value=PathJoinSubstitution([map_dir, "keepout.yaml"]),
+        description="Full path to keepout mask YAML file to load. Defaults to keepout.yaml in map_dir.",
+    )
+    declare_nav_debug_arg = DeclareLaunchArgument(
+        "nav_debug",
+        default_value="false",
+        description="Publish nav_commander debug markers (ROI cells, PCA, approach angle)",
     )
     declare_mujoco_model_arg = DeclareLaunchArgument(
         "mujoco_model",
@@ -86,6 +126,18 @@ def generate_launch_description():
         parameters=[{"use_sim_time": True}],
     )
 
+    # Simulation parameter substitutions via RewrittenYaml
+    nav2_rewritten_params = RewrittenYaml(
+        source_file=nav2_config,
+        root_key="",
+        param_rewrites={
+            "use_sim_time": "true",
+            "local_costmap.local_costmap.ros__parameters.stvl_layer.enabled": "false",
+            "collision_monitor.ros__parameters.pointcloud.enabled": "false",
+        },
+        convert_types=True,
+    )
+
     # Nav2 nodes publish "cmd_vel"; remap it to cmd_vel_controller so commands
     # pass velocity_smoother and collision_monitor before reaching twist_mux on
     # cmd_vel_nav. SetRemap rules come before nav2_bringup's own
@@ -104,24 +156,44 @@ def generate_launch_description():
                     os.path.join(pkg_nav2_bringup, "launch", "bringup_launch.py")
                 ),
                 launch_arguments={
-                    "use_sim_time": "True",
-                    "map": map_yaml,
-                    "params_file": params_file,
-                    "use_localization": "False",
-                    "serve_static_map": "True",
-                    "use_keepout_zones": "False",
-                    "use_speed_zones": "False",
-                    "autostart": "True",
-                    "use_composition": "False",
+                    "use_sim_time": "true",
+                    "map": map_yaml_file,
+                    "params_file": nav2_rewritten_params,
+                    "default_nav_to_pose_bt_xml": bt_xml_path,
+                    "use_localization": "false",
+                    "serve_static_map": "true",
+                    "use_keepout_zones": use_keepout_zones,
+                    "keepout_mask": keepout_mask_file,
+                    "use_speed_zones": "false",
+                    "autostart": "true",
+                    "use_composition": "false",
                 }.items(),
             ),
         ]
     )
 
+    # Object approach-pose action server (/navigate_to_object -> Nav2)
+    nav_commander = Node(
+        package="robot_navigation",
+        executable="nav_commander.py",
+        name="nav_commander",
+        output="screen",
+        parameters=[
+            walkie_nav_config,
+            {
+                "use_sim_time": True,
+                "debug": nav_debug,
+            },
+        ],
+    )
+
     ld = LaunchDescription()
 
     ld.add_action(declare_map_arg)
-    ld.add_action(declare_params_file_arg)
+    ld.add_action(declare_nav2_config_arg)
+    ld.add_action(declare_use_keepout_zones_arg)
+    ld.add_action(declare_keepout_mask_arg)
+    ld.add_action(declare_nav_debug_arg)
     ld.add_action(declare_mujoco_model_arg)
     ld.add_action(declare_headless_arg)
     ld.add_action(declare_use_rviz_arg)
@@ -130,5 +202,6 @@ def generate_launch_description():
     ld.add_action(mujoco_launch)
     ld.add_action(map_to_odom)
     ld.add_action(nav2_launch)
+    ld.add_action(nav_commander)
 
     return ld
