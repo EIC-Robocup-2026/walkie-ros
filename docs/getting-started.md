@@ -178,7 +178,9 @@ pixi run ros2 launch robot_bringup mujoco_omnibot.launch.py
 
 This opens the MuJoCo viewer with the robot on an empty floor, and starts its
 controllers and RViz. Add `headless:=true` to skip the viewer window. See
-[MuJoCo Simulation](guides/simulation-mujoco.md#run-with-ros-2).
+[MuJoCo Simulation](guides/simulation-mujoco.md#run-with-ros-2). To run Walkie
+in a captured living room and kitchen with AMCL and Nav2 instead, see
+[Chula Pat14 Room Simulation](guides/simulation-chula-pat14.md).
 
 !!! tip "Quick check without ROS"
     `pixi run mjcf-view` opens the MuJoCo model of the robot in the MuJoCo

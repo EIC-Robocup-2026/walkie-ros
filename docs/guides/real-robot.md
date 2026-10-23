@@ -236,8 +236,9 @@ Then start each step in its own terminal, in this order:
   longer do. Without it, every Nav2 node waits with
   `Waiting on external lifecycle transitions to activate` (see
   [Troubleshooting](../troubleshooting.md#nav2-nodes-stay-unconfigured)).
-- Step 4 needs Zenoh, which `pixi run` selects. Under Fast DDS (outside pixi,
-  or with a DDS override), `controller_server` fails to configure (see
+- Step 4 needs Zenoh, which `pixi run` selects: under Fast DDS (outside pixi,
+  or with a DDS override), Nav2 cannot see the nodes of steps 2 and 3. With the
+  restaurant parameter file, `controller_server` also fails to configure (see
   [Troubleshooting](../troubleshooting.md#nav2-voxel-grid-incompatible-type)).
 
 !!! warning "Step 4: the collision monitor now stops and slows the robot"
@@ -246,13 +247,16 @@ Then start each step in its own terminal, in this order:
     [5. Repair Nav2 After the navigation2 Bump](../migrations/05-nav2-repair.md),
     both were bypassed.
 
-    - **Stop and slow down:** 4 or more points of `/scan` or
-      `/unilidar/cloud/filtered` in the stop polygon of the commanded
-      direction stop the robot. The polygon covers the footprint faces that
-      lead in that direction, up to 0.35 m from the base center, so Nav2 can
-      still drive away from the obstacle. Within 0.55 m the robot moves at
-      40 %. If it is boxed in, drive it out with the joystick. See
+    - **Stop and slow down:** 4 or more points of `/scan` in the stop polygon
+      of the commanded direction stop the robot. The polygon covers the
+      footprint faces that lead in that direction, up to 0.35 m from the base
+      center, so Nav2 can still drive away from the obstacle. Within 0.55 m
+      the robot moves at 80 %. If it is boxed in, drive it out with the
+      joystick. See
       [Navigation: Collision monitor](navigation.md#collision-monitor).
+    - **3D lidar:** `/unilidar/cloud/filtered` only slows the robot. Its self
+      filter removes every point within 0.45 m of the base center, so the
+      cloud never reaches the stop polygons.
     - **No `/scan`:** if one lidar stops publishing, or has no valid return in
       any direction (covered, faulty, or nothing within its range), the merger
       drops `/scan`. The real robot keeps the
@@ -261,12 +265,20 @@ Then start each step in its own terminal, in this order:
       `/unilidar/cloud/filtered` source has no data.
     - Both missing-data cases stop every Nav2 command after 2 s
       (`Robot to stop due to invalid source`).
-    - **Speed limit:** the velocity smoother caps Nav2 at 0.3 m/s and 1.0 rad/s.
+    - **Speed limit:** the velocity smoother caps Nav2 at 0.3 m/s and 1.0 rad/s,
+      and accelerates and brakes at 0.2 m/s² and 0.7 rad/s².
 
     None of this has been tested on the real robot.
 
     To find the cause of a stop, see
     [The robot stops or slows near obstacles under Nav2](../troubleshooting.md#nav2-robot-stops-near-obstacles).
+
+!!! warning "Step 4: STVL is disabled until the head camera joint is repaired"
+    The local costmap marks only `/scan`, so Nav2 does not plan around
+    tabletops and other obstacles outside the 2D lidar planes. The collision
+    monitor does not stop for them either: it only slows the robot while they
+    are farther than 0.45 m. Supervise the robot near tables. See
+    [Navigation: Spatio-Temporal Voxel Layer](navigation.md#spatio-temporal-voxel-layer).
 
 ??? info "Which bringup step needs which"
     ```mermaid

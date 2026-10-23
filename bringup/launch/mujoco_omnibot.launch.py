@@ -7,23 +7,49 @@ process, which also publishes the sensors), the controller spawners, twist_mux,
 dual_laser_merger for /scan, robot_self_filter for the head 3D lidar cloud
 (/unilidar/cloud to /unilidar/cloud/filtered), the walkie_tf server, and RViz.
 Every node runs on simulated time from /clock.
+
+With world:=NAME, the exported world NAME (see robot_bringup.mujoco_launch) is
+assembled with Walkie into a cached MJCF before the simulator starts, and that
+file replaces mujoco_model. Without world, mujoco_model is used unchanged.
 """
 import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, Shutdown
+from launch.actions import (
+    DeclareLaunchArgument, IncludeLaunchDescription, LogInfo, OpaqueFunction,
+    SetLaunchConfiguration, Shutdown,
+)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, FindExecutable, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+from robot_bringup.mujoco_launch import (
+    declare_world_arguments, prepare_world_from_context, with_viewer_backend,
+)
+
+
+def _resolve_world(context, *, description_dir, default_model):
+    """Replace mujoco_model with the prepared world before xacro reads it."""
+    prepared = prepare_world_from_context(
+        context, description_dir=description_dir,
+        replaced_defaults={"mujoco_model": default_model},
+    )
+    if prepared is None:
+        return []
+    return [
+        SetLaunchConfiguration("mujoco_model", prepared["model_path"]),
+        LogInfo(msg=f"Prepared world variant {prepared['variant']}: "
+                    f"{prepared['model_path']}"),
+    ]
 
 
 def generate_launch_description():
     pkg_robot_bringup = get_package_share_directory("robot_bringup")
     pkg_walkie_description = get_package_share_directory("walkie_description")
 
+    default_model = os.path.join(pkg_walkie_description, "mujoco", "scene.xml")
     robot_xacro = os.path.join(pkg_walkie_description, "robots", "gz_walkie.urdf.xacro")
     controllers_yaml = os.path.join(
         pkg_walkie_description, "config", "ros2_controller", "mujoco_controllers.yaml"
@@ -41,8 +67,9 @@ def generate_launch_description():
 
     declare_mujoco_model_arg = DeclareLaunchArgument(
         "mujoco_model",
-        default_value=os.path.join(pkg_walkie_description, "mujoco", "scene.xml"),
-        description="MJCF scene to load. It must include walkie.xml and a plane geom named floor",
+        default_value=default_model,
+        description="MJCF scene to load without world. It must include walkie.xml "
+                    "and a plane geom named floor",
     )
     declare_headless_arg = DeclareLaunchArgument(
         "headless",
@@ -221,13 +248,20 @@ def generate_launch_description():
 
     ld = LaunchDescription()
 
+    for declare_world_arg in declare_world_arguments():
+        ld.add_action(declare_world_arg)
     ld.add_action(declare_mujoco_model_arg)
     ld.add_action(declare_headless_arg)
     ld.add_action(declare_use_rviz_arg)
     ld.add_action(declare_rviz_config_arg)
+    # Runs before every node, so xacro and the simulator see the prepared model.
+    ld.add_action(OpaqueFunction(function=_resolve_world, kwargs={
+        "description_dir": pkg_walkie_description,
+        "default_model": default_model,
+    }))
 
     ld.add_action(robot_state_publisher)
-    ld.add_action(mujoco_ros2_control)
+    ld.add_action(with_viewer_backend(mujoco_ros2_control))
     ld.add_action(base_controllers_spawner)
     ld.add_action(upper_body_controllers_spawner)
     ld.add_action(twist_mux)

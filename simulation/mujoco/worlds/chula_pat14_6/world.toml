@@ -1,0 +1,16 @@
+# World manifest read by robot_bringup.world_loader at launch time.
+# Paths are relative to this directory.
+schema_version = 1
+default_variant = "lowpoly"
+map = "map/map.yaml"
+default_spawn = "living-room"
+
+# Variant name -> exported MuJoCo environment.
+[variants]
+lowpoly = "scene.xml"
+baked = "baked/scene.xml"
+
+# X/Y are meters in the captured ROS map frame; yaw is degrees.
+[spawns]
+origin = [0.0, 0.0, 0.0]
+living-room = [1.76, -1.48, -90.0]

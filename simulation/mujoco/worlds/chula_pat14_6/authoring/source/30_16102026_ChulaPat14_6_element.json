@@ -1,0 +1,419 @@
+{
+  "labels": [
+    "table",
+    "shelf",
+    "chair",
+    "sofa",
+    "tv",
+    "food",
+    "drink"
+  ],
+  "elements": [
+    {
+      "type": "nogo",
+      "label": "no-go",
+      "coords": [
+        [
+          1.8136594605641694,
+          -7.192427209296428
+        ],
+        [
+          1.8136594605641694,
+          -7.6527355718458425
+        ],
+        [
+          3.0999243607526568,
+          -7.680576803451656
+        ],
+        [
+          3.083219621789169,
+          -7.249965754615106
+        ]
+      ],
+      "closed": true,
+      "asNogo": false,
+      "id": "e3"
+    },
+    {
+      "type": "nogo",
+      "label": "no-go",
+      "coords": [
+        [
+          -0.309959936448271,
+          -7.010060073102373
+        ],
+        [
+          0.6953869368375791,
+          -7.012194567525488
+        ],
+        [
+          0.7060594089531413,
+          -7.60558401715068
+        ],
+        [
+          -0.34838083606429127,
+          -7.601315028304457
+        ]
+      ],
+      "closed": true,
+      "asNogo": false,
+      "id": "e4"
+    },
+    {
+      "type": "nogo",
+      "label": "no-go",
+      "coords": [
+        [
+          3.5826043062531188,
+          -0.7033622754796234
+        ],
+        [
+          2.996484984654817,
+          -0.6958957873063962
+        ],
+        [
+          2.9927517405682025,
+          -2.6073167596524556
+        ],
+        [
+          3.5490051094735993,
+          -2.603583515565843
+        ]
+      ],
+      "closed": true,
+      "asNogo": false,
+      "id": "e5"
+    },
+    {
+      "type": "waypoint",
+      "label": "living_room",
+      "semType": "area",
+      "coords": [
+        [
+          1.7629267673857631,
+          -1.4829965753263794
+        ]
+      ],
+      "closed": false,
+      "asNogo": false,
+      "heading": 0,
+      "role": "room",
+      "polygon": [
+        [
+          0.8716878213145387,
+          0.39084828773466285
+        ],
+        [
+          3.572166491150641,
+          0.39084828773466285
+        ],
+        [
+          3.572166491150641,
+          -3.3632262267723414
+        ],
+        [
+          0.8716878213145387,
+          -3.3632262267723414
+        ]
+      ],
+      "name": "living_room",
+      "room": "",
+      "category": "",
+      "z": null,
+      "aliases": [],
+      "placement": false,
+      "barrier": false,
+      "radius": null,
+      "present": true,
+      "id": "e8"
+    },
+    {
+      "type": "waypoint",
+      "label": "kitchen_room",
+      "semType": "area",
+      "coords": [
+        [
+          1.317590370019551,
+          -4.012279291764987
+        ]
+      ],
+      "closed": false,
+      "asNogo": false,
+      "heading": -1.5604804762122169,
+      "role": "room",
+      "polygon": [
+        [
+          -0.36166299135881896,
+          -7.6095129506645875
+        ],
+        [
+          3.5458478112070573,
+          -7.6095129506645875
+        ],
+        [
+          3.5458478112070573,
+          -3.3951295719809718
+        ],
+        [
+          -0.36166299135881896,
+          -3.3951295719809718
+        ]
+      ],
+      "name": "kitchen_room",
+      "room": "",
+      "category": "",
+      "z": null,
+      "aliases": [],
+      "placement": false,
+      "barrier": false,
+      "radius": null,
+      "present": true,
+      "id": "e12"
+    },
+    {
+      "type": "waypoint",
+      "label": "shelf",
+      "semType": "object",
+      "coords": [
+        [
+          2.4868458234849022,
+          -6.4085532961658815
+        ]
+      ],
+      "closed": false,
+      "asNogo": false,
+      "heading": -1.5697269773219273,
+      "role": "location",
+      "polygon": [
+        [
+          2.447965229664632,
+          -6.868868175800948
+        ],
+        [
+          2.447965229664632,
+          -6.868868175800948
+        ],
+        [
+          2.447965229664632,
+          -6.868868175800948
+        ],
+        [
+          2.447965229664632,
+          -6.868868175800948
+        ]
+      ],
+      "name": "shelf",
+      "room": "kitchen_room",
+      "category": "",
+      "z": null,
+      "aliases": [],
+      "placement": false,
+      "barrier": false,
+      "radius": null,
+      "present": true,
+      "id": "e14"
+    },
+    {
+      "type": "waypoint",
+      "label": "tv",
+      "semType": "object",
+      "coords": [
+        [
+          1.6070841130708562,
+          -1.6133026632026786
+        ]
+      ],
+      "closed": false,
+      "asNogo": false,
+      "heading": 3.132771785514612,
+      "role": "location",
+      "polygon": [
+        [
+          1.476630564390275,
+          -1.533558998597898
+        ],
+        [
+          1.476630564390275,
+          -1.533558998597898
+        ],
+        [
+          1.476630564390275,
+          -1.533558998597898
+        ],
+        [
+          1.476630564390275,
+          -1.533558998597898
+        ]
+      ],
+      "name": "tv",
+      "room": "living_room",
+      "category": "",
+      "z": null,
+      "aliases": [],
+      "placement": false,
+      "barrier": false,
+      "radius": null,
+      "present": true,
+      "id": "e16"
+    },
+    {
+      "type": "waypoint",
+      "label": "sofa",
+      "semType": "object",
+      "coords": [
+        [
+          2.252004622775992,
+          -1.475309327113088
+        ]
+      ],
+      "closed": false,
+      "asNogo": false,
+      "heading": 0,
+      "role": "location",
+      "polygon": [
+        [
+          1.9033365136931426,
+          -1.1376807365559936
+        ],
+        [
+          1.9033365136931426,
+          -1.1376807365559936
+        ],
+        [
+          1.9033365136931426,
+          -1.1376807365559936
+        ],
+        [
+          1.9033365136931426,
+          -1.1376807365559936
+        ]
+      ],
+      "name": "sofa",
+      "room": "living_room",
+      "category": "",
+      "z": null,
+      "aliases": [],
+      "placement": false,
+      "barrier": false,
+      "radius": null,
+      "present": true,
+      "id": "e18"
+    },
+    {
+      "type": "waypoint",
+      "label": "bar",
+      "semType": "object",
+      "coords": [
+        [
+          0.2147693705594209,
+          -6.300882532986823
+        ]
+      ],
+      "closed": false,
+      "asNogo": false,
+      "heading": -1.5855011491727482,
+      "role": "location",
+      "polygon": [
+        [
+          0.18801812003205232,
+          -6.561707225628668
+        ],
+        [
+          0.18801812003205232,
+          -6.561707225628668
+        ],
+        [
+          0.18801812003205232,
+          -6.561707225628668
+        ],
+        [
+          0.18801812003205232,
+          -6.561707225628668
+        ]
+      ],
+      "name": "bar",
+      "room": "kitchen_room",
+      "category": "",
+      "z": null,
+      "aliases": [],
+      "placement": false,
+      "barrier": false,
+      "radius": null,
+      "present": true,
+      "id": "e20"
+    },
+    {
+      "type": "waypoint",
+      "label": "table",
+      "semType": "object",
+      "coords": [
+        [
+          1.7023083679168058,
+          -3.9569681213232526
+        ]
+      ],
+      "closed": false,
+      "asNogo": false,
+      "heading": -1.5559825956829951,
+      "role": "location",
+      "polygon": [
+        [
+          1.7023083679168058,
+          -3.9569681213232526
+        ],
+        [
+          1.7023083679168058,
+          -3.9569681213232526
+        ],
+        [
+          1.7023083679168058,
+          -3.9569681213232526
+        ],
+        [
+          1.7023083679168058,
+          -3.9569681213232526
+        ]
+      ],
+      "name": "table",
+      "room": "kitchen_room",
+      "category": "",
+      "z": null,
+      "aliases": [],
+      "placement": false,
+      "barrier": false,
+      "radius": null,
+      "present": true,
+      "id": "e22"
+    },
+    {
+      "id": "e23",
+      "type": "waypoint",
+      "label": "entrance_door",
+      "coords": [
+        [
+          1.9934940003573773,
+          -0.006855270227377197
+        ]
+      ],
+      "closed": false,
+      "asNogo": false,
+      "heading": -3.1226924538956,
+      "role": "door",
+      "polygon": [],
+      "name": "entrance_door",
+      "room": "",
+      "category": "",
+      "z": null,
+      "aliases": [],
+      "placement": false,
+      "barrier": false,
+      "radius": null,
+      "present": true
+    }
+  ],
+  "vocab": {
+    "object_categories": {},
+    "names": [],
+    "gestures": {}
+  }
+}

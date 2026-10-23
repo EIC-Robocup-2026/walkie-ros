@@ -21,8 +21,9 @@ This entry records what the team built, why, and what is still missing. The
   [entry 4](../04-robostack-build-25.md) it is installed. Since
   [2.7](07-launch.md), `mujoco_omnibot.launch.py` starts it, and
   `nav_mujoco_omnibot.launch.py` adds Nav2. Since [2.8](08-3d-lidar.md), the head 3D lidar
-  publishes `/unilidar/cloud`. MoveIt with MuJoCo has not been run yet
-  ([Current status](#current-status)).
+  publishes `/unilidar/cloud`. Since [2.9](09-named-worlds.md), both launch files load
+  named worlds with `world:=NAME`, and the Nav2 launch starts AMCL on the world's map.
+  MoveIt with MuJoCo has not been run yet ([Current status](#current-status)).
 
 ## Why MuJoCo
 
@@ -79,7 +80,9 @@ has rules a converted Gazebo world would not meet: the floor must be a plane nam
 `floor`, the wheel contact pairs must be present, and every world geom needs a collision
 class. The minimal world `description/mujoco/scene.xml` documents these rules in its
 header comment, and [2.1 Generate the Model](01-model-generation.md#rules-for-a-custom-world)
-lists them.
+lists them. Since [2.9 Named Worlds](09-named-worlds.md), a world exported from Blender can
+also be loaded by name: the launch merges it with the robot and applies these rules
+itself.
 
 ### Generate the MJCF from the xacro, with an MjSpec overlay
 
@@ -194,12 +197,14 @@ What works today, with no colcon build:
 
 With ROS 2, after `pixi run build` (on a workspace built before the launch files or the
 head 3D lidar existed, `pixi install` and
-`pixi run build-pkg robot_bringup walkie_description robot_self_filter` are enough):
+`pixi run build-pkg robot_bringup walkie_mujoco_worlds walkie_description robot_self_filter`
+are enough):
 
 | Task | Command |
 | --- | --- |
 | MuJoCo with ros2_control, the sensors and RViz | `pixi run ros2 launch robot_bringup mujoco_omnibot.launch.py` |
 | The same plus Nav2 on a blank map | `pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py` |
+| A named world with AMCL and Nav2 | `pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py world:=chula_pat14_6` |
 
 Set up the middleware first, as described in
 [MuJoCo Simulation: Run with ROS 2](../../guides/simulation-mujoco.md#run-with-ros-2).
@@ -240,6 +245,14 @@ What did not work when this entry was written: the ros2_control runtime.
     `walkie.xml` now needs the extension, which the pixi environment provides. See
     [2.8 Head 3D Lidar](08-3d-lidar.md).
 
+!!! note "Update 2026-10-22: named worlds"
+    Both launch files load a named world with `world:=NAME`: a directory with a
+    `world.toml` manifest, an exported scene and a map, in the new package
+    `walkie_mujoco_worlds`. The first world is the Chula Pat14 room. With a world,
+    `nav_mujoco_omnibot.launch.py` starts AMCL on the world's map. In a live run, Nav2
+    reached goals in the room, with AMCL 0.1 to 0.2 m off the true pose. See
+    [2.9 Named Worlds](09-named-worlds.md).
+
 ## Next steps
 
 1. **Re-lock the default pixi environment to RoboStack build 25**, so
@@ -267,6 +280,10 @@ What did not work when this entry was written: the ros2_control runtime.
     Step 2 is done, see [2.7 Launch Files and Nav2](07-launch.md). The parameter file is
     now `bringup/config/mujoco/mujoco_plugins.yaml`.
 
+!!! note "Update 2026-10-22: named worlds"
+    Step 4 has a format now: a competition arena can be added as a named world, see
+    [2.9 Named Worlds](09-named-worlds.md).
+
 ??? info "Why not a separate pixi environment for MuJoCo"
     A separate pixi environment for MuJoCo was the alternative to re-locking. It was not
     chosen because pixi activation sources `install/setup.bash`, so a second environment
@@ -284,6 +301,7 @@ What did not work when this entry was written: the ros2_control runtime.
 | [2.6 Tests](06-tests.md) | What the description, MJCF and SRDF contract tests check |
 | [2.7 Launch Files and Nav2](07-launch.md) | The MuJoCo and Nav2 launch files, the plugin parameter file, two Nav2 fork issues, test results |
 | [2.8 Head 3D Lidar](08-3d-lidar.md) | The Unitree 4D L2 as a MuJoCo extension sensor, its cloud next to the real one, the self filter fix |
+| [2.9 Named Worlds](09-named-worlds.md) | Worlds exported from Blender, loaded by name with a map, a spawn and AMCL; the `walkie_mujoco_worlds` package; the loader's physics rules |
 
 For day-to-day use, see the [MuJoCo Simulation guide](../../guides/simulation-mujoco.md).
 

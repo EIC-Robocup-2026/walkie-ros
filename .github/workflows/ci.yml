@@ -15,7 +15,8 @@ concurrency:
 
 env:
   # Tests that must pass. Lint tests (CTest label "linter") are excluded from this run.
-  TEST_PACKAGES: walkie_description openarm_bimanual_moveit_config topic_based_ros2_control
+  # robot_bringup compiles every installed walkie_mujoco_worlds variant with walkie.xml.
+  TEST_PACKAGES: walkie_description openarm_bimanual_moveit_config topic_based_ros2_control robot_bringup
   # First-party packages whose lint tests run but do not fail the job, because they fail today.
   LINT_PACKAGES: robot_bringup robot_simulation robot_navigation dual_laser_merger joy_interface
   CCACHE_DIR: ${{ github.workspace }}/.ccache
@@ -143,7 +144,9 @@ jobs:
         shell: pixi run bash -e {0}
         run: |
           rc=0
-          colcon test --packages-select $LINT_PACKAGES --return-code-on-test-failure || rc=$?
+          # Only the lint tests: the Test step already ran the others.
+          colcon test --packages-select $LINT_PACKAGES --return-code-on-test-failure \
+            --ctest-args " -L" linter || rc=$?
           colcon test-result || true
           echo "Lint (not enforced): $(colcon test-result | tail -n 1)" >> "$GITHUB_STEP_SUMMARY"
           exit $rc

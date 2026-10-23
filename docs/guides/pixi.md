@@ -190,6 +190,8 @@ yourself, so the flags are always the same.
 | `setup` | Adds the `libpthread.so` link that the conda compiler sysroot is missing. Safe to run again. |
 | `mjcf` | Regenerates `description/mujoco/walkie.xml` from the robot Xacro. No build needed. |
 | `mjcf-view` | Opens `description/mujoco/scene.xml` in the MuJoCo viewer, at the `home` keyframe |
+| `world-validate` | Checks a named MuJoCo world offline, for example `pixi run world-validate chula_pat14_6 --robot`. No build needed. See [Add a named world](simulation-mujoco.md#add-a-named-world). |
+| `world-overlay` | Draws a named MuJoCo world over its occupancy map, for example `pixi run world-overlay chula_pat14_6 --check-navigation`. No build needed. |
 | `docs` | Previews this site at <http://127.0.0.1:8000> |
 | `docs-build` | Builds the site into `site/`. Fails on any warning, such as a broken link. |
 
@@ -205,6 +207,8 @@ yourself, so the flags are always the same.
     | `clean` | default | `rm -rf build install log` |
     | `mjcf` | default | `python description/scripts/build_mjcf.py` |
     | `mjcf-view` | default | A Python one-liner |
+    | `world-validate` | default | `python simulation/mujoco/tools/validate_world.py` |
+    | `world-overlay` | default | `python simulation/mujoco/tools/make_map_overlay.py` |
     | `docs` | docs | `mkdocs serve` |
     | `docs-build` | docs | `mkdocs build --strict` |
 
@@ -223,7 +227,7 @@ installed "copy" changes with it. To rebuild one package, run
 | --- | --- |
 | An existing Python, launch, Xacro, YAML, or RViz file | No. Restart the node or the launch file. |
 | A script installed under a new name (`install(PROGRAMS ... RENAME ...)`), such as the `walkie_perception` nodes and the `openarm_bimanual_commander_cpp` scripts | Yes. colcon copies these files instead of linking them. |
-| A new file, such as a launch file, config file, or script | Yes. It has no link in `install/` until the next build. |
+| A new file, such as a launch file, config file, or script | Yes. It has no link in `install/` until the next build. This includes a new or renamed file of a named MuJoCo world (`pixi run build-pkg walkie_mujoco_worlds`). |
 | C++ code | Yes. C++ must be compiled. |
 | `package.xml`, `CMakeLists.txt`, or `setup.py` | Yes. |
 | The `ros2-distro-mutex` pin in `pixi.toml`, for example through a `git pull`. `pixi.lock` is then on another RoboStack build set. | Yes, everything: `pixi install`, then `pixi run clean && pixi run build`. `build-pkg` is not enough. See [Changing the build set](#changing-the-build-set). |

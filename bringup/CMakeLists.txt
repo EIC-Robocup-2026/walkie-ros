@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.11)
 project(robot_bringup)
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_cmake_python REQUIRED)
+
+ament_python_install_package(${PROJECT_NAME})
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -28,6 +31,12 @@ install(PROGRAMS
 # find_package(<dependency> REQUIRED)
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_mujoco_world test/test_mujoco_world.py)
+  ament_add_pytest_test(test_mujoco_launch_worlds test/test_mujoco_launch_worlds.py)
+  # Compiles every installed world variant with the installed walkie.xml.
+  ament_add_pytest_test(test_mujoco_world_assets test/test_mujoco_world_assets.py
+    TIMEOUT 180)
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
   # comment the line when a copyright and license is added to all source files

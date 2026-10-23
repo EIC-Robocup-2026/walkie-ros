@@ -227,6 +227,8 @@ test = {cmd = "colcon test", description = "Run tests for the workspace"}
 clean = {cmd = "rm -rf build install log", description = "Clean build artifacts (build, install, log directories)"}
 mjcf = {cmd = "python description/scripts/build_mjcf.py", description = "Regenerate the MuJoCo model description/mujoco/walkie.xml from the robot xacro (no build needed)"}
 mjcf-view = {cmd = "python -c \"import mujoco, mujoco.viewer; m = mujoco.MjModel.from_xml_path('description/mujoco/scene.xml'); d = mujoco.MjData(m); mujoco.mj_resetDataKeyframe(m, d, m.key('home').id); mujoco.viewer.launch(m, d)\"", description = "Open the MuJoCo scene (robot on a floor) in the interactive viewer, starting from the home keyframe"}
+world-validate = {cmd = "python simulation/mujoco/tools/validate_world.py", description = "Validate a MuJoCo world offline, e.g. pixi run world-validate chula_pat14_6 --robot (no build needed; reports in simulation/mujoco/output/)"}
+world-overlay = {cmd = "python simulation/mujoco/tools/make_map_overlay.py", description = "Overlay a MuJoCo world on its map, e.g. pixi run world-overlay chula_pat14_6 --check-navigation (no build needed; images in simulation/mujoco/output/)"}
 
 [tasks.build-setup]
 args = [{ arg = "workers", default = "1" }]

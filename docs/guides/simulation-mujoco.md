@@ -6,18 +6,23 @@ in `robot_bringup` start the simulation: `mujoco_omnibot.launch.py` with the con
 and RViz, and `nav_mujoco_omnibot.launch.py` with Nav2 on top. MoveIt with MuJoCo is not
 tested yet.
 
+Named worlds are rooms with their own map and spawns that both launch files load with
+`world:=NAME`. See [Add a named world](#add-a-named-world). The first one is the
+[Chula Pat14 room](simulation-chula-pat14.md).
+
 ## Quick start { #what-works-now }
 
 | Task | Command |
 | --- | --- |
 | Run MuJoCo with ROS 2, the controllers and RViz | `pixi run ros2 launch robot_bringup mujoco_omnibot.launch.py` |
 | The same, plus Nav2: send goals from RViz | `pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py` |
+| Run a named world with AMCL and Nav2, here the Chula Pat14 room | `pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py world:=chula_pat14_6` |
 | Open the robot on a floor, in the `home` pose | `pixi run mjcf-view` |
 | Open any world file, with a working **Reload** button | `pixi run python -m mujoco.viewer --mjcf=description/mujoco/scene.xml` |
 | Regenerate the robot model after a description change | `pixi run mjcf` |
 | Test the model and the default world | `pixi run python -m pytest description/test/test_mjcf.py` |
 
-The two launch files need a build and a Zenoh router first. See
+The launch commands need a build and a Zenoh router first. See
 [Run with ROS 2](#run-with-ros-2). The other commands need no colcon build: the generator
 and `test_mjcf.py` read the xacro from the source tree, not from `install/`.
 
@@ -168,6 +173,10 @@ is not changed.
 
 ## Build a custom world
 
+A custom world includes the robot itself and is loaded with `mujoco_model:=`. For a room
+with its own map and spawns that the launch files load by name, see
+[Add a named world](#add-a-named-world) instead.
+
 `description/mujoco/scene.xml` is the template. Its header lists the rules a world must
 follow. The steps below build an example: a table with a cube on it, 1.2 m in front of
 the robot.
@@ -293,6 +302,187 @@ To start directly in `home`, run the `mjcf-view` command with your file:
 pixi run python -c "import mujoco, mujoco.viewer; m = mujoco.MjModel.from_xml_path('description/mujoco/table_world.xml'); d = mujoco.MjData(m); mujoco.mj_resetDataKeyframe(m, d, m.key('home').id); mujoco.viewer.launch(m, d)"
 ```
 
+## Add a named world
+
+A named world is a directory with a `world.toml` manifest next to an exported MuJoCo scene
+and an occupancy map. Both launch files load it with `world:=NAME`: they merge Walkie into
+the scene and place the robot at a spawn. `nav_mujoco_omnibot.launch.py` also starts AMCL
+on the world's map. Unlike a [custom world](#build-a-custom-world), the scene does not
+include the robot and can live outside `description/`. The
+[Chula Pat14 room](simulation-chula-pat14.md) is a complete example.
+
+1. **Create the directory** `simulation/mujoco/worlds/<name>/`. `<name>` is the value of
+   `world:=`. It may contain letters, digits, `_` and `-`.
+2. **Export the scene without the robot**, for example as `scene.xml` with its meshes and
+   textures. It must follow [What the scene must contain](#named-world-scene).
+3. **Add the occupancy map**: a `map_server` YAML and its image, in the frame of the scene.
+4. **Write `world.toml`.** See [The manifest](#world-manifest).
+5. **Check the world offline.** These commands need no build:
+
+    ```bash
+    pixi run world-validate <name> --robot
+    pixi run world-overlay <name> --check-navigation
+    ```
+
+    Reports and images go to the ignored `simulation/mujoco/output/<name>/`. Checks that
+    need world-specific names go into an optional `authoring/checks.py` in the world
+    directory. The docstring of `simulation/mujoco/worlds/chula_pat14_6/authoring/checks.py`
+    lists the hooks.
+
+6. **Disable the scene's cameras in the camera plugin.** `CameraPlugin` streams every
+   camera of the model. For each `<camera>` of the scene, add an entry with
+   `policy: disabled` under `mujoco_camera_plugin` in
+   `bringup/config/mujoco/mujoco_plugins.yaml`, as the Chula room's cameras have. The
+   cameras stay viewer presets, and the `robot_bringup` tests fail without the entries.
+7. **Install the new files:**
+
+    ```bash
+    pixi run build-pkg walkie_mujoco_worlds
+    ```
+
+8. **Run it:**
+
+    ```bash
+    pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py world:=<name>
+    ```
+
+9. **Run the `robot_bringup` tests.** They merge and compile every variant of every
+   installed world, and run in CI. See [Tests](#tests).
+
+### The manifest { #world-manifest }
+
+```toml title="simulation/mujoco/worlds/chula_pat14_6/world.toml (without its comments)"
+schema_version = 1
+default_variant = "lowpoly"
+map = "map/map.yaml"
+default_spawn = "living-room"
+
+[variants]
+lowpoly = "scene.xml"
+baked = "baked/scene.xml"
+
+[spawns]
+origin = [0.0, 0.0, 0.0]
+living-room = [1.76, -1.48, -90.0]
+```
+
+| Key | Meaning |
+| --- | --- |
+| `schema_version` | Always `1` |
+| `default_variant` | The variant that an empty `variant` argument selects. Must be a key of `[variants]`. |
+| `map` | The `map_server` YAML of the occupancy map |
+| `default_spawn` | The spawn that an empty `spawn` argument selects. Must be a key of `[spawns]`. |
+| `[variants]` | Variant name to scene file. Names may contain letters, digits, `_` and `-`. |
+| `[spawns]` | Spawn name to `[X, Y, YAW_DEG]` in the map frame, in meters and degrees |
+
+- All six keys are required. Any other key is an error.
+- File paths are relative to the directory of `world.toml` and must stay inside it:
+  absolute paths and `..` are errors.
+- The launch files, `world-validate`, `world-overlay` and the tests read the manifest with
+  the same loader, `bringup/robot_bringup/world_loader.py`, so an invalid manifest fails
+  everywhere with the same message.
+
+### What the scene must contain { #named-world-scene }
+
+The loader merges the scene into `walkie.xml` and stops the launch with an error that
+names the rule when the scene breaks one:
+
+- **No robot and no `<include>`.** Export expanded MJCF. The loader adds Walkie as the
+  first body, so the robot's degrees of freedom come first in `qpos`.
+- **Exactly one plane geom named `floor`.** The loader copies the four wheel-floor
+  `<pair>` elements from `description/mujoco/scene.xml`, and they refer to it by name. A
+  visible floor mesh needs `contype="0" conaffinity="0"`.
+- **`<compiler angle="radian">`**, as in `walkie.xml`. A different `angle` or `eulerseq` is
+  an error. MJCF defaults to `degree`, so set `angle` explicitly.
+- **No settings in the top-level `<default>`.** MuJoCo applies it to every element of the
+  merged model, the robot included. Use named classes (`<default class="...">`) whose
+  names differ from the robot's.
+- **No `<keyframe>`.** Give bodies their start poses and joints their `ref` values instead.
+- **Asset paths relative to the scene file**, or absolute. The loader makes them absolute,
+  so the scene works from any directory. A missing file is an error.
+
+The robot owns the settings that MuJoCo applies to the whole model:
+
+- `<compiler>`, `<option>`, `<size>`, `<visual>` and `<statistic>` come from `walkie.xml`.
+  From the world, only the free-camera view (`<visual><global azimuth elevation>`), the
+  headlight (`<visual><headlight>`), the haze color (`<visual><rgba haze>`) and
+  `<statistic center>` pass, and only where the robot sets none.
+- The launch logs dropped `<compiler>` values as a warning, because they can change the
+  inertia of world bodies, and the other dropped values as info. The generated `world.xml`
+  lists them in a comment. The Chula export, for example, logs its `iterations="40"`,
+  `memory="8M"` and camera settings.
+- Every merged model gets `<statistic extent="2.2">` and `<visual><map znear="0.025">`,
+  which keep the camera near plane at 5.5 cm, as in `scene.xml`.
+- A world `<size memory>` is kept only when it is larger than a value that the robot sets.
+  `walkie.xml` sets none, so MuJoCo sizes the memory of the merged model itself.
+
+The loader also sets the collision class of every world geom, so authored `contype` and
+`conaffinity` values do not matter, except for visual-only geoms:
+
+| World geom | Class | `contype`, `conaffinity` |
+| --- | --- | --- |
+| The plane named `floor` | FLOOR | 1, 32 |
+| `contype="0" conaffinity="0"`, set on the geom or in its default class (`class`, or the `childclass` of a body or `<frame>`) | None: visual only | 0, 0 |
+| In a body that has a joint, also one inside a `<frame>` of the body, or below such a body | OBJ | 32, 121 |
+| Every other geom | FURN | 64, 56 |
+
+So a body that moves needs a joint, for example `<freejoint/>`, and a mass. Static
+furniture needs no joint. The classes are those of [Collision classes](#collision-classes).
+
+??? info "Why the robot owns the model-wide settings"
+    MuJoCo applies `<compiler>`, `<option>`, `<size>`, `<visual>` and `<statistic>` to the
+    whole model. A world value would change Walkie's physics and sensors. The Chula export's
+    `iterations="40"`, for example, would lower the solver iterations of the robot, and its
+    `extent`, `znear` and `zfar` would move the camera clipping planes. Taking these
+    settings from the robot keeps every named world on the physics that the controllers
+    and tests were tuned for. The rules are in the docstring of `world_loader.py`.
+    [2.9 Named Worlds](../migrations/02-mujoco/09-named-worlds.md) records the decision.
+
+### Edit a world without a rebuild { #worlds-dir }
+
+The workspace is built with `--symlink-install`, so each installed world file is a link
+into `simulation/mujoco/worlds/`, and every launch merges the world again.
+
+- An edit to an existing file applies at the next launch.
+- After you add or rename a file, run `pixi run build-pkg walkie_mujoco_worlds`. The link
+  of a deleted or renamed file stays in `install/` as a dangling link. Inside a world it
+  does no harm: the launch reads only the files that the manifest and the scene refer to.
+- After you rename or delete a whole world directory, remove the stale links of the
+  package and rebuild it. The launch skips a world whose `world.toml` link dangles, but
+  the old directory stays in `install/` otherwise. `pixi run clean` would also delete the
+  Nav2 build.
+
+    ```bash
+    rm -rf install/walkie_mujoco_worlds build/walkie_mujoco_worlds
+    pixi run build-pkg walkie_mujoco_worlds
+    ```
+
+- The package installs only `world.toml` and the `*.xml`, `*.obj`, `*.stl`, `*.msh`,
+  `*.png`, `*.yaml` and `*.pgm` files. It leaves out `authoring/` and the `.blend` files.
+  Another file type needs its extension in the `INCLUDE` filter of
+  `simulation/mujoco/CMakeLists.txt`.
+- A build without `--symlink-install` copies the files. Then every edit needs
+  `pixi run build-pkg walkie_mujoco_worlds`, or pass
+  `worlds_dir:=$PWD/simulation/mujoco/worlds` to read the source tree directly.
+
+To load worlds from another directory, for example an export outside the repository, pass
+the directory that holds one subdirectory per world:
+
+```bash
+pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py world:=<name> worlds_dir:=/tmp/worlds
+pixi run world-validate <name> --robot --worlds-dir /tmp/worlds
+```
+
+??? info "Where the launch writes the merged world"
+    - The launch writes `<world>/<variant>/world.xml` and, with Nav2, `nav2.yaml` into
+      `world_output_dir`, by default `$ROS_HOME/mujoco_worlds` (`~/.ros/mujoco_worlds`).
+    - `nav2.yaml` is a copy of `params_file` with AMCL's `set_initial_pose: true` and its
+      `initial_pose` at the spawn.
+    - Every launch rewrites both files atomically. Two launches of the same world and
+      variant at the same time overwrite each other's files.
+    - `world.xml` holds absolute paths of this machine. Do not commit it.
+    - The exported scene, `walkie.xml` and the Nav2 parameter file are never changed.
+
 ## Script the model without the viewer
 
 The MuJoCo Python bindings are in the pixi environment. They load the head 3D lidar
@@ -329,13 +519,14 @@ Run the commands from the repository root.
 1. Build the workspace with `pixi run build`, as described in
    [Getting Started](../getting-started.md#5-build-the-workspace). The launch files also
    need `dual_laser_merger`, `walkie_tf`, `robot_self_filter`, `robot_navigation` and Nav2
-   (`navigation/navigation2`). If your workspace was built before the MuJoCo launch files
-   or the head 3D lidar existed, run `pixi install` (it adds the lidar extension), then
-   rebuild the packages that hold the launch files, the default world and the self filter:
+   (`navigation/navigation2`). If your workspace was built before the MuJoCo launch files,
+   the head 3D lidar or the named worlds existed, run `pixi install` (it adds the lidar
+   extension), then rebuild the packages that hold the launch files, the named worlds, the
+   default world and the self filter:
 
     ```bash
     pixi install
-    pixi run build-pkg robot_bringup walkie_description robot_self_filter
+    pixi run build-pkg robot_bringup walkie_mujoco_worlds walkie_description robot_self_filter
     ```
 
     The default world loads from the installed `walkie_description`. Build again after you
@@ -356,16 +547,28 @@ Run the commands from the repository root.
 
     For Nav2, start `nav_mujoco_omnibot.launch.py` instead. It includes
     `mujoco_omnibot.launch.py`. See [Drive with Nav2 and RViz](#drive-with-nav2-and-rviz).
+    Add `world:=NAME` to either launch file to load a
+    [named world](#add-a-named-world).
 
 - `pixi run` selects Zenoh (`RMW_IMPLEMENTATION=rmw_zenoh_cpp`) for every ROS 2 command.
   See [Middleware (Zenoh)](middleware.md#simulation-on-one-machine).
 - The MuJoCo viewer window and RViz open. Closing the MuJoCo window stops the whole
   launch. Add `headless:=true` to run without the window.
 - Every node runs on simulated time from `/clock`, which the simulator publishes.
+- On Linux, when both `WAYLAND_DISPLAY` and `DISPLAY` are set, the launch starts the
+  MuJoCo process with `WAYLAND_DISPLAY` unset and `XDG_SESSION_TYPE=x11`, so its viewer
+  runs on XWayland. The viewer of `mujoco_ros2_control` has crashed in libdecor under
+  Wayland. RViz and the other nodes keep the session's backend.
 - With `nav_mujoco_omnibot.launch.py`, Ctrl+C takes about 15 s and prints red error
   lines. They are harmless. See [Troubleshooting](#troubleshooting).
 
 ??? info "What the MuJoCo launch files start"
+    With `world:=NAME`, each launch file first runs `robot_bringup.world_loader`
+    (`bringup/robot_bringup/world_loader.py`) before any node starts. It reads the world
+    from the `walkie_mujoco_worlds` share or from `worlds_dir`, merges the variant with the
+    installed `walkie.xml`, applies the spawn, and writes the result to the cache (see
+    [Add a named world](#add-a-named-world)). The generated model replaces `mujoco_model`.
+
     `bringup/launch/mujoco_omnibot.launch.py` starts:
 
     1. `robot_state_publisher`, with the URDF of `description/robots/gz_walkie.urdf.xacro`
@@ -404,18 +607,23 @@ Run the commands from the repository root.
 
     `bringup/launch/nav_mujoco_omnibot.launch.py` starts:
 
-    1. `mujoco_omnibot.launch.py`, with `mujoco_model`, `headless`, `use_rviz` and
-       `rviz_config`.
-    2. `static_transform_publisher` (node name `map_to_odom`): an identity transform from
-       `map` to `odom`.
+    1. `mujoco_omnibot.launch.py`, with the resolved `mujoco_model`, `headless`,
+       `use_rviz` and `rviz_config`. With `world`, `nav_mujoco_omnibot.launch.py`
+       prepares the world once, with the map and the Nav2 parameter copy, and passes the
+       generated model to the include with `world`, `spawn` and `spawn_pose` cleared.
+    2. Without `world`, `static_transform_publisher` (node name `map_to_odom`): an
+       identity transform from `map` to `odom`. With `world`, AMCL publishes this
+       transform, and no static publisher starts.
     3. `nav2_bringup`'s `bringup_launch.py` with `use_sim_time:=True`,
-       `use_localization:=False` (no AMCL), `serve_static_map:=True` (`map_server` serves
-       `map`), `use_keepout_zones:=False`, `use_speed_zones:=False`, `autostart:=True`
-       and `use_composition:=False`. Each Nav2 server runs as its own process.
-       `params_file` is passed through unchanged. The include sits in a `GroupAction`
-       with `SetRemap(src="cmd_vel", dst="cmd_vel_controller")`, so Nav2 commands pass
-       `velocity_smoother` and `collision_monitor` before they reach `twist_mux` on
-       `/cmd_vel_nav`.
+       `serve_static_map:=True` (`map_server` serves `map`), `use_keepout_zones:=False`,
+       `use_speed_zones:=False`, `autostart:=True` and `use_composition:=False`. Each
+       Nav2 server runs as its own process. Without `world`, `use_localization:=False`
+       (no AMCL), and `params_file` is passed through unchanged. With `world`,
+       `use_localization:=True` starts AMCL, `map` is the world's map, and `params_file`
+       is the generated copy with the AMCL initial pose at the spawn. The include sits in
+       a `GroupAction` with `SetRemap(src="cmd_vel", dst="cmd_vel_controller")`, so Nav2
+       commands pass `velocity_smoother` and `collision_monitor` before they reach
+       `twist_mux` on `/cmd_vel_nav`.
 
     `robot_bringup` does not declare `mujoco_ros2_control` or `mujoco_3d_lidar` in its
     `package.xml`. The pixi environment provides them, and declaring them would make rosdep
@@ -431,7 +639,7 @@ Run the commands from the repository root.
     | `bringup/config/lidar/unitree_self_filter.yaml` | Self filter of the head 3D lidar cloud, shared with the real robot |
     | `bringup/config/map/empty_floor.yaml`, `empty_floor.pgm` | Blank map for Nav2: 20 m by 20 m, 0.05 m cells (400 by 400 pixels, all free), origin `[-10, -10, 0]`, so it is centered on the world origin |
     | `bringup/config/rviz/mujoco.rviz` | Fixed frame `odom`, orbit view around `base_footprint`. Shows the robot model, `/scan`, the filtered head 3D lidar cloud (**Head 3D lidar**, colored by height) and the head camera image. The front lidar, back lidar, raw 3D lidar cloud, bottom camera and TF displays exist but are off. |
-    | `bringup/config/rviz/mujoco_nav.rviz` | Fixed frame `map`, top-down view. **Navigation 2** panel. Shows the map, the global and local costmaps, the robot model, the footprint, the global plan `/plan`, `/scan` and the filtered head 3D lidar cloud. Tools include **2D Goal Pose** and **Nav2 Goal**. |
+    | `bringup/config/rviz/mujoco_nav.rviz` | Fixed frame `map`, top-down view. **Navigation 2** panel. Shows the map, the global and local costmaps, the robot model, the footprint, the global plan `/plan`, `/scan` and the filtered head 3D lidar cloud. Tools include **2D Pose Estimate** (on `/initialpose`, for AMCL in a named world), **2D Goal Pose** and **Nav2 Goal**. |
     | `bringup/config/twist_mux/twist_mux.yml` | Velocity input priorities |
     | `description/config/ros2_controller/mujoco_controllers.yaml` | Controller manager and controller parameters |
 
@@ -446,12 +654,24 @@ pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py headless:=true u
 
 | Argument | Launch file | Default | Meaning |
 | --- | --- | --- | --- |
-| `mujoco_model` | Both | `<walkie_description share>/mujoco/scene.xml` | Absolute path of the MuJoCo world. See [Use a custom world with ROS 2](#use-a-custom-world-with-ros-2). |
+| `world` | Both | Empty | Name of a [named world](#add-a-named-world), for example `chula_pat14_6`. Empty loads `mujoco_model`. |
+| `variant` | Both | Empty: the world's `default_variant` | Variant from the world's `[variants]`. Used with `world`. |
+| `spawn` | Both | Empty: the world's `default_spawn` | Spawn from the world's `[spawns]`. Needs `world`. |
+| `spawn_pose` | Both | Empty | `'X Y YAW_DEG'` in the map frame, yaw in degrees. Needs `world`. Do not combine it with `spawn`. |
+| `worlds_dir` | Both | Empty: `<walkie_mujoco_worlds share>/worlds` | Directory with one subdirectory per world. See [Edit a world without a rebuild](#worlds-dir). |
+| `world_output_dir` | Both | `$ROS_HOME/mujoco_worlds` (`~/.ros/mujoco_worlds`) | Writable cache for the merged world and its Nav2 parameters |
+| `mujoco_model` | Both | `<walkie_description share>/mujoco/scene.xml` | Absolute path of a MuJoCo world that includes `walkie.xml`. See [Use a custom world with ROS 2](#use-a-custom-world-with-ros-2). With `world`, the merged world replaces it. |
 | `headless` | Both | `false` | `true` runs MuJoCo without the viewer window |
 | `use_rviz` | Both | `true` | `false` starts no RViz |
 | `rviz_config` | Both | `<robot_bringup share>/config/rviz/mujoco.rviz`, or `mujoco_nav.rviz` for Nav2 | RViz config file |
-| `map` | `nav_mujoco_omnibot.launch.py` | `<robot_bringup share>/config/map/empty_floor.yaml` | Map for `map_server`. Its origin must match the MuJoCo world origin. |
-| `params_file` | `nav_mujoco_omnibot.launch.py` | `<robot_navigation share>/config/nav2/nav2_mppi_walkie_sim_params.yaml` | Nav2 parameter file |
+| `map` | `nav_mujoco_omnibot.launch.py` | `<robot_bringup share>/config/map/empty_floor.yaml` | Map for `map_server`. Its origin must match the MuJoCo world origin. With `world`, the world's map replaces it. |
+| `params_file` | `nav_mujoco_omnibot.launch.py` | `<robot_navigation share>/config/nav2/nav2_mppi_walkie_sim_params.yaml` | Nav2 parameter file. With `world`, Nav2 reads a copy with the AMCL initial pose at the spawn. |
+
+- With `world`, setting `mujoco_model` or `map` to another value stops the launch with
+  `world:=NAME supplies mujoco_model; do not also set mujoco_model`. `spawn` or
+  `spawn_pose` without `world` also stops it.
+- `world` takes a name here. The Gazebo launch files take a file path in their `world`
+  argument; a path fails here with `World name must contain only letters, digits, '_' or '-'`.
 
 ### Topics
 
@@ -512,9 +732,10 @@ pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py
 
 This loads the default world, which has only a floor. Nav2 drives the robot there. Its
 collision monitor needs `/scan`, and the launch publishes `/scan` although the lidars see
-nothing in range (see [Topics](#topics)). To test obstacle avoidance, add
-`mujoco_model:=` with a world that has walls or objects. See
-[Use a custom world with ROS 2](#use-a-custom-world-with-ros-2).
+nothing in range (see [Topics](#topics)). To test obstacle avoidance, add `mujoco_model:=`
+with a world that has walls or objects (see
+[Use a custom world with ROS 2](#use-a-custom-world-with-ros-2)), or `world:=NAME` for a
+[named world](#add-a-named-world) with its own map and AMCL.
 
 Wait until the log shows `Managed nodes are active`, about 10 s after the start. Then send
 a goal in RViz:
@@ -556,9 +777,12 @@ pixi run ros2 topic pub -r 10 /cmd_vel_key geometry_msgs/msg/TwistStamped \
   "{header: {frame_id: base_footprint}, twist: {linear: {x: -0.2}}}"
 ```
 
-!!! warning "Localization is odometry only"
+!!! warning "Without `world`, localization is odometry only"
     No AMCL runs. A static identity transform from `map` to `odom` places the robot in the
-    map by its wheel odometry alone.
+    map by its wheel odometry alone. This applies to the default world and to every
+    `mujoco_model`. A named world starts AMCL on its map instead; in the Chula room it
+    stays 0.1 to 0.2 m off the true pose, see
+    [Chula Pat14 Room Simulation](simulation-chula-pat14.md#check-localization-and-stop).
 
     - **The robot must start at the MuJoCo world origin.** The `home` keyframe does.
     - **The map origin must match the world origin.** The default map,
@@ -625,7 +849,9 @@ The Nav2 log can show errors that do not come from MuJoCo. See
 
 ### Use a custom world with ROS 2
 
-Pass the world file with `mujoco_model`. Replace `<world>` with the file name:
+For a room with its own map and spawns, use a [named world](#add-a-named-world). For a
+world file that includes Walkie, pass `mujoco_model`. Replace `<world>` with the file
+name:
 
 ```bash
 pixi run ros2 launch robot_bringup mujoco_omnibot.launch.py mujoco_model:=$PWD/description/mujoco/<world>.xml
@@ -727,13 +953,33 @@ pixi run python -m pytest description/test/test_mjcf.py
 
 [2.6 Tests](../migrations/02-mujoco/06-tests.md) lists every test and its tolerance.
 
+The world loader, the world arguments of the launch files and the installed named worlds
+have their own tests in `robot_bringup`. CI runs them. Run them after a build; the last
+option skips the lint tests of `robot_bringup`, which fail today:
+
+```bash
+pixi run build-pkg walkie_description walkie_mujoco_worlds robot_bringup
+pixi run test --packages-select robot_bringup --ctest-args " -LE" linter
+pixi run colcon test-result --verbose
+```
+
+| Test | Checks |
+| --- | --- |
+| `test_mujoco_world` | Manifests, world discovery and the merge rules, on synthetic files |
+| `test_mujoco_launch_worlds` | The world arguments and the actions of both launch files, without starting a node |
+| `test_mujoco_world_assets` | The install rules of `walkie_mujoco_worlds` (no authoring files; links under `--symlink-install`), and every variant of every installed world, merged with the installed `walkie.xml`: the wheel-floor pairs; the robot's mass, inertia, joints and actuators; the physics and camera settings of the robot; the `home` keyframe at the default spawn; the collision classes; and 0.3 s of settling with less than 1 cm of drift |
+
+`test_mujoco_world_assets` is skipped without MuJoCo. After a build, pytest also runs the
+three files directly:
+`pixi run python -m pytest bringup/test/test_mujoco_world.py bringup/test/test_mujoco_launch_worlds.py bringup/test/test_mujoco_world_assets.py`.
+
 ## Not available yet
 
 | Feature | Status | Details |
 | --- | --- | --- |
 | MoveIt with `hardware_type:=mujoco` | The launch option exists. MoveIt has not been tested with MuJoCo. | [2.5 ros2_control](../migrations/02-mujoco/05-ros2-control.md) |
 | Robot base collisions with the world | Left out by design. Navigation relies on the lidars. | [2.3 Collisions](../migrations/02-mujoco/03-collisions.md) |
-| Localization in the map | Odometry only: a static `map` to `odom` transform. No AMCL and no localization from the ground truth, so the pose drifts. | [Drive with Nav2 and RViz](#drive-with-nav2-and-rviz) |
+| Localization in the map | Without `world`: odometry only, a static `map` to `odom` transform, so the pose drifts. With `world`: AMCL on the world's map, 0.1 to 0.2 m off the true pose in the Chula room, where the map has no furniture. | [Drive with Nav2 and RViz](#drive-with-nav2-and-rviz), [Chula Pat14 Room Simulation](simulation-chula-pat14.md#check-localization-and-stop) |
 | Interactive use of RViz | Not yet checked by a person. The plugin classes and topics of both RViz configs were checked. | [Drive with Nav2 and RViz](#drive-with-nav2-and-rviz) |
 | Nav2 with the head 3D lidar | The cloud is published and filtered, but the simulation Nav2 parameter file reads only `/scan`. The file is shared with Gazebo, which has no 3D lidar, and `collision_monitor` stops every Nav2 command while a source has no data. | [2.8 Head 3D Lidar](../migrations/02-mujoco/08-3d-lidar.md#still-open) |
 | `intensity`, `ring` and `time` in the 3D lidar cloud | The simulated cloud has `x`, `y` and `z` only | [2.8 Head 3D Lidar](../migrations/02-mujoco/08-3d-lidar.md#real-and-simulated) |
@@ -757,6 +1003,11 @@ pixi run python -m pytest description/test/test_mjcf.py
 | The head camera shows the inside of its housing | `znear` or `extent` was changed | Restore `<statistic extent="2.2"/>` and `<map znear="0.025"/>` |
 | The lift stops near 0.48 m when you lower it from `home` | At `home`, the fingers hit `base_link`. This is a model issue: it happens with and without ROS 2. | None yet. See [Known issues](../migrations/02-mujoco/index.md#known-issues). |
 | `ros2_control_node` of `mujoco_ros2_control` cannot load the model | `install/` has no `mujoco` folder, or not your world file | `pixi run build-pkg walkie_description`, or pass the source-tree path with `mujoco_model:=$PWD/description/mujoco/<world>.xml` |
+| A launch stops at the start with `No module named 'robot_bringup'` | `robot_bringup` was built before it had a Python package (`bringup/robot_bringup/`) | `pixi run build-pkg robot_bringup` |
+| A launch with `world` stops with `Package walkie_mujoco_worlds is not installed`, or with `Unknown world` and a list of the available worlds | The package is not built, the new world is not installed yet, the name is wrong, or `worlds_dir` points elsewhere | `pixi run build-pkg walkie_mujoco_worlds`, or pass the right `worlds_dir`. See [Edit a world without a rebuild](#worlds-dir). |
+| A launch with `world` stops with `Compiler angle differs`, `the top-level <default> sets`, or `Environment must have exactly one plane geom named 'floor'` | The exported scene breaks a rule of the world loader | See [What the scene must contain](#named-world-scene) |
+| A launch with `world` stops with `supplies mujoco_model; do not also set mujoco_model` (or `map`) | The world supplies the model and the map | Leave out `mujoco_model` and `map` |
+| A launch with `world` logs `ignored world settings that would also apply to the robot` | The exported scene sets model-wide values, which the merged model takes from `walkie.xml` | None needed. See [What the scene must contain](#named-world-scene). |
 | The MuJoCo window opens, but you want none | `headless` defaults to `false` | Add `headless:=true` |
 | The whole launch stops when the MuJoCo window is closed | `ros2_control_node` ends the launch when it exits | Expected. Use `headless:=true` to run without the window. |
 | `/front_lidar` and `/back_lidar` do not exist | `ros2_control_node` was started without `bringup/config/mujoco/mujoco_plugins.yaml`, for example by hand | Use `mujoco_omnibot.launch.py`, or pass the file. See [The mujoco_plugins parameter file](#the-mujoco_plugins-parameter-file). |

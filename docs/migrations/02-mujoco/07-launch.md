@@ -315,6 +315,11 @@ Nav2 runs without AMCL. The static identity transform from `map` to `odom` makes
 in the map equal to the wheel odometry of `omni_wheel_drive_controller`, which publishes
 `odom` to `base_footprint`. `map_server` serves `empty_floor.yaml`, a blank map.
 
+!!! note "Update 2026-10-22: AMCL in named worlds"
+    This is still the behavior without the `world` argument. With `world:=NAME`, the launch
+    serves the world's map and starts AMCL, with its initial pose at the spawn. See
+    [2.9 Named Worlds](09-named-worlds.md#amcl-with-a-world).
+
 !!! warning "The robot must start at the world origin"
     The robot must start at the origin of the MuJoCo world, and the map origin must match
     the world origin. The `home` keyframe of the default world starts the robot at the

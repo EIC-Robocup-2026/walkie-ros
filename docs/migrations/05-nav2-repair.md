@@ -815,6 +815,40 @@ entry.
 
 ## Still open
 
+!!! note "Update 2026-10-23: the real file starts under Fast DDS, and STVL is disabled"
+    Navigation pull request #10 merged into navigation `main` on 2026-10-23
+    (`359719f`). The `navigation` gitlink moved from `b6bb293` to `359719f`.
+    The nested `navigation2` and `map` pins did not move, and no C++ code
+    changed, so `pixi run build-pkg robot_navigation` is enough.
+
+    - **Fast DDS and the Spatio-Temporal Voxel Layer**, an item below, is
+      fixed for `nav2_mppi_walkie_real_param.yaml`, which now sets
+      `voxel_layer.publish_voxel_map: False`. On 2026-10-23, without hardware
+      and with a static `map` to `odom` to `base_footprint` transform,
+      `localization_Nav2_real.launch.py` became active under Fast DDS and
+      under `rmw_zenoh_cpp`. With the restaurant file, the default of
+      `mapping_Nav2_real.launch.py`, `controller_server` still fails under
+      Fast DDS.
+    - `stvl_layer.enabled: false` in the real and restaurant files, until the
+      head camera joint is repaired. The real local costmap marks only
+      `/scan`.
+    - The velocity smoother of the real and restaurant files accelerates and
+      brakes at [0.2, 0.2, 0.7] (was [2.5, 2.5, 3.2]). `PolygonSlow` in the
+      real file has `slowdown_ratio: 0.8` (was 0.4), so the slow zone allows
+      0.24 m/s.
+    - `PathAngleCritic` has `offset_from_furthest: 20` and
+      `max_angle_to_furthest: 0.1` (was 4 and 0.4) in the sim, real and
+      restaurant files, so the omni base faces its travel direction more
+      closely. Measured in MuJoCo, not on hardware.
+    - Correction: the stop polygons do not see tabletops through the
+      `pointcloud` source, as stated further down. The self filter
+      (`bringup/config/lidar/unitree_self_filter.yaml`) removes every point of
+      `/unilidar/cloud/filtered` in a box of ±0.45 m around the base center,
+      and the stop polygons end at 0.35 m. The cloud only triggers
+      `PolygonSlow` and `FootprintApproach` for obstacles farther than
+      0.45 m. With STVL disabled, nothing in Nav2 stops for tabletops closer
+      than that.
+
 !!! note "Update 2026-10-15: navigation main has the sim launch fix"
     The broken sim launch, the first item below, is fixed. Navigation pull
     request #8 merged the tested `localization_Nav2_sim.launch.py` back into
@@ -921,9 +955,11 @@ entry.
   Not caused by this entry. A possible fix, not applied, is
   `voxel_layer.publish_voxel_map: False`, which loses the `VoxelGrid`
   visualization. The sim, loopback and hero files have no STVL.
-- **No AMCL in MuJoCo.** `nav_mujoco_omnibot.launch.py` localizes with
-  odometry only. The measured drift against MuJoCo ground truth was 0.17 to
-  0.43 m after one or two goals (runs 3 and 4).
+- **No AMCL in MuJoCo without a world.** Without `world:=NAME`,
+  `nav_mujoco_omnibot.launch.py` localizes with odometry only. The measured
+  drift against MuJoCo ground truth was 0.17 to 0.43 m after one or two goals
+  (runs 3 and 4). With a named world, it runs AMCL on the world's map (see
+  [2.9 Named Worlds](02-mujoco/09-named-worlds.md)).
 - **Error 103 at the goal.** A goal sent while the robot is already at it by
   odometry aborts with 103, `Resulting plan has 0 poses in it`.
 - **Real robot without the 3D lidar.** With `use_unitree_lidar:=false`, the

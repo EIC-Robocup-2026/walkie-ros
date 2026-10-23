@@ -28,6 +28,7 @@ the root, so colcon finds every package below it. See
 | `perception/` | `walkie_perception`: object detection and grasp pose services |
 | `scripts/` | Shell and Python helpers: bringup shortcuts, device setup, mapping |
 | `simulation/gazebo/` | `robot_simulation`: Gazebo worlds and launch files |
+| `simulation/mujoco/` | `walkie_mujoco_worlds`: named MuJoCo worlds and their offline tools |
 | `tools/` | Teleoperation and TF lookup service |
 
 ??? info "Folders created by tools (not in git)"
@@ -36,6 +37,7 @@ the root, so colcon finds every package below it. See
     | `build/`, `install/`, `log/` | colcon | `pixi run clean` deletes all three |
     | `.pixi/` | pixi | The environment with ROS 2 and every dependency |
     | `hardware/camera/zed-ros2-wrapper/` | `pixi run setup-real` | See [Real-robot hardware repositories](#external-repositories) |
+    | `simulation/mujoco/output/` | `pixi run world-validate`, `pixi run world-overlay` | Reports and images, one folder per world |
 
 ## Packages
 
@@ -47,7 +49,7 @@ and scripts, which CMake installs.
 
 | Path | Package | Build type | Purpose |
 | --- | --- | --- | --- |
-| `bringup/` | `robot_bringup` | ament_cmake | Launch files (real robot, Isaac Sim, Gazebo with Nav2, MuJoCo with and without Nav2, subsystems), Python nodes, config, and a udev rule |
+| `bringup/` | `robot_bringup` | ament_cmake | Launch files (real robot, Isaac Sim, Gazebo with Nav2, MuJoCo with and without Nav2, subsystems), Python nodes, the Python package `robot_bringup`, config, and a udev rule |
 
 ??? info "Launch files, nodes, and config in robot_bringup"
     - Launch files: the real robot (`real_omnibot.launch.py`), Isaac Sim
@@ -57,6 +59,9 @@ and scripts, which CMake installs.
       lidar, OpenArm, octomap mapping, and a ZED test (`test_zed.launch.py`).
     - Python nodes in `scripts/`: lift homing (real and mock), ZED watchdog,
       head touch beep, OpenArm joint state reader.
+    - The Python package `robot_bringup/`: `world_loader.py`, which merges a
+      named MuJoCo world with the robot, and `mujoco_launch.py`, the world
+      arguments that both MuJoCo launch files share. Tests in `test/`.
     - Config in `config/`: cameras, lidars, OpenArm, RViz, and twist_mux.
     - MuJoCo config: `config/mujoco/mujoco_plugins.yaml` (camera and lidar
       plugins of `mujoco_ros2_control`), `config/map/empty_floor.yaml` and
@@ -161,8 +166,22 @@ grasping (PyTorch, Ultralytics, Open3D). See
 | `simulation/gazebo/` | `robot_simulation` | ament_cmake | Gazebo launch files (`gzsim_omnibot.launch.py`, `world_preview_gz.launch.py`, `rviz.launch.py`) and worlds (`PlainWorld`, `aws_small_house`, `obstacle_gz`, `turtlebot3_world_gz`) |
 
 See [Gazebo Simulation](../guides/simulation-gazebo.md). The MuJoCo model
-lives in `description/mujoco/`, and the MuJoCo launch files in `bringup/`, not
-here.
+lives in `description/mujoco/`, the MuJoCo launch files in `bringup/`, and the
+named MuJoCo worlds in `simulation/mujoco/`, not here.
+
+### simulation/mujoco/
+
+| Path | Package | Build type | Purpose |
+| --- | --- | --- | --- |
+| `simulation/mujoco/` | `walkie_mujoco_worlds` | ament_cmake | Named MuJoCo worlds, one folder per world in `worlds/` with a `world.toml` manifest, the exported scenes, their assets and an occupancy map. Only data, no dependencies. |
+
+- The package installs only the files that a launch reads. The Blender projects
+  and each world's `authoring/` folder stay in the source tree.
+- `tools/` holds the offline checks behind `pixi run world-validate` and
+  `pixi run world-overlay`. They are not installed and need no build.
+
+See [MuJoCo Simulation: Add a named world](../guides/simulation-mujoco.md#add-a-named-world)
+and [Chula Pat14 Room Simulation](../guides/simulation-chula-pat14.md).
 
 ### tools/
 
@@ -300,7 +319,7 @@ command) when preparing a physical robot. `pixi run setup-real` runs
 | `pixi.lock` | Exact versions of every package in the environment. Commit it together with `pixi.toml`. |
 | `walkie_real.repos` | vcstool list for `pixi run setup-real` |
 | `.gitmodules` | Submodule paths and URLs |
-| `.gitattributes` | Marks `pixi.lock` as generated and merges it as a binary file, so git does not try a line-by-line merge |
+| `.gitattributes` | Marks `pixi.lock` as generated and merges it as a binary file, so git does not try a line-by-line merge. Also marks `*.blend` and `*.exr` as binary, marks the exported `scene.xml` and `*.obj` files of the MuJoCo worlds as generated, and hides the `*.obj` meshes from diffs. |
 | `.gitignore` | Ignores build output, `.pixi/`, and the imported repositories |
 | `mkdocs.yml` | Configuration of this documentation site |
 | `README.md` | Short introduction that points to this site |

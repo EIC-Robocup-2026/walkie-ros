@@ -187,6 +187,11 @@ This starts the MuJoCo simulation and Nav2 on a blank 20 m x 20 m map
 tool in RViz. The setup, the launch arguments, and custom worlds are in
 [MuJoCo Simulation: Drive with Nav2 and RViz](simulation-mujoco.md#drive-with-nav2-and-rviz).
 
+To navigate in a captured room with its map and AMCL, add `world:=NAME`, for
+example `world:=chula_pat14_6`. See
+[Chula Pat14 Room Simulation](simulation-chula-pat14.md). The list below
+describes the launch without `world`.
+
 Nav2 drives the robot in the default MuJoCo world (`scene.xml`), which has no
 obstacles. `mujoco_omnibot.launch.py` sets the merger parameter
 `publish_on_empty_cloud: True`, so `/scan` is published even when neither
@@ -199,9 +204,11 @@ stops every Nav2 command. The real robot keeps the default `false` (see
   wheel odometry the robot pose in the map. The robot must start at the world
   origin, and the map origin must match the world origin. The pose drifts as
   the odometry drifts: 0.17 to 0.43 m against the MuJoCo ground truth after
-  one or two goals in the 2026-10-14 tests.
+  one or two goals in the 2026-10-14 tests. With `world`, AMCL publishes
+  `map` to `odom` instead.
 - Nav2 uses `nav2_mppi_walkie_sim_params.yaml`, the same file as Gazebo,
-  passed through unchanged. Like the Gazebo and real-robot launch files, it
+  passed through unchanged. With `world`, the launch passes a generated copy
+  with the AMCL initial pose at the spawn. Like the Gazebo and real-robot launch files, it
   remaps the Nav2 `cmd_vel` output to `/cmd_vel_controller`, so commands pass
   the velocity smoother and the collision monitor (see
   [Velocity command path](#velocity-command-path)).
@@ -223,13 +230,25 @@ the wheel controller. See [Real Robot](real-robot.md).
 | Save the map while mapping | `pixi run ros2 run nav2_map_server map_saver_cli -f <map_dir>/map` |
 
 !!! warning "Run these launch files on `rmw_zenoh_cpp`"
-    Under Fast DDS (`rmw_fastrtps_cpp`, the ROS 2 default when
-    `RMW_IMPLEMENTATION` is not set), `controller_server` fails to configure in
-    both launch files, with
+    The rest of the robot runs on `rmw_zenoh_cpp`, the team middleware, and
+    Fast DDS nodes cannot see Zenoh nodes (see
+    [Middleware (Zenoh)](middleware.md)). Under Fast DDS
+    (`rmw_fastrtps_cpp`, the ROS 2 default when `RMW_IMPLEMENTATION` is not
+    set), `controller_server` also fails to configure with the restaurant
+    parameter file, the default of `mapping_Nav2_real.launch.py`, with
     `create_publisher() called for existing topic name rt/local_costmap/voxel_grid with incompatible type`.
-    Both start on `rmw_zenoh_cpp`, the team middleware (see
-    [Middleware (Zenoh)](middleware.md)). See
-    [Known issues](#known-issues).
+    See [Known issues](#known-issues).
+
+!!! warning "STVL is disabled on the real robot"
+    Both real-robot parameter files set `stvl_layer.enabled: false` until the
+    head camera joint is repaired. The local costmap then marks only `/scan`,
+    so obstacles outside the 2D lidar planes, such as tabletops, are not
+    planned around. The collision monitor does not stop for them either: the
+    3D lidar self filter removes every point of `/unilidar/cloud/filtered`
+    within 0.45 m of the base center, and the stop polygons end at 0.35 m.
+    The monitor only slows the robot while such an obstacle is farther than
+    0.45 m. Supervise the robot near tables. See
+    [Spatio-Temporal Voxel Layer](#spatio-temporal-voxel-layer).
 
 - Localization defaults to the Arena map (`27_01072026_Arena`) with its keepout
   zones. To use another map, see [Choose a map](#choosing-a-map-on-the-real-robot).
@@ -249,7 +268,7 @@ the wheel controller. See [Real Robot](real-robot.md).
 
     - `lifecycle_manager_nav2` for `map_server`, `amcl`, and the Nav2 servers
     - `head_tilt_near_goal_node.py`, which tilts the ZED head down near the
-      goal so tabletops stay in view
+      goal so tabletops stay in view of STVL (disabled for now)
     - `nav_commander`
     - a keepout mask server, a costmap filter info server, and their lifecycle
       manager (`lifecycle_manager_keepout`), when `use_keepout_zones` is `true`
@@ -347,6 +366,10 @@ local costmap and drives to a pose that faces the edge. The localization and
 mapping launch files start it, except the loopback one and
 `nav_mujoco_omnibot.launch.py`.
 
+On the real robot, the table edge comes from STVL. While STVL is
+[disabled](#spatio-temporal-voxel-layer), the local costmap usually has no
+table edge, and the action ends at the `face_target` pose instead.
+
 ```bash
 pixi run ros2 action send_goal /navigate_to_object robot_navigation/action/NavigateToObject \
   "{obj_x: 1.0, obj_y: -3.0, align_method: '', standoff: 0.0}" --feedback
@@ -419,7 +442,9 @@ The chain is `/cmd_vel_controller` (Nav2 servers) to `velocity_smoother`,
       center, on the side the robot drives to) is set to zero. A command that
       drives away from the obstacle or along it passes.
     - **Slow down:** with 4 or more points within 0.55 m of the base center,
-      the robot moves at 40 % speed. Narrow passages are slow.
+      the robot moves at 40 % speed (80 % with
+      `nav2_mppi_walkie_real_param.yaml`, the default of
+      `localization_Nav2_real.launch.py`). Narrow passages are slow.
     - **Invalid source:** when a source has no new data for 2 s, or its frame
       cannot be transformed to `base_footprint`, the monitor stops every Nav2
       command and logs `Robot to stop due to invalid source`. The causes are
@@ -494,7 +519,7 @@ The collision monitor checks its sources against three zones, all in the
   side of the footprint the robot drives to, up to 0.35 m from the base
   center.
 - `PolygonSlow`: a circle of 0.55 m. With 4 or more points in it, the robot
-  moves at 40 % speed.
+  moves at 40 % speed (80 % with `nav2_mppi_walkie_real_param.yaml`).
 - `FootprintApproach`: the static physical footprint, checked 2 s ahead. It
   slows the robot down as it approaches an obstacle.
 
@@ -527,9 +552,13 @@ What the stop polygons see depends on the data each source delivers:
   closer than 0.415 m is missed. This is a limit of the MuJoCo setup. The
   minimum ranges of the real Hokuyo and Lakibeam were not checked.
 - **The 3D lidar on the real robot.** The `pointcloud` source
-  (`/unilidar/cloud/filtered`, 0.3 to 1.5 m high) has no 0.30 m limit, so the
-  stop polygons also see closer obstacles at that height, such as tabletops.
-  This has not been tested on the robot.
+  (`/unilidar/cloud/filtered`, 0.3 to 1.5 m high) never reaches the stop
+  polygons. The self filter (`bringup/config/lidar/unitree_self_filter.yaml`)
+  removes every point in a box of ±0.45 m around the base center, and the stop
+  polygons end at 0.35 m. Obstacles at that height, such as tabletops, only
+  trigger `PolygonSlow` and `FootprintApproach` while they are farther than
+  0.45 m. Nothing in Nav2 stops for them closer than that. This follows from
+  the configuration; it has not been tested on the robot.
 - **Gazebo.** The default simulated lidar has a minimum range of 0.6 m, so
   neither the stop polygons nor `PolygonSlow` trigger. Only
   `FootprintApproach` acts, on obstacles that are still farther than 0.6 m.
@@ -677,17 +706,18 @@ All polygons cover the base only, not the arms or anything the robot carries.
     `nav2_mppi_walkie_sim_params.yaml`, `nav2_mppi_walkie_real_param.yaml`,
     and `nav2_mppi_walkie_real_restaurant_param.yaml` use the same values,
     except for the observation sources, the size of the `rotation` polygon,
-    and the `FootprintApproach` points.
+    the `FootprintApproach` points, the velocity smoother limits, and the
+    `PolygonSlow` ratio of the real file.
 
     | Component | Setting |
     | --- | --- |
-    | `velocity_smoother` | `max_velocity` [0.3, 0.3, 1.0], `max_accel` [2.5, 2.5, 3.2]. Input `cmd_vel` (remapped to `/cmd_vel_controller`), output `cmd_vel_smoothed`. Both topic names are fixed in code. |
+    | `velocity_smoother` | `max_velocity` [0.3, 0.3, 1.0]. `max_accel` [2.5, 2.5, 3.2] in the simulation file, [0.2, 0.2, 0.7] in the real and restaurant files; `max_decel` is the negative. Input `cmd_vel` (remapped to `/cmd_vel_controller`), output `cmd_vel_smoothed`. Both topic names are fixed in code. |
     | `collision_monitor` topics | `cmd_vel_in_topic: "cmd_vel_smoothed"`, `cmd_vel_out_topic: "cmd_vel_nav"` |
     | `polygons` | `["VelocityPolygonStop", "PolygonSlow", "FootprintApproach"]` |
     | Observation sources | Simulation file: `scan`. Real and restaurant files: `scan` and `pointcloud` (`/unilidar/cloud/filtered`, `min_obstacle_height` 0.3 m, `max_obstacle_height` 1.5 m). |
     | `source_timeout` | Not set, so the default of 2.0 s applies |
     | `VelocityPolygonStop` | `velocity_polygon`, `stop`, `min_points: 4`, `holonomic: true`. Nine sub-polygons: `rotation` and eight direction bands. Topic `velocity_polygon_stop`. |
-    | `PolygonSlow` | Circle, radius 0.55 m, `slowdown`, `slowdown_ratio: 0.4`, `min_points: 4`. Topic `polygon_slowdown`. |
+    | `PolygonSlow` | Circle, radius 0.55 m, `slowdown`, `slowdown_ratio: 0.4` (real file: 0.8), `min_points: 4`. Topic `polygon_slowdown`. |
     | `FootprintApproach` | `approach` with static `points`: the physical footprint without padding (simulation file: the local footprint points; real and restaurant files: the real footprint with notched rear corners). `time_before_collision: 2.0` s, `min_points: 6`. |
     | Progress checker | `progress_checker` in `controller_server`: `nav2_controller::SimpleProgressChecker`, `required_movement_radius: 0.5`, `movement_time_allowance: 8.0` (0.5 m within 8 s) |
     | `twist_mux` | `bringup/config/twist_mux/twist_mux.yml`: `cmd_vel_nav` priority 10, `cmd_vel_joy` and `cmd_vel_key` priority 100 |
@@ -701,7 +731,13 @@ All polygons cover the base only, not the arms or anything the robot carries.
     The progress checker allows 8 s, not 4 s: 0.5 m in 4 s needs 0.125 m/s on
     average, more than the `PolygonSlow` limit of 0.4 x 0.3 = 0.12 m/s, so
     goals through the slow zone aborted `follow_path` with error 105. The cost
-    is that a robot that is really stuck is detected only after 8 s.
+    is that a robot that is really stuck is detected only after 8 s. The real
+    file's ratio of 0.8 allows 0.24 m/s.
+
+    At 0.2 m/s², the real and restaurant smoothers take 1.5 s to go from
+    0.3 m/s to a stop when Nav2 commands zero, for example when a goal is
+    canceled; the robot covers about 0.22 m meanwhile. The collision monitor
+    comes after the smoother, so its stops are not delayed.
 
     The other parameter files keep the earlier setup: `PolygonStop`,
     `FootprintApproach` on `/local_costmap/published_footprint`, and
@@ -752,7 +788,7 @@ in `navigation/walkie-navigation/config/nav2/`.
     | Component | Setting |
     | --- | --- |
     | AMCL | `nav2_amcl::OmniMotionModel`. `set_initial_pose: true` at (0, 0, 0). |
-    | Controller | MPPI with `motion_model: "Omni"` and `Omni.plugin: "mppi::OmniMotionModel"`. `vx_max` and `vy_max` 0.3 m/s, `wz_max` 1.5 rad/s. |
+    | Controller | MPPI with `motion_model: "Omni"` and `Omni.plugin: "mppi::OmniMotionModel"`. `vx_max` and `vy_max` 0.3 m/s, `wz_max` 1.5 rad/s. `PathAngleCritic` with `offset_from_furthest: 20` and `max_angle_to_furthest: 0.1`, so the base faces its travel direction more closely (median crab angle 4 to 7° in MuJoCo, down from 16 to 23°; not tested on hardware; navigation `5df839a`). |
     | Footprint | `nav2_mppi_walkie_sim_params.yaml` and `nav2_mppi_walkie_real_param.yaml`, local and global: polygon from x = -0.285 m to x = 0.30 m, half width 0.239 m (about 0.59 m by 0.48 m). `nav2_mppi_walkie_real_restaurant_param.yaml`, local: larger, with the padding built in, from x = -0.305 m to x = 0.40 m, half width 0.339 m. |
     | Behavior tree | `default_nav_to_pose_bt_xml` is `behavior_tree/nav_to_pose_real_recovery_bt.xml` |
     | BT plugins | `compute_goal_heading_spin_bt_node`, `compute_goal_bearing_spin_bt_node`, `compute_path_heading_spin_bt_node` (built from `robot_navigation`) |
@@ -760,7 +796,7 @@ in `navigation/walkie-navigation/config/nav2/`.
 ??? info "Costmap layers in simulation and on the real robot"
     | Costmap | Simulation (`nav2_mppi_walkie_sim_params.yaml`) | Real robot (`nav2_mppi_walkie_real_param.yaml`) |
     | --- | --- | --- |
-    | Local | Layers `voxel_layer` (`/scan`), `inflation_layer` | Layers `voxel_layer` (`/scan`), `stvl_layer`, `inflation_layer`. Filter `keepout_filter`. |
+    | Local | Layers `voxel_layer` (`/scan`), `inflation_layer` | Layers `voxel_layer` (`/scan`), `stvl_layer` (disabled), `inflation_layer`. Filter `keepout_filter`. |
     | Global | Layers `static_layer`, `obstacle_layer` (`/scan`), `inflation_layer` | Layers `static_layer`, `obstacle_layer` (`/scan`), `inflation_layer`. Filter `keepout_filter`. |
     | Local `inflation_radius` | 0.35 m (circumscribed radius 0.313 m with the default 0.01 m padding) | 0.38 m (circumscribed radius 0.354 m with 0.02 m padding) |
     | Global `inflation_radius` | 0.45 m | 0.45 m |
@@ -775,11 +811,12 @@ in `navigation/walkie-navigation/config/nav2/`.
     (circumscribed radius 0.435 m, no padding). Costs now reach further from
     obstacles, so the robot keeps a little more clearance.
 
-    In `nav2_mppi_walkie_real_param.yaml` and
-    `nav2_mppi_walkie_real_restaurant_param.yaml`, `voxel_layer` and
+    In `nav2_mppi_walkie_real_restaurant_param.yaml`, `voxel_layer` and
     `stvl_layer` both publish `voxel_grid` with different message types. This
     breaks `controller_server` under Fast DDS (see
-    [Known issues](#known-issues)).
+    [Known issues](#known-issues)). `nav2_mppi_walkie_real_param.yaml` sets
+    `voxel_layer.publish_voxel_map: False`, so only `stvl_layer` publishes
+    there.
 
 ## Sensors for navigation
 
@@ -874,6 +911,19 @@ one for every ray without a hit; the L2 driver sends none.
 The real local costmap uses STVL (`stvl_layer`) to mark obstacles in 3D from
 the filtered clouds. Voxels expire after `voxel_decay` seconds, so moving
 people do not stay in the costmap. The simulation config does not use STVL.
+
+!!! warning "STVL is disabled until the head camera joint is repaired"
+    Both real-robot parameter files set `stvl_layer.enabled: false`, so the
+    real local costmap marks only `/scan`. To enable STVL again, set
+    `enabled: true` under `stvl_layer` in
+    `nav2_mppi_walkie_real_param.yaml` and
+    `nav2_mppi_walkie_real_restaurant_param.yaml`, and restart Nav2.
+
+    Do not set `local_costmap.stvl_layer.enabled` at runtime. The layer reads
+    the flag for its updates only at startup, but the runtime change tells the
+    costmap that the layer is enabled. The local costmap then never becomes
+    current, and every `follow_path` aborts with `CONTROLLER_TIMED_OUT` until
+    the parameter is set back to `false` or Nav2 restarts.
 
 ??? info "STVL settings and the head tilt near the goal"
     STVL stores each voxel with a time stamp. The simulation config has a
@@ -1022,7 +1072,7 @@ problems. See [Known issues](#known-issues).
     | `nav2_loopback.launch.py` | `robot_navigation` | Nav2 with the loopback simulator, no physics |
     | `slam_cartographer.launch.py` | `robot_navigation` | Cartographer. Does not run. |
     | `nav_sim_omnibot.launch.py` | `robot_bringup` | Gazebo plus `localization_Nav2_sim.launch.py` |
-    | `nav_mujoco_omnibot.launch.py` | `robot_bringup` | MuJoCo plus Nav2 on a blank map, with odometry-only localization (no AMCL) |
+    | `nav_mujoco_omnibot.launch.py` | `robot_bringup` | MuJoCo plus Nav2 on a blank map, with odometry-only localization (no AMCL). With `world:=NAME`: the world's map and AMCL. |
     | `dual_lidar_hokuyo_lakibeam.launch.py` | `robot_bringup` | Real lidar drivers and merger. Started by `real_omnibot.launch.py`. |
     | `octomap_3d_mapping.launch.py` | `robot_bringup` | 3D OctoMap during mapping. Does not start under pixi. |
 
@@ -1092,10 +1142,11 @@ empty MuJoCo world, and the loopback and hero configurations.
 | `follow_path` occasionally aborts with error 105 near an obstacle or during the slow final approach | The behavior tree retries. In the MuJoCo tests, the goals were still reached. | None |
 | `/scan` has no points closer than 0.30 m to the base center. In MuJoCo, the front lidar sees nothing closer than 0.415 m straight ahead. The stop polygons cover the base only. | In MuJoCo, a narrow obstacle dead ahead is missed. The arms and carried objects are not protected. | None ([Collision monitor](#collision-monitor)) |
 | `nav2_mppi_walkie_real_param_hero_10_04_26.yaml` and the `nav2_RPP_*.yaml` files keep an active `PolygonStop` circle | With these files, a stop blocks every Nav2 command, also commands that drive away | Drive out with the joystick or keyboard, or use the default parameter files |
-| In `nav2_mppi_walkie_real_param.yaml` and `nav2_mppi_walkie_real_restaurant_param.yaml`, `voxel_layer` and `stvl_layer` both publish `voxel_grid` with different types | Under Fast DDS, `controller_server` fails to configure in `localization_Nav2_real.launch.py` and `mapping_Nav2_real.launch.py` | Use `rmw_zenoh_cpp`, as the team does. Not fixed in the parameter files. |
+| In `nav2_mppi_walkie_real_restaurant_param.yaml`, `voxel_layer` and `stvl_layer` both publish `voxel_grid` with different types | Under Fast DDS, `controller_server` fails to configure in `mapping_Nav2_real.launch.py`, and in `localization_Nav2_real.launch.py` with the restaurant file | Use `rmw_zenoh_cpp`, as the team does. The real file is fixed. |
+| STVL is disabled in both real-robot parameter files until the head camera joint is repaired | The real local costmap marks only `/scan`; tabletops and other obstacles outside the 2D lidar planes are not planned around | Supervise the robot near tables: the collision monitor only slows for them while they are farther than 0.45 m, because the self filter removes closer points of `/unilidar/cloud/filtered`. Enable STVL again once the joint is repaired ([Spatio-Temporal Voxel Layer](#spatio-temporal-voxel-layer)). |
 | The Gazebo lidar has a minimum range of 0.6 m | The collision monitor's stop polygons and slow-down circle never trigger in Gazebo | None. Only `FootprintApproach` acts. |
 | After `bt_navigator` rejects a goal, for example with error 9002, it copies that error code into the result of the next goal of the same action that it accepts, also when that goal succeeds (upstream navigation2). `NavigateToPose` and `NavigateThroughPoses` each keep their own error. | A client that reads only `error_code` treats a successful goal as failed | Judge a goal by its status. In an accepted goal, an `error_code` of 9002 (9102 for `NavigateThroughPoses`) can be left over ([Troubleshooting](../troubleshooting.md#nav2-map-frame-does-not-exist)) |
-| `nav_mujoco_omnibot.launch.py` has no AMCL | The pose drifts with the odometry. A goal sent while the robot is already at it by odometry aborts with error 103 (`Resulting plan has 0 poses in it`). | None |
+| `nav_mujoco_omnibot.launch.py` has no AMCL without `world` | The pose drifts with the odometry. A goal sent while the robot is already at it by odometry aborts with error 103 (`Resulting plan has 0 poses in it`). | Use a [named world](simulation-mujoco.md#add-a-named-world), which starts AMCL on its map |
 | `nav2_bringup`'s `bringup_launch.py` runs all Nav2 servers on one thread when composed (its default) | Bringup can hang at `Waiting for service smoother_server/get_state...` | `use_composition:=False`. `localization_Nav2_sim.launch.py` and `nav_mujoco_omnibot.launch.py` set it. ([details](#nav2-composition-deadlock)) |
 | `slam_cartographer.launch.py` needs `cartographer_ros`, which `pixi.toml` does not install | The launch fails | Use SLAM Toolbox |
 | `octomap_3d_mapping.launch.py` needs `octomap_server` and `topic_tools`, which are not in `pixi.toml` | The launch fails with "package not found" under pixi | Add both packages to the environment |
@@ -1104,17 +1155,21 @@ empty MuJoCo world, and the loopback and hero configurations.
 | The fixture of the Nav2 test `test_action_follow_path_action` never sets `cancel_timeout` | The test can hang until CTest stops it. `bt_navigator` is not affected. | Skip the test: `pixi run test --packages-select nav2_behavior_tree --ctest-args -E test_action_follow_path_action` |
 
 ??? info "Causes of the known issues"
-    - **`voxel_grid` under Fast DDS.** In the real and restaurant files, the
-      local costmap has `voxel_layer` (publishes `nav2_msgs/VoxelGrid`) and
+    - **`voxel_grid` under Fast DDS.** In the restaurant file, the local
+      costmap has `voxel_layer` (publishes `nav2_msgs/VoxelGrid`) and
       `stvl_layer` (publishes `sensor_msgs/PointCloud2`), both with
       `publish_voxel_map: true`. Both publish `voxel_grid` from the same node.
       Fast DDS rejects two types on one topic, so `controller_server` fails
       with `Failed to initialize costmap plugin stvl_layer! could not create publisher: create_publisher() called for existing topic name rt/local_costmap/voxel_grid with incompatible type`.
+      STVL creates its publisher also with `enabled: false`.
       `rmw_zenoh_cpp` accepts it: on 2026-10-14, without hardware, both
-      launch files started on Zenoh. The problem predates entry 5. A possible
-      fix, not applied, is `voxel_layer.publish_voxel_map: False`, which drops
-      the `VoxelGrid` visualization. The simulation, loopback, and hero files
-      have no STVL layer.
+      launch files started on Zenoh. The problem predates entry 5. Since
+      navigation `359719f`, the real file sets
+      `voxel_layer.publish_voxel_map: False`, which drops the `VoxelGrid`
+      visualization; on 2026-10-23, without hardware,
+      `localization_Nav2_real.launch.py` became active under Fast DDS with the
+      real file and failed with the restaurant file. The simulation, loopback,
+      and hero files have no STVL layer.
     - **`real_slam_nav.sh`.** It starts `localization_Nav2_stvl_real.launch.py`,
       which does not exist, and starts SLAM Toolbox (`online_async_launch.py`)
       in a second tab. If the Nav2 tab did start, AMCL and SLAM Toolbox would
@@ -1211,7 +1266,7 @@ process. `localization_Nav2_sim.launch.py` (included by
 | `/move_robot` returns success but the robot does not move | Nav2 is not running, or the goal failed later | Check the node log and the Nav2 logs |
 | The robot stops or crawls near obstacles, or does not move under Nav2 at all | A collision monitor zone has enough points, possibly from the robot's own parts, or a source has no data | Check the `collision_monitor` log, and `velocity_polygon_stop` and `polygon_slowdown` in RViz ([Troubleshooting: The robot stops or slows near obstacles](../troubleshooting.md#nav2-robot-stops-near-obstacles)) |
 | The robot stays next to an obstacle, and every goal aborts with error 105 | Every direction Nav2 tries is blocked (the robot is boxed in), robot parts or noise are inside a stop polygon, or a source is invalid. The progress checker then aborts `follow_path` with error 105, because the robot moves less than 0.5 m within 8 s. | Check the `collision_monitor` log. Drive out with the joystick or keyboard ([Troubleshooting: Stuck near an obstacle](../troubleshooting.md#nav2-stuck-after-a-stop)). |
-| `controller_server` fails with `create_publisher() called for existing topic name rt/local_costmap/voxel_grid with incompatible type` | Fast DDS and the two `voxel_grid` publishers of the real and restaurant files | Use `rmw_zenoh_cpp` ([Known issues](#known-issues)) |
+| `controller_server` fails with `create_publisher() called for existing topic name rt/local_costmap/voxel_grid with incompatible type` | Fast DDS and the two `voxel_grid` publishers of the restaurant file | Use `rmw_zenoh_cpp` ([Known issues](#known-issues)) |
 | `nav2_loopback.launch.py`: Nav2 never finishes activating | The loopback simulator has no initial pose yet, so it publishes no transforms | Set one with **2D Pose Estimate** or on `/initialpose` ([Test goal logic without physics](#test-goal-logic-without-physics)) |
 | Nav2 nodes stay unconfigured, and the log shows `Waiting on external lifecycle transitions to activate` | A launch file includes `navigation_launch.py` or `localization_launch.py` without starting a lifecycle manager | Start `lifecycle_manager_nav2` as the Walkie launch files do ([Localization and mapping on the real robot](#localization-and-mapping-on-the-real-robot)) |
-| `bt_navigator` rejects goals and logs `"map" passed to lookupTransform argument target_frame does not exist` and `Initial robot pose is not available` (error 9002) | `bt_navigator` has no transform from `map` to `odom` | With AMCL or SLAM Toolbox, check that they publish it: `pixi run ros2 run tf2_ros tf2_echo map odom`. With a `static_transform_publisher` that publishes it once, as in `nav_mujoco_omnibot.launch.py`: start a second publisher. Never add one next to AMCL or SLAM Toolbox. ([Troubleshooting](../troubleshooting.md#nav2-map-frame-does-not-exist)) |
+| `bt_navigator` rejects goals and logs `"map" passed to lookupTransform argument target_frame does not exist` and `Initial robot pose is not available` (error 9002) | `bt_navigator` has no transform from `map` to `odom` | With AMCL or SLAM Toolbox, check that they publish it: `pixi run ros2 run tf2_ros tf2_echo map odom`. With a `static_transform_publisher` that publishes it once, as in `nav_mujoco_omnibot.launch.py` without `world`: start a second publisher. Never add one next to AMCL or SLAM Toolbox. ([Troubleshooting](../troubleshooting.md#nav2-map-frame-does-not-exist)) |
