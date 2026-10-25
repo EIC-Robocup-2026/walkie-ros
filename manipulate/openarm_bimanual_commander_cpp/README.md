@@ -39,7 +39,7 @@ Client (Python / C++ / CLI)
 | `left_gripper` | 1 | Gripper open/close (use `control_gripper`) |
 | `right_gripper` | 1 | Gripper open/close (use `control_gripper`) |
 
-All arm groups run with `maxVelocityScalingFactor=1.0`, `planningTime=1.0s`, `numPlanningAttempts=10000`.
+All arm groups run with `planningTime=5.0s` (`arm_planning_time`), `numPlanningAttempts=10000`, and the velocity and acceleration scaling of the `max_velocity_scaling_factor` and `max_acceleration_scaling_factor` parameters (default 0.5 and 0.3 from `joint_limits.yaml`).
 
 ---
 

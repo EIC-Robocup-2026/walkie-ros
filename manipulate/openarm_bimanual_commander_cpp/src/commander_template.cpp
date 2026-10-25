@@ -34,6 +34,7 @@
 #include <moveit_msgs/srv/apply_planning_scene.hpp>
 #include <shape_msgs/msg/solid_primitive.hpp>
 #include <cmath>
+#include <stdexcept>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_srvs/srv/trigger.hpp>
 #include <std_srvs/srv/set_bool.hpp>
@@ -91,19 +92,27 @@ public:
         both_arms_      = std::make_shared<MoveGroupInterface>(node_, "both_arms");
         both_arms_lift_ = std::make_shared<MoveGroupInterface>(node_, "both_arms_lift");
 
-        // Set scaling  (1.0 = full speed; lower for safety on real hardware)
-        left_arm_->setMaxVelocityScalingFactor(1.0);
-        left_arm_->setMaxAccelerationScalingFactor(1.0);
-        right_arm_->setMaxVelocityScalingFactor(1.0);
-        right_arm_->setMaxAccelerationScalingFactor(1.0);
-        left_arm_lift_->setMaxVelocityScalingFactor(1.0);
-        left_arm_lift_->setMaxAccelerationScalingFactor(1.0);
-        right_arm_lift_->setMaxVelocityScalingFactor(1.0);
-        right_arm_lift_->setMaxAccelerationScalingFactor(1.0);
-        both_arms_->setMaxVelocityScalingFactor(1.0);
-        both_arms_->setMaxAccelerationScalingFactor(1.0);
-        both_arms_lift_->setMaxVelocityScalingFactor(1.0);
-        both_arms_lift_->setMaxAccelerationScalingFactor(1.0);
+        // Velocity and acceleration scaling for the arm groups, as fractions of
+        // the joint limits. The defaults come from joint_limits.yaml
+        // (robot_description_planning.default_*_scaling_factor, 0.5 and 0.3),
+        // which every commander launch file passes. Both are live parameters:
+        // the parameter callback re-applies them to the groups for plan(), and
+        // retimeWithSpeedScaling() reads them per goal for the TOTG re-timing.
+        // The gripper groups are not scaled here.
+        const double max_velocity_scaling = declareScalingParameter(
+            "max_velocity_scaling_factor",
+            "robot_description_planning.default_velocity_scaling_factor", 0.5,
+            "Maximum velocity scaling factor for the arm groups, in (0, 1]");
+        const double max_acceleration_scaling = declareScalingParameter(
+            "max_acceleration_scaling_factor",
+            "robot_description_planning.default_acceleration_scaling_factor", 0.3,
+            "Maximum acceleration scaling factor for the arm groups, in (0, 1]");
+        for (auto & grp : {left_arm_, right_arm_, left_arm_lift_, right_arm_lift_,
+                           both_arms_, both_arms_lift_})
+        {
+            grp->setMaxVelocityScalingFactor(max_velocity_scaling);
+            grp->setMaxAccelerationScalingFactor(max_acceleration_scaling);
+        }
 
         // OMPL planner selection. The arm groups list RRTConnect/RRT/RRTstar/
         // BKPIECE/BITstar/TRRT in ompl_planning.yaml. RRTConnect (the default
@@ -137,6 +146,9 @@ public:
         RCLCPP_INFO(node_->get_logger(),
                     "Arm groups using planner '%s' with %.1f s planning time",
                     planner_id.c_str(), arm_planning_time);
+        RCLCPP_INFO(node_->get_logger(),
+                    "Arm groups using velocity scaling %.2f and acceleration scaling %.2f",
+                    max_velocity_scaling, max_acceleration_scaling);
 
         left_arm_->setNumPlanningAttempts(10000);
         right_arm_->setNumPlanningAttempts(10000);
@@ -384,18 +396,31 @@ public:
         //   ros2 param set /bimanual_commander allow_gripper_vs_octomap true
         node_->declare_parameter<bool>("allow_gripper_vs_octomap", false);
 
-        // --- Make planner_id / arm_planning_time retune LIVE ---
+        // --- Make planner_id / arm_planning_time / speed scaling retune LIVE ---
         // gripper_speed and grasp_scene_action are re-read per command, but
-        // planner_id / arm_planning_time persist on each MoveGroupInterface, so
-        // instead we re-apply them to the arm groups whenever they change via
-        // `ros2 param set <commander_node> planner_id RRTstar` (or
-        // arm_planning_time). The next plan uses the new value, no restart.
+        // planner_id, arm_planning_time and the two scaling factors persist on
+        // each MoveGroupInterface, so instead we re-apply them to the arm groups
+        // whenever they change via
+        // `ros2 param set <commander_node> planner_id RRTstar` (or any of the
+        // others). The next plan uses the new value, no restart. The TOTG
+        // re-timing reads the scaling factors per goal (retimeWithSpeedScaling).
+        // A scaling factor outside (0, 1] is rejected and changes nothing.
         param_cb_handle_ = node_->add_on_set_parameters_callback(
             [this](const std::vector<rclcpp::Parameter> & params)
                 -> rcl_interfaces::msg::SetParametersResult
             {
                 rcl_interfaces::msg::SetParametersResult result;
                 result.successful = true;
+                for (const auto & p : params) {
+                    const auto & name = p.get_name();
+                    if ((name == "max_velocity_scaling_factor" ||
+                         name == "max_acceleration_scaling_factor") &&
+                        !isValidScaling(p.as_double())) {
+                        result.successful = false;
+                        result.reason = name + " must be in (0, 1]";
+                        return result;
+                    }
+                }
                 bool finger_changed = false;
                 bool table_changed = false;
                 bool octomap_changed = false;
@@ -412,6 +437,18 @@ public:
                             grp->setPlanningTime(p.as_double());
                         RCLCPP_INFO(node_->get_logger(),
                                     "arm_planning_time -> %.2f s (live)", p.as_double());
+                    } else if (p.get_name() == "max_velocity_scaling_factor") {
+                        for (auto & grp : {left_arm_, right_arm_, left_arm_lift_,
+                                           right_arm_lift_, both_arms_, both_arms_lift_})
+                            grp->setMaxVelocityScalingFactor(p.as_double());
+                        RCLCPP_INFO(node_->get_logger(),
+                                    "max_velocity_scaling_factor -> %.2f (live)", p.as_double());
+                    } else if (p.get_name() == "max_acceleration_scaling_factor") {
+                        for (auto & grp : {left_arm_, right_arm_, left_arm_lift_,
+                                           right_arm_lift_, both_arms_, both_arms_lift_})
+                            grp->setMaxAccelerationScalingFactor(p.as_double());
+                        RCLCPP_INFO(node_->get_logger(),
+                                    "max_acceleration_scaling_factor -> %.2f (live)", p.as_double());
                     } else if (p.get_name().rfind("finger_pad", 0) == 0) {
                         finger_changed = true;   // finger_padding / _enable / _links
                     } else if (p.get_name() == "allow_gripper_vs_octomap") {
@@ -1190,8 +1227,7 @@ public:
                 robot_trajectory::RobotTrajectory rt(
                     group->getCurrentState()->getRobotModel(), group->getName());
                 rt.setRobotTrajectoryMsg(*group->getCurrentState(), trajectory);
-                trajectory_processing::TimeOptimalTrajectoryGeneration totg;
-                if (totg.computeTimeStamps(rt, 1.0, 1.0)) {
+                if (retimeWithSpeedScaling(rt)) {
                     rt.getRobotTrajectoryMsg(trajectory);
                 }
                 return (group->execute(trajectory) == moveit::core::MoveItErrorCode::SUCCESS);
@@ -1608,8 +1644,7 @@ public:
                 robot_trajectory::RobotTrajectory rt(
                     group->getCurrentState()->getRobotModel(), group->getName());
                 rt.setRobotTrajectoryMsg(*group->getCurrentState(), trajectory);
-                trajectory_processing::TimeOptimalTrajectoryGeneration totg;
-                if (totg.computeTimeStamps(rt, 1.0, 1.0)) {
+                if (retimeWithSpeedScaling(rt)) {
                     rt.getRobotTrajectoryMsg(plan.trajectory);
                     plan_success = true;
                 }
@@ -1748,8 +1783,7 @@ public:
                 robot_trajectory::RobotTrajectory rt(
                     group->getCurrentState()->getRobotModel(), group->getName());
                 rt.setRobotTrajectoryMsg(*group->getCurrentState(), cartesian_traj);
-                trajectory_processing::TimeOptimalTrajectoryGeneration totg;
-                if (totg.computeTimeStamps(rt, 1.0, 1.0)) {
+                if (retimeWithSpeedScaling(rt)) {
                     rt.getRobotTrajectoryMsg(cartesian_traj);
                     plan_success = true;
                     using_cartesian_result = true;
@@ -1870,8 +1904,7 @@ public:
                 robot_trajectory::RobotTrajectory rt(
                     group->getCurrentState()->getRobotModel(), group->getName());
                 rt.setRobotTrajectoryMsg(*group->getCurrentState(), trajectory);
-                trajectory_processing::TimeOptimalTrajectoryGeneration totg;
-                if (totg.computeTimeStamps(rt, 1.0, 1.0)) {
+                if (retimeWithSpeedScaling(rt)) {
                     rt.getRobotTrajectoryMsg(plan.trajectory);
                     plan_success = true;
                 }
@@ -2207,9 +2240,60 @@ public:
     }
 
 private:
+    // MoveGroupInterface replaces a scaling factor <= 0 with its own default,
+    // and TOTG replaces one outside (0, 1] with 1.0 (full speed), so neither may
+    // reach them. The comparison also rejects NaN.
+    static bool isValidScaling(double value)
+    {
+        return value > 0.0 && value <= 1.0;
+    }
+
+    // Declares a scaling parameter. Its default is the planning default the
+    // launch file passes from joint_limits.yaml, or `fallback` if none is
+    // passed. An explicit override of `name` wins. Throws on a value outside
+    // (0, 1], so the node refuses to start rather than run at the wrong speed.
+    double declareScalingParameter(const std::string & name,
+                                   const std::string & planning_default_name,
+                                   double fallback,
+                                   const std::string & description)
+    {
+        double initial = fallback;
+        const auto & overrides =
+            node_->get_node_parameters_interface()->get_parameter_overrides();
+        const auto it = overrides.find(planning_default_name);
+        if (it != overrides.end()) {
+            if (it->second.get_type() == rclcpp::ParameterType::PARAMETER_DOUBLE) {
+                initial = it->second.get<double>();
+            } else if (it->second.get_type() == rclcpp::ParameterType::PARAMETER_INTEGER) {
+                initial = static_cast<double>(it->second.get<int64_t>());
+            }
+        }
+        rcl_interfaces::msg::ParameterDescriptor descriptor;
+        descriptor.description = description;
+        const double value = node_->declare_parameter<double>(name, initial, descriptor);
+        if (!isValidScaling(value)) {
+            throw std::invalid_argument(
+                name + " must be in (0, 1], got " + std::to_string(value));
+        }
+        return value;
+    }
+
+    // Re-times a trajectory with TOTG at the live speed scaling. Reads the
+    // parameters per goal, so a `ros2 param set` applies to the next move.
+    bool retimeWithSpeedScaling(robot_trajectory::RobotTrajectory & rt)
+    {
+        const double velocity =
+            node_->get_parameter("max_velocity_scaling_factor").as_double();
+        const double acceleration =
+            node_->get_parameter("max_acceleration_scaling_factor").as_double();
+        trajectory_processing::TimeOptimalTrajectoryGeneration totg;
+        return totg.computeTimeStamps(rt, velocity, acceleration);
+    }
+
     std::shared_ptr<rclcpp::Node> node_;
     rclcpp::CallbackGroup::SharedPtr callback_group_;
-    // Keeps the live-retune callback for planner_id / arm_planning_time alive.
+    // Keeps the live-retune callback for planner_id, arm_planning_time and the
+    // speed scaling factors alive.
     rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr param_cb_handle_;
 
     std::shared_ptr<MoveGroupInterface> left_arm_;
