@@ -602,8 +602,11 @@ Run the commands from the repository root.
        `bringup/config/lidar/unitree_self_filter.yaml`, the configuration of the real
        robot. It reads the head 3D lidar cloud `/unilidar/cloud` and publishes
        `/unilidar/cloud/filtered` without the points on the robot.
-    7. `walkie_tf`'s `tf_server` (node name `walkie_tf_server`).
-    8. RViz with `rviz_config`, when `use_rviz` is `true`.
+    7. `depth_image_proc`'s `point_cloud_xyz_node` (node name `zed_head_point_cloud`). It
+       turns the head camera depth image into `/zed_head/zed_node/point_cloud/cloud_registered`,
+       the ZED cloud topic of the real robot.
+    8. `walkie_tf`'s `tf_server` (node name `walkie_tf_server`).
+    9. RViz with `rviz_config`, when `use_rviz` is `true`.
 
     `bringup/launch/nav_mujoco_omnibot.launch.py` starts:
 
@@ -699,6 +702,7 @@ priorities and timeouts.
 | `/imu` | `sensor_msgs/Imu` | Frame `top_imu_link` |
 | `/zed_head/zed_node/rgb/color/rect/image`, `/zed_head/zed_node/depth/depth_registered` | `sensor_msgs/Image` | Head camera, color and depth. The topic names of the real ZED camera. |
 | `/zed_head/zed_node/depth/camera_info` | `sensor_msgs/CameraInfo` | Head camera, frame `zed_head_left_camera_frame_optical` |
+| `/zed_head/zed_node/point_cloud/cloud_registered` | `sensor_msgs/PointCloud2` | Head camera cloud from the depth image (`depth_image_proc`), organized 640 x 360, `x`, `y`, `z` only, 5 Hz. Pixels with no hit are points at the far plane, about 110 m: filter by range. Includes points on the robot |
 | `/bottom_camera/image_raw`, `/bottom_camera/depth/image_raw` | `sensor_msgs/Image` | Bottom camera, color and depth |
 | `/bottom_camera/camera_info` | `sensor_msgs/CameraInfo` | Bottom camera, frame `bottom_color_optical_frame` |
 | `/mujoco_ground_truth/odom` | `nav_msgs/Odometry` | True base pose from the simulator, without TF. Gazebo uses `/gazebo_ground_truth/odom`. |
@@ -915,10 +919,11 @@ Each 2D lidar is one entry under the plugin instance:
   `build_mjcf.py` and run `pixi run mjcf` ([Change a MuJoCo-only value](#mujoco-only-values)).
 - The head camera publishes its images and camera info on the topic names of the real ZED
   camera, so nodes that read them need no remaps.
-- No ZED point cloud is published. Nodes that read
-  `/zed_head/zed_node/point_cloud/cloud_registered` or its filtered copy, such as the
-  grasp node of `walkie_perception`, get no cloud. MoveIt with `hardware_type:=mujoco`
-  runs without an octomap.
+- The ZED point cloud `/zed_head/zed_node/point_cloud/cloud_registered` is made from the
+  depth image by `depth_image_proc` in the launch file, without color. Its self-filtered
+  copy (`.../filtered`) is not published. MoveIt with `hardware_type:=mujoco` builds its
+  octomap from this cloud only
+  ([Manipulation: Configure MoveIt](manipulation.md#launch-files-and-arguments)).
 
 ??? info "How the file maps to the model"
     - One lidar instance serves both lidars. `front_lidar` and `back_lidar` are the sensor

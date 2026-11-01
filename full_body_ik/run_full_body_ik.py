@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Walkie full-body IK: target GUI + MuJoCo preview, executed with MoveIt (lift + arms) and Nav2 (base).
+Walkie full-body IK: target GUI + MuJoCo preview, executed with MoveIt hybrid planning (lift + arms)
+and Nav2 (base).
 
 Start the walkie MuJoCo sim, Nav2 and MoveIt first (see README.md), then, from the repository root:
 
@@ -40,6 +41,9 @@ def main():
     parser.add_argument("--planning-time", type=float, default=5.0, help="MoveIt allowed planning time [s]")
     parser.add_argument("--no-precise-base", dest="precise_base", action="store_false",
                         help="keep Nav2's default goal checker (0.1 m) instead of precise_goal_checker (0.02 m)")
+    parser.add_argument("--no-hybrid", dest="hybrid", action="store_false",
+                        help="send the arms + lift to move_group (/move_action) instead of hybrid planning "
+                             "(/run_hybrid_planning)")
     args = parser.parse_args()
 
     walkie = WalkieModel(args.model)
@@ -54,7 +58,7 @@ def main():
     else:
         preview = PreviewSim(walkie)
     bridge = RobotBridge(args.velocity_scaling, args.acceleration_scaling, args.planning_time,
-                         args.precise_base)
+                         args.precise_base, args.hybrid)
 
     # targets at the home pose until the robot's state arrives (the loop then syncs to it)
     gui = TargetGUI({side: Target(pos, rotations.rotmat_to_euler_ZYX(R))

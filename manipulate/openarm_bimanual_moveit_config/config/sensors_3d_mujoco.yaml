@@ -1,0 +1,30 @@
+# 3D sensors of MoveIt's OccupancyMapMonitor in the MuJoCo simulation
+# (moveit_only.launch.py hardware_type:=mujoco loads this instead of sensors_3d.yaml).
+#
+# Only the head camera (ZED) feeds the octomap: it looks at the arms' workspace, which is
+# what the octomap is for (arm collision avoidance). The head 3D lidar is left out.
+#
+# head_cloud: made from the MuJoCo depth image by depth_image_proc in mujoco_omnibot.launch.py
+# under the real ZED topic name (640 x 360, 5 Hz). Pixels with no hit are points at the
+# camera's far plane (about 110 m); beyond max_range a point only clears the cells along its
+# ray, so they never become obstacles. MoveIt removes the robot with its shape mask (padding_*).
+#
+# point_subsample 16 keeps every 16th point of the organized cloud, i.e. every 16th pixel of
+# each row (about 14k of 230k points; about 5 cm apart across a row at 1 m, rows stay dense).
+# With 4, move_group ray-cast ~57k points per cloud and updated the octomap at about 1 Hz
+# instead of 5 Hz.
+#
+# Named-sensor layout, as in sensors_3d.yaml (rclpy cannot pass a list of dicts). The
+# launch argument point_cloud_topic overrides head_cloud.point_cloud_topic.
+sensors:
+  - head_cloud
+
+head_cloud:
+  sensor_plugin: occupancy_map_monitor/PointCloudOctomapUpdater
+  point_cloud_topic: /zed_head/zed_node/point_cloud/cloud_registered
+  max_range: 2.5
+  point_subsample: 16
+  padding_offset: 0.03
+  padding_scale: 1.0
+  max_update_rate: 5.0
+  filtered_cloud_topic: /move_group/filtered_cloud

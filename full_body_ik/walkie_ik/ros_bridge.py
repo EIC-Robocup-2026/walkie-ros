@@ -2,8 +2,10 @@
 ROS 2 side of the full-body IK: reads the robot state and sends an IK solution for execution.
 
 In:   /joint_states (lift + arm joints), TF map -> base_footprint (base pose; Nav2's frames).
-Out:  lift + both arms -> MoveIt move_group, MoveGroup action /move_action, as one joint goal
-      for the planning group both_arms_lift (plan and execute);
+Out:  lift + both arms -> MoveIt, as one joint goal for the planning group both_arms_lift:
+      by default to hybrid planning, HybridPlanner action /run_hybrid_planning (global plan, then
+      the local planner follows it and holds when the octomap or a collision object blocks the
+      path); with hybrid=False to move_group, MoveGroup action /move_action (plan and execute);
       x, y, yaw -> Nav2, NavigateToPose action /navigate_to_pose, as a goal pose in map.
 Both goals are sent at the same time, so the base drives while the arms and lift move.
 
@@ -19,8 +21,8 @@ import threading
 import rclpy
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped
-from moveit_msgs.action import MoveGroup
-from moveit_msgs.msg import Constraints, JointConstraint, MoveItErrorCodes
+from moveit_msgs.action import HybridPlanner, MoveGroup
+from moveit_msgs.msg import Constraints, JointConstraint, MotionPlanRequest, MotionSequenceItem, MoveItErrorCodes
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
 from rclpy.executors import MultiThreadedExecutor
@@ -38,7 +40,8 @@ from .walkie_model import WALKIE_JOINTS
 
 MAP_FRAME = "map"
 BASE_FRAME = "base_footprint"
-MOVEIT_GROUP = "both_arms_lift"
+MOVEIT_GROUP = "both_arms_lift"       # also the local planner's group_name in hybrid_planner.yaml
+MOVEIT_PIPELINE = "ompl"
 MOVEIT_JOINT_TOLERANCE = 1e-3       # rad / m
 # a base move smaller than this is not sent to Nav2 (it would only run its goal checker)
 NAV_MIN_TRANSLATION = 0.01          # m
@@ -55,11 +58,12 @@ MOVEIT_ERRORS = {v: k for k, v in vars(MoveItErrorCodes).items() if k.isupper() 
 
 class RobotBridge:
     def __init__(self, velocity_scaling: float = 0.5, acceleration_scaling: float = 0.3,
-                 planning_time: float = 5.0, precise_base: bool = True):
+                 planning_time: float = 5.0, precise_base: bool = True, hybrid: bool = True):
         self.velocity_scaling = velocity_scaling
         self.acceleration_scaling = acceleration_scaling
         self.planning_time = planning_time
         self.precise_base = precise_base
+        self.hybrid = hybrid
 
         # rclpy's own SIGINT/SIGTERM handlers would stop ROS but leave the GUI open; the
         # entry script handles the signals by closing the GUI instead
@@ -73,7 +77,8 @@ class RobotBridge:
         self.node.create_subscription(JointState, "/joint_states", self._on_joint_state, 10)
         self._tf = Buffer()
         self._tf_listener = TransformListener(self._tf, self.node)
-        self._moveit = ActionClient(self.node, MoveGroup, "move_action")
+        self._moveit = (ActionClient(self.node, HybridPlanner, "run_hybrid_planning") if hybrid
+                        else ActionClient(self.node, MoveGroup, "move_action"))
         self._nav = ActionClient(self.node, NavigateToPose, "navigate_to_pose")
         # latched like the selector's subscription, so the selection also reaches a BT started later
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
@@ -146,24 +151,31 @@ class RobotBridge:
 
     def _send_moveit(self, command: dict) -> None:
         if not self._moveit.server_is_ready():
-            self._set_status("MoveIt", "/move_action not available (is move_group running?)")
+            self._set_status("MoveIt", "/run_hybrid_planning not available (is moveit_only.launch.py "
+                                       "running with hybrid_planning?)" if self.hybrid else
+                                       "/move_action not available (is move_group running?)")
             return
-        goal = MoveGroup.Goal()
-        req = goal.request
+        req = MotionPlanRequest()
         req.group_name = MOVEIT_GROUP
+        req.pipeline_id = MOVEIT_PIPELINE
         req.num_planning_attempts = 5
         req.allowed_planning_time = self.planning_time
         req.max_velocity_scaling_factor = self.velocity_scaling
         req.max_acceleration_scaling_factor = self.acceleration_scaling
-        req.start_state.is_diff = True                      # plan from move_group's current state
+        req.start_state.is_diff = True                      # plan from the planner's current state
         req.goal_constraints = [Constraints(joint_constraints=[
             JointConstraint(joint_name=walkie_name, position=float(command[name]),
                             tolerance_above=MOVEIT_JOINT_TOLERANCE, tolerance_below=MOVEIT_JOINT_TOLERANCE,
                             weight=1.0)
             for name, walkie_name in WALKIE_JOINTS.items()])]
-        goal.planning_options.plan_only = False
-        goal.planning_options.planning_scene_diff.is_diff = True
-        goal.planning_options.planning_scene_diff.robot_state.is_diff = True
+        if self.hybrid:
+            goal = HybridPlanner.Goal(planning_group=MOVEIT_GROUP)
+            goal.motion_sequence.items = [MotionSequenceItem(req=req)]
+        else:
+            goal = MoveGroup.Goal(request=req)
+            goal.planning_options.plan_only = False
+            goal.planning_options.planning_scene_diff.is_diff = True
+            goal.planning_options.planning_scene_diff.robot_state.is_diff = True
 
         self._set_status("MoveIt", "planning...")
         future = self._moveit.send_goal_async(goal)
@@ -199,7 +211,7 @@ class RobotBridge:
         with self._lock:
             self._goal_handles[who] = handle
         if who == "MoveIt":
-            self._set_status(who, "planning + executing...")
+            self._set_status(who, "hybrid planning + executing..." if self.hybrid else "planning + executing...")
         else:
             self._set_status(who, "navigating...")
         handle.get_result_async().add_done_callback(lambda f: on_result(handle, f))
@@ -217,6 +229,8 @@ class RobotBridge:
             text = "succeeded"
         else:
             text = f"failed: {MOVEIT_ERRORS.get(code, code)}"
+            if getattr(response.result, "error_message", ""):     # HybridPlanner only
+                text += f" ({response.result.error_message})"
         self._finish("MoveIt", handle, text)
 
     def _on_nav_result(self, handle, future) -> None:

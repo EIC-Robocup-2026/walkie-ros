@@ -24,9 +24,19 @@
          when true, openarm_right_joint2 is a fixed URDF joint (0 DOF) and must
          not appear in group_state default values below. -->
     <xacro:arg name="right_joint2_fixed" default="false"/>
+    <!-- map_frame empty: the robot is fixed in a "world" frame at base_footprint, so
+         MoveIt plans in the robot's own frame. map_frame set (e.g. "map"): a planar
+         virtual joint from that frame; MoveIt reads it from TF (map -> base_footprint),
+         so the planning frame, collision objects and the octomap are in map coordinates. -->
+    <xacro:arg name="map_frame" default=""/>
 
     <!--VIRTUAL JOINT: connects world frame to walkie robot root-->
-    <virtual_joint name="virtual_joint" type="fixed" parent_frame="world" child_link="base_footprint"/>
+    <xacro:if value="${'$(arg map_frame)' == ''}">
+        <virtual_joint name="virtual_joint" type="fixed" parent_frame="world" child_link="base_footprint"/>
+    </xacro:if>
+    <xacro:unless value="${'$(arg map_frame)' == ''}">
+        <virtual_joint name="virtual_joint" type="planar" parent_frame="$(arg map_frame)" child_link="base_footprint"/>
+    </xacro:unless>
 
     <!--GROUPS-->
     <!-- WHOLE BODY GROUPS (Includes lift_joint) -->

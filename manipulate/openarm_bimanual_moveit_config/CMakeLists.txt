@@ -34,4 +34,6 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/launch")
 endif()
 
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
+# Started by moveit_only.launch.py hybrid_planning:=true.
+install(PROGRAMS scripts/hybrid_planning_relay.py DESTINATION lib/${PROJECT_NAME})
 install(FILES .setup_assistant DESTINATION share/${PROJECT_NAME})

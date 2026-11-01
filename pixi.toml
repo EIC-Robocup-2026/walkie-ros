@@ -114,6 +114,9 @@ ros-jazzy-moveit-ros-visualization = "*"
 ros-jazzy-moveit-ros-warehouse = "*"
 ros-jazzy-moveit-setup-assistant = "*"
 ros-jazzy-moveit-simple-controller-manager = "*"
+# Hybrid planning (global OMPL planner + reactive local planner) for move_group in
+# manipulate/openarm_bimanual_moveit_config/launch/moveit_only.launch.py.
+ros-jazzy-moveit-hybrid-planning = "*"
 ros-jazzy-nav-msgs = "*"
 ros-jazzy-nav2-minimal-tb3-sim = "*"
 ros-jazzy-nav2-minimal-tb4-sim = "*"
@@ -195,6 +198,8 @@ ros-jazzy-mujoco-ros2-control = ">=0.1.2"
 # MuJoCo extension "mujoco.plugin.lidar": the head 3D lidar in description/mujoco/walkie.xml,
 # published by Mujoco3dLidarPlugin. Every MuJoCo model load needs it.
 ros-jazzy-mujoco-3d-lidar = ">=0.1.2,<0.2"
+# Head camera point cloud from the MuJoCo depth image (bringup/launch/mujoco_omnibot.launch.py).
+ros-jazzy-depth-image-proc = ">=5.0.13,<6"
 # `ros2 control view_controller_chains` imports graphviz; RoboStack does not map python3-graphviz.
 python-graphviz = "*"
 ros-jazzy-nmea-msgs = ">=2.1.0,<3"

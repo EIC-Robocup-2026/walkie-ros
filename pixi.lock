@@ -474,6 +474,7 @@ environments:
       - conda: https://prefix.dev/conda-forge/linux-64/vtk-io-ffmpeg-9.7.0-py312hf457d9a_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/wayland-1.26.0-hc1c935e_2.conda
       - conda: https://prefix.dev/conda-forge/linux-64/websockets-17.2-py312h89dfda2_0.conda
+      - conda: https://prefix.dev/conda-forge/linux-64/wrapt-2.5.2-py312h1b36aeb_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/x264-1!164.3095-h7cc23a3_3.conda
       - conda: https://prefix.dev/conda-forge/linux-64/x265-3.5-h73f68a7_4.conda
       - conda: https://prefix.dev/conda-forge/linux-64/xcb-util-0.4.1-h4f16b4b_2.conda
@@ -552,6 +553,7 @@ environments:
       - conda: https://prefix.dev/conda-forge/noarch/coloredlogs-15.0.1-pyhd8ed1ab_4.conda
       - conda: https://prefix.dev/conda-forge/noarch/cpython-3.12.14-py312hd8ed1ab_3.conda
       - conda: https://prefix.dev/conda-forge/noarch/cycler-0.12.1-pyhcf101f3_2.conda
+      - conda: https://prefix.dev/conda-forge/noarch/deprecated-3.0.1-pyhc364b38_0.conda
       - conda: https://prefix.dev/conda-forge/noarch/distlib-0.4.3-pyhcf101f3_0.conda
       - conda: https://prefix.dev/conda-forge/noarch/distro-1.9.0-pyhd8ed1ab_1.conda
       - conda: https://prefix.dev/conda-forge/noarch/dnspython-2.8.0-pyhcf101f3_0.conda
@@ -670,6 +672,7 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-control-msgs-5.10.0-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-controller-manager-4.49.0-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-cv-bridge-4.1.0-hb0f4dca_25.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-depth-image-proc-5.0.13-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-diagnostic-msgs-5.3.8-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-diagnostic-updater-4.2.7-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-diff-drive-controller-4.43.0-hb0f4dca_25.conda
@@ -698,6 +701,7 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-map-msgs-2.4.1-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-message-filters-4.11.17-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-moveit-configs-utils-2.12.4-hb0f4dca_25.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-moveit-hybrid-planning-2.12.4-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-moveit-kinematics-2.12.4-hb0f4dca_21.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-moveit-msgs-2.6.0-hb0f4dca_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-moveit-planners-2.12.4-hb0f4dca_21.conda
@@ -840,6 +844,7 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-bond-4.2.0-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-bondcpp-4.2.0-np2py312h6c3883e_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-builtin-interfaces-2.0.4-np2py312h1bab3cf_25.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-camera-calibration-parsers-5.1.8-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-chained-filter-controller-4.43.0-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-chomp-motion-planner-2.12.4-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-class-loader-2.7.1-np2py312hd81cb55_25.conda
@@ -855,6 +860,7 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-controller-manager-msgs-4.49.0-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-cv-bridge-4.1.0-np2py312hbf735fd_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-cyclonedds-0.10.5-py312h79554f9_25.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-depth-image-proc-5.0.13-np2py312h2facfd7_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-diagnostic-msgs-5.3.8-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-diagnostic-updater-4.2.7-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-diff-drive-controller-4.43.0-np2py312h1bab3cf_25.conda
@@ -907,6 +913,8 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-iceoryx-binding-c-2.95.8-py312h24bf083_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-iceoryx-hoofs-2.95.8-py312h24bf083_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-iceoryx-posh-2.95.8-py312h24bf083_25.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-image-geometry-4.1.0-np2py312h2facfd7_25.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-image-proc-5.0.13-np2py312h2facfd7_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-image-transport-5.1.8-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-image-transport-plugins-4.0.7-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-imu-sensor-broadcaster-4.43.0-np2py312h1bab3cf_25.conda
@@ -944,12 +952,15 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-common-2.12.4-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-configs-utils-2.12.4-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-core-2.12.4-np2py312h7de5627_25.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-hybrid-planning-2.12.4-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-kinematics-2.12.4-np2py312hd65a65c_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-msgs-2.6.0-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-planners-2.12.4-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-planners-chomp-2.12.4-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-planners-ompl-2.12.4-np2py312hd65a65c_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-planners-stomp-2.12.4-np2py312h1bab3cf_25.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-resources-panda-description-3.1.0-np2py312h1bab3cf_25.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-resources-panda-moveit-config-3.1.0-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-ros-move-group-2.12.4-np2py312h4bd2163_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-ros-occupancy-map-monitor-2.12.4-np2py312hd65a65c_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-ros-perception-2.12.4-np2py312h9b3306d_25.conda
@@ -1179,6 +1190,7 @@ environments:
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-trac-ik-kinematics-plugin-2.0.2-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-trac-ik-lib-2.0.2-np2py312h077ffd7_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-tracetools-8.2.6-np2py312h1bab3cf_25.conda
+      - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-tracetools-image-pipeline-5.0.13-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-trajectory-msgs-5.3.8-np2py312h1bab3cf_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-transmission-interface-4.49.0-np2py312h4bd2163_25.conda
       - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-tricycle-controller-4.43.0-np2py312h1bab3cf_25.conda
@@ -9243,6 +9255,19 @@ packages:
   run_exports: {}
   size: 412738
   timestamp: 1791057460950
+- conda: https://prefix.dev/conda-forge/linux-64/wrapt-2.5.2-py312h1b36aeb_0.conda
+  sha256: f145b43081a258a132bef14c4faeccbb1a0333c7a6771315da80c9628c8c4c76
+  md5: 9ed157b6b69bf78ba3dab27a99b4cf62
+  depends:
+  - python
+  - __glibc >=2.17,<3.0.a0
+  - libgcc >=15
+  - python_abi 3.12.* *_cp312
+  license: BSD-2-Clause
+  license_family: BSD
+  run_exports: {}
+  size: 153549
+  timestamp: 1793358802876
 - conda: https://prefix.dev/conda-forge/linux-64/x264-1!164.3095-h7cc23a3_3.conda
   sha256: 1c34c63ba591982d438b844e2487a3f04e47f7274bfa88f87943bbb8326c8edc
   md5: 45246ea280bd334e4413ec0125ce6797
@@ -10335,6 +10360,18 @@ packages:
   run_exports: {}
   size: 14778
   timestamp: 1764466758386
+- conda: https://prefix.dev/conda-forge/noarch/deprecated-3.0.1-pyhc364b38_0.conda
+  sha256: edf3e0e1e985b463ceaeebc4a762ab3d15609759dbc10bf41cbcc596bd364e2b
+  md5: 3e3aa1ff1a1042830bbaa446def7b80c
+  depends:
+  - python >=3.12
+  - wrapt >=1.16,<3
+  - python
+  license: MIT
+  license_family: MIT
+  run_exports: {}
+  size: 23091
+  timestamp: 1793404265265
 - conda: https://prefix.dev/conda-forge/noarch/distlib-0.4.3-pyhcf101f3_0.conda
   sha256: e2753997b8bd34205f42be01b8bab8037423dc30c02a1ec12de23e5b4c0b0a2e
   md5: 58638f77697c4f6726753eb8be34818b
@@ -11852,6 +11889,14 @@ packages:
   run_exports: {}
   size: 2009
   timestamp: 1791435299538
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-depth-image-proc-5.0.13-hb0f4dca_25.conda
+  sha256: b238deb26b525ef2c25cb7c42689b18456c126c294fed137f721ad7dafdc9c1f
+  md5: 0abef7ffa884ddcff9229b700b73e4b8
+  depends:
+  - ros2-depth-image-proc ==5.0.13
+  run_exports: {}
+  size: 2055
+  timestamp: 1791440167203
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-diagnostic-msgs-5.3.8-hb0f4dca_25.conda
   sha256: dcfbdd88133059917d01e3fe77614ec1ea42df9f27d962f427b6bec12a6b9555
   md5: e71b4ec313800c339d41b8f633f70ca3
@@ -12076,6 +12121,14 @@ packages:
   run_exports: {}
   size: 2069
   timestamp: 1791434460103
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-moveit-hybrid-planning-2.12.4-hb0f4dca_25.conda
+  sha256: cf04bf45637684e98ae690c4ad6c28309ace034c1a9958ebbde2a9aa408755d9
+  md5: afaabd61daea7d7056775205f72aea4e
+  depends:
+  - ros2-moveit-hybrid-planning ==2.12.4
+  run_exports: {}
+  size: 2083
+  timestamp: 1791449244427
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros-jazzy-moveit-kinematics-2.12.4-hb0f4dca_21.conda
   sha256: 417f1580311a212c81ea8af565d75211e754729c7f321fef7098c628c45b61ef
   md5: 3df7310f2962a510105dbefaab2cea04
@@ -13943,6 +13996,26 @@ packages:
   run_exports: {}
   size: 82420
   timestamp: 1791431868210
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-camera-calibration-parsers-5.1.8-np2py312h1bab3cf_25.conda
+  sha256: d35731006e668f663839067098af832362c9741bb0d622265fa0a6307df269c7
+  md5: 6cc5e209f093d11b00cb4258d7956381
+  depends:
+  - python
+  - ros2-distro-mutex 0.19.* jazzy_*
+  - ros2-rclcpp
+  - ros2-ros-workspace
+  - ros2-sensor-msgs
+  - ros2-yaml-cpp-vendor
+  - __glibc >=2.28,<3.0.a0
+  - libgcc >=15
+  - libstdcxx >=15
+  - numpy >=1.25,<3
+  - python_abi 3.12.* *_cp312
+  - ros2-distro-mutex >=0.19.0,<0.20.0a0
+  license: BSD-3-Clause
+  run_exports: {}
+  size: 125239
+  timestamp: 1791434885408
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-chained-filter-controller-4.43.0-np2py312h1bab3cf_25.conda
   sha256: cf8f96be4c409183f7d02b3b7521cf10f5cb1bb9dd5a7abd8dbdb12e1b2d34d9
   md5: 253ba16b61a7e2094de57516fffe2bf7
@@ -14308,6 +14381,43 @@ packages:
   run_exports: {}
   size: 8560
   timestamp: 1791427991851
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-depth-image-proc-5.0.13-np2py312h2facfd7_25.conda
+  sha256: 15c48f4af426230ad34f23ad688a7a377f9010abec89e2a96bfeceba5534a2c8
+  md5: cc30895d45fb0af3c7bb74da22ff39f6
+  depends:
+  - libgl-devel
+  - libopencv
+  - libopengl-devel
+  - py-opencv
+  - python
+  - ros2-cv-bridge
+  - ros2-distro-mutex 0.19.* jazzy_*
+  - ros2-image-geometry
+  - ros2-image-proc
+  - ros2-image-transport
+  - ros2-message-filters
+  - ros2-rclcpp
+  - ros2-rclcpp-components
+  - ros2-ros-workspace
+  - ros2-sensor-msgs
+  - ros2-stereo-msgs
+  - ros2-tf2
+  - ros2-tf2-eigen
+  - ros2-tf2-ros
+  - libgcc >=15
+  - __glibc >=2.28,<3.0.a0
+  - libstdcxx >=15
+  - libopencv >=5.0.0,<5.0.1.0a0
+  - numpy >=1.25,<3
+  - ros2-distro-mutex >=0.19.0,<0.20.0a0
+  - python_abi 3.12.* *_cp312
+  - py-opencv >=5.0.0,<6.0a0
+  - libopengl >=1.7.0,<2.0a0
+  - libgl >=1.7.0,<2.0a0
+  license: BSD-3-Clause
+  run_exports: {}
+  size: 541485
+  timestamp: 1791439932964
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-diagnostic-msgs-5.3.8-np2py312h1bab3cf_25.conda
   sha256: d20078c9b66749c16794335f795e692a8780dc86f01ce76321c226f9befe9b43
   md5: 8838a5fa572d594550c559425ebe9d67
@@ -15650,6 +15760,70 @@ packages:
   run_exports: {}
   size: 9826
   timestamp: 1791427534205
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-image-geometry-4.1.0-np2py312h2facfd7_25.conda
+  sha256: 04104aea11a877460ee2e074a0bd026c316596fec7d07519c0e91853c07f1a74
+  md5: 59ebd561b67ff6d00f2ea2eda133795d
+  depends:
+  - deprecated
+  - libgl-devel
+  - libopencv
+  - libopengl-devel
+  - py-opencv
+  - python
+  - ros2-distro-mutex 0.19.* jazzy_*
+  - ros2-ros-workspace
+  - ros2-sensor-msgs
+  - libstdcxx >=15
+  - libgcc >=15
+  - __glibc >=2.28,<3.0.a0
+  - python_abi 3.12.* *_cp312
+  - numpy >=1.25,<3
+  - libopengl >=1.7.0,<2.0a0
+  - ros2-distro-mutex >=0.19.0,<0.20.0a0
+  - libgl >=1.7.0,<2.0a0
+  - libopencv >=5.0.0,<5.0.1.0a0
+  - py-opencv >=5.0.0,<6.0a0
+  license: Apache-2.0 OR BSD-3-Clause
+  run_exports: {}
+  size: 91698
+  timestamp: 1791434875683
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-image-proc-5.0.13-np2py312h2facfd7_25.conda
+  sha256: 9c6e22c562e92ec1449420833eb64a6ca72fed4b2c7050661c60613fda295a9d
+  md5: 309d532d29e774e6d420e9cb82804e4b
+  depends:
+  - libgl-devel
+  - libopencv
+  - libopengl-devel
+  - py-opencv
+  - python
+  - ros2-camera-calibration-parsers
+  - ros2-cv-bridge
+  - ros2-distro-mutex 0.19.* jazzy_*
+  - ros2-geometry-msgs
+  - ros2-image-geometry
+  - ros2-image-transport
+  - ros2-rclcpp
+  - ros2-rclcpp-components
+  - ros2-rcutils
+  - ros2-ros-workspace
+  - ros2-sensor-msgs
+  - ros2-tf2
+  - ros2-tf2-geometry-msgs
+  - ros2-tracetools-image-pipeline
+  - libgcc >=15
+  - libstdcxx >=15
+  - __glibc >=2.28,<3.0.a0
+  - ros2-distro-mutex >=0.19.0,<0.20.0a0
+  - python_abi 3.12.* *_cp312
+  - libopengl >=1.7.0,<2.0a0
+  - numpy >=1.25,<3
+  - libopencv >=5.0.0,<5.0.1.0a0
+  - py-opencv >=5.0.0,<6.0a0
+  - libgl >=1.7.0,<2.0a0
+  license: BSD-3-Clause
+  run_exports: {}
+  size: 377493
+  timestamp: 1791438245032
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-image-transport-5.1.8-np2py312h1bab3cf_25.conda
   sha256: 492ab3135a61882a932b5e91d3d74cbbc9ec84094254e4127a15c5602b7aa769
   md5: 7f19b982d7a9904bd6d512d2b7ca2355
@@ -16518,6 +16692,42 @@ packages:
   run_exports: {}
   size: 1939538
   timestamp: 1791444594049
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-hybrid-planning-2.12.4-np2py312h1bab3cf_25.conda
+  sha256: b216e7bffe1608348d38acde62c31c0bd270202aed1d3f65b91bde48b8ee56f8
+  md5: ea7e09b69da111b4dea0e1490a70a0dd
+  depends:
+  - python
+  - ros2-ament-index-cpp
+  - ros2-controller-manager
+  - ros2-distro-mutex 0.19.* jazzy_*
+  - ros2-moveit-common
+  - ros2-moveit-core
+  - ros2-moveit-msgs
+  - ros2-moveit-resources-panda-moveit-config
+  - ros2-moveit-ros-planning
+  - ros2-moveit-ros-planning-interface
+  - ros2-pluginlib
+  - ros2-position-controllers
+  - ros2-rclcpp
+  - ros2-rclcpp-action
+  - ros2-rclcpp-components
+  - ros2-robot-state-publisher
+  - ros2-ros-workspace
+  - ros2-rviz2
+  - ros2-std-msgs
+  - ros2-std-srvs
+  - ros2-tf2-ros
+  - ros2-trajectory-msgs
+  - __glibc >=2.28,<3.0.a0
+  - libstdcxx >=15
+  - libgcc >=15
+  - numpy >=1.25,<3
+  - python_abi 3.12.* *_cp312
+  - ros2-distro-mutex >=0.19.0,<0.20.0a0
+  license: BSD-3-Clause
+  run_exports: {}
+  size: 814915
+  timestamp: 1791448886049
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-kinematics-2.12.4-np2py312hd65a65c_25.conda
   sha256: 7c3b7c9f3f378065add376248638de98db44e34417ac0839ff9b0d0c58aed246
   md5: 3ffd31b814ee3c1e33d85d1722642ab3
@@ -16674,6 +16884,50 @@ packages:
   run_exports: {}
   size: 243250
   timestamp: 1791445596349
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-resources-panda-description-3.1.0-np2py312h1bab3cf_25.conda
+  sha256: d8799bf98b940f90448bdefe3bc61f43b775f6baef7b905e12b0729c37c45227
+  md5: 697c91b22062dbc7f631690409f1640b
+  depends:
+  - python
+  - ros2-distro-mutex 0.19.* jazzy_*
+  - ros2-ros-workspace
+  - libstdcxx >=15
+  - libgcc >=15
+  - __glibc >=2.28,<3.0.a0
+  - ros2-distro-mutex >=0.19.0,<0.20.0a0
+  - numpy >=1.25,<3
+  - python_abi 3.12.* *_cp312
+  license: BSD-3-Clause
+  run_exports: {}
+  size: 3676840
+  timestamp: 1791428365713
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-resources-panda-moveit-config-3.1.0-np2py312h1bab3cf_25.conda
+  sha256: 1c7210d041ac9a034bfa46688e843fac34bd9891a098d460ed8546c318a2bb5d
+  md5: 557dd9398e5efefb1acd54f7f7631d2a
+  depends:
+  - python
+  - ros2-controller-manager
+  - ros2-distro-mutex 0.19.* jazzy_*
+  - ros2-gripper-controllers
+  - ros2-joint-state-publisher
+  - ros2-joint-state-publisher-gui
+  - ros2-moveit-resources-panda-description
+  - ros2-position-controllers
+  - ros2-robot-state-publisher
+  - ros2-ros-workspace
+  - ros2-ros2cli-common-extensions
+  - ros2-topic-tools
+  - ros2-xacro
+  - __glibc >=2.28,<3.0.a0
+  - libstdcxx >=15
+  - libgcc >=15
+  - python_abi 3.12.* *_cp312
+  - ros2-distro-mutex >=0.19.0,<0.20.0a0
+  - numpy >=1.25,<3
+  license: BSD-3-Clause
+  run_exports: {}
+  size: 39505
+  timestamp: 1791443839176
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-moveit-ros-move-group-2.12.4-np2py312h4bd2163_25.conda
   sha256: 0133b424c94786a82af533c90eea3002ab9120a7763d14c1ecbc6952dd3384a9
   md5: 52e6f56b5801248851087de1298fca2d
@@ -22278,6 +22532,23 @@ packages:
   run_exports: {}
   size: 73831
   timestamp: 1791430608525
+- conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-tracetools-image-pipeline-5.0.13-np2py312h1bab3cf_25.conda
+  sha256: 5e1fa14bda72fb1ba4c44b341edafef1bdfa4eb51b50be77507a61915358194a
+  md5: 954e8b7c8f1465c787f9fdd99ee1dcb0
+  depends:
+  - python
+  - ros2-distro-mutex 0.19.* jazzy_*
+  - ros2-ros-workspace
+  - libstdcxx >=15
+  - libgcc >=15
+  - __glibc >=2.28,<3.0.a0
+  - numpy >=1.25,<3
+  - python_abi 3.12.* *_cp312
+  - ros2-distro-mutex >=0.19.0,<0.20.0a0
+  license: Apache-2.0
+  run_exports: {}
+  size: 37801
+  timestamp: 1791430694149
 - conda: https://prefix.dev/robostack-jazzy/linux-64/ros2-trajectory-msgs-5.3.8-np2py312h1bab3cf_25.conda
   sha256: ab2b719f0d705cebe98499388e1d82dca97dadca90c2e5e67f767852cff1b617
   md5: f77779a847ae59d79c75f394e9e681a1

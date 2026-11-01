@@ -5,7 +5,9 @@ Starts robot_state_publisher with the URDF expanded for ros2_control:=mujoco,
 mujoco_ros2_control's ros2_control_node (simulator and controller manager in one
 process, which also publishes the sensors), the controller spawners, twist_mux,
 dual_laser_merger for /scan, robot_self_filter for the head 3D lidar cloud
-(/unilidar/cloud to /unilidar/cloud/filtered), the walkie_tf server, and RViz.
+(/unilidar/cloud to /unilidar/cloud/filtered), depth_image_proc for the head
+camera point cloud (/zed_head/zed_node/point_cloud/cloud_registered), the
+walkie_tf server, and RViz.
 Every node runs on simulated time from /clock.
 
 With world:=NAME, the exported world NAME (see robot_bringup.mujoco_launch) is
@@ -229,6 +231,23 @@ def generate_launch_description():
         }.items(),
     )
 
+    # The head camera publishes a depth image only. The real ZED wrapper and the Gazebo
+    # bridge also publish its point cloud, which MoveIt's octomap reads, so it is made here
+    # under the same name. Pixels with no hit read the camera's far plane (about 110 m);
+    # consumers drop them by range.
+    head_camera_cloud = Node(
+        package="depth_image_proc",
+        executable="point_cloud_xyz_node",
+        name="zed_head_point_cloud",
+        output="screen",
+        parameters=[{"use_sim_time": True}],
+        remappings=[
+            ("image_rect", "/zed_head/zed_node/depth/depth_registered"),
+            ("camera_info", "/zed_head/zed_node/depth/camera_info"),
+            ("points", "/zed_head/zed_node/point_cloud/cloud_registered"),
+        ],
+    )
+
     walkie_tf_server = Node(
         package="walkie_tf",
         executable="tf_server",
@@ -267,6 +286,7 @@ def generate_launch_description():
     ld.add_action(twist_mux)
     ld.add_action(dual_laser_merger)
     ld.add_action(unitree_self_filter)
+    ld.add_action(head_camera_cloud)
     ld.add_action(walkie_tf_server)
     ld.add_action(rviz)
 

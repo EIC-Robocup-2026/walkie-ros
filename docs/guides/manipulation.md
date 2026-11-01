@@ -51,21 +51,28 @@ Start MoveIt and the controllers for your setup:
 === "MuJoCo"
 
     ```bash
-    pixi run ros2 launch robot_bringup mujoco_omnibot.launch.py
+    pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py world:=chula_pat14_6
     ```
 
     ```bash
     pixi run ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=mujoco
     ```
 
-    Not tested: MoveIt has not been run with MuJoCo yet.
-    `mujoco_omnibot.launch.py` starts the simulator, `robot_state_publisher`,
-    and the arm, gripper, and lift controllers, so pair it with
-    `moveit_only.launch.py`, which starts only `move_group` and RViz. Add
-    `use_rviz:=false` to `mujoco_omnibot.launch.py` to keep only the MoveIt
-    RViz window. Do not use `moveit_demo.launch.py hardware_type:=mujoco`
-    here: it starts a second `robot_state_publisher` and its own spawners, and
-    on its own it starts no simulator. See [Known issues](#known-issues).
+    With `hardware_type:=mujoco`, MoveIt plans in the `map` frame. It reads
+    the base pose from TF `map -> base_footprint`, so start Nav2
+    (`nav_mujoco_omnibot.launch.py`; any `world:=`, or none) before or with
+    MoveIt. The octomap is on and fixed in `map`, so it lines up with the
+    named world and the Nav2 map. Hybrid planning starts next to
+    `move_group`; see [Hybrid planning](#hybrid-planning).
+    `mujoco_omnibot.launch.py` alone (no Nav2) has no `map` frame: then pass
+    `map_frame:=none` to plan in the robot frame.
+
+    The sim launch starts the simulator, `robot_state_publisher`, and the arm,
+    gripper, and lift controllers, so pair it with `moveit_only.launch.py`,
+    which starts only the MoveIt nodes and RViz. Do not use
+    `moveit_demo.launch.py hardware_type:=mujoco` here: it starts a second
+    `robot_state_publisher` and its own spawners, and on its own it starts no
+    simulator. See [Known issues](#known-issues).
 
 When MoveIt is up, start the commander:
 
@@ -352,19 +359,23 @@ Paths in this section are relative to `manipulate/openarm_bimanual_moveit_config
 - `moveit_demo.launch.py`: all-in-one. Starts `robot_state_publisher`, the
   ros2_control backend for `hardware_type`, the controller spawners,
   `move_group`, and RViz.
-- `moveit_only.launch.py`: `move_group` and RViz only. Assumes
-  `robot_state_publisher`, ros2_control, and the controllers are already
-  running. Use this one on the real robot, see
-  [On the real robot](#on-the-real-robot).
+- `moveit_only.launch.py`: `move_group` and RViz, plus hybrid planning with
+  `hybrid_planning:=true`. Assumes `robot_state_publisher`, ros2_control,
+  and the controllers are already running. Use this one on the real robot,
+  see [On the real robot](#on-the-real-robot), and in MuJoCo.
 
 | Argument | `moveit_demo` default | `moveit_only` default | Meaning |
 | --- | --- | --- | --- |
 | `hardware_type` | `mock_components` | `mock_components` | ros2_control backend: `mock_components`, `gazebo`, `mujoco`, `real_robot`, `isaac` |
-| `point_cloud_topic` | `/zed_head/zed_node/point_cloud/cloud_registered` | `/zed_head/zed_node/point_cloud/cloud_registered/filtered` | Input of the octomap |
-| `octomap_resolution` | `0.05` | `0.008` | Octomap voxel size, in meters |
+| `point_cloud_topic` | `/zed_head/zed_node/point_cloud/cloud_registered` | `""`: the sensors file's topic | Head camera cloud of the octomap |
+| `octomap_resolution` | `0.05` | `auto`: `0.02` with a `map_frame`, else `0.008` | Octomap voxel size, in meters |
+| `map_frame` | not available | `auto`: `map` for `mujoco`, else `none` | Plan in this frame: the base pose comes from TF `<map_frame> -> base_footprint`, and the octomap is kept in it. `none`: plan in the robot frame, octomap in `base_link` |
+| `hybrid_planning` | not available | `auto`: `true` for `mujoco`, else `false` | Start [hybrid planning](#hybrid-planning) |
 
-The octomap is only enabled for `gazebo` and `real_robot`, because only Gazebo
-and the real robot publish the ZED point cloud.
+The octomap is enabled for `gazebo`, `real_robot`, and `mujoco`, the
+backends that publish a 3D sensor. In MuJoCo it reads only the head camera
+(ZED) cloud, which covers the arms' workspace
+(`config/sensors_3d_mujoco.yaml`).
 
 ??? info "Other launch arguments"
     | Argument | `moveit_demo` default | `moveit_only` default | Meaning |
@@ -394,9 +405,38 @@ and the real robot publish the ZED point cloud.
     `right_use_fake_arm_hardware`.
 
 ??? info "Octomap anchoring and sensor settings"
-    The octomap is anchored to `base_link`, so the voxels move with the
-    mobile base. The sensor settings are in `config/sensors_3d.yaml` (range
-    1.5 m, update rate 5 Hz).
+    Without `map_frame`, the SRDF virtual joint is fixed (`world` to
+    `base_footprint`), MoveIt plans in the robot frame, and the octomap is
+    anchored to `base_link`, so the voxels move with the mobile base. The
+    sensor settings are in `config/sensors_3d.yaml` (range 1.5 m, update rate
+    5 Hz).
+
+    With `map_frame:=map`, the launch file expands the SRDF with a planar
+    virtual joint from `map` to `base_footprint`. MoveIt's state monitor reads
+    it from TF, so the planning frame is `map`, the robot stands at its
+    AMCL/odometry pose, and collision objects and the octomap are in map
+    coordinates. Obstacles stay where they are while the base drives, and
+    the octomap matches the named MuJoCo world, whose world frame is the map
+    frame. In the Chula PAT14-6 room the voxels lie a median 4 cm from the
+    occupied cells of the Nav2 map.
+
+    The MuJoCo sensor (`config/sensors_3d_mujoco.yaml`) is `head_cloud`:
+    `/zed_head/zed_node/point_cloud/cloud_registered`, made by
+    `depth_image_proc` in `mujoco_omnibot.launch.py` from the head camera
+    depth image. Range 2.5 m, at most 5 Hz, every 16th point
+    (`point_subsample: 16`, about 14k of 230k points; with 4 the octomap
+    updated at only about 1 Hz). Pixels with no hit are points at about
+    110 m; beyond `max_range` they only clear free space.
+    `PointCloudOctomapUpdater` also removes the robot with MoveIt's shape
+    mask. The depth image updater is not used: its OpenGL mesh filter does
+    not drop the 110 m no-hit pixels and marks them as obstacles. The head
+    3D lidar is not used for the octomap.
+
+    The octomap reaches the hybrid planners in `/monitored_planning_scene`.
+    At 2 cm it grows to several MB as more of the room is seen (about 13 MB/s
+    in the Chula room), which is fine on one machine. Raise
+    `octomap_resolution` if the scene has to cross the network, or call
+    `/clear_octomap`.
 
 ??? info "Other launch files in the package"
     | File | Purpose |
@@ -556,11 +596,82 @@ the largest gain.
       `moveit_demo`, 0.008 m for `moveit_only`) and
       `/toggle_octomap_collision`. A finer octomap has more voxels to check.
 
+## Hybrid planning
+
+`moveit_only.launch.py hybrid_planning:=true` (the default for
+`hardware_type:=mujoco`) starts MoveIt
+[hybrid planning](https://moveit.picknik.ai/main/doc/examples/hybrid_planning/hybrid_planning_tutorial.html)
+next to `move_group`. A global planner (OMPL) plans the whole motion. A
+local planner then follows it at 10 Hz and checks the rest of the path
+against the current planning scene, including the octomap and collision
+objects, at every step. When the path collides it holds the arms where they
+are and the global planner replans from there.
+
+Send a `moveit_msgs/action/HybridPlanner` goal to `/run_hybrid_planning`:
+
+- `planning_group`: `both_arms_lift`, the only group the local planner runs
+  (`local_planner.group_name` in `config/hybrid_planner.yaml`).
+- `motion_sequence.items`: one item; its `req` is a normal
+  `MotionPlanRequest` with `group_name: both_arms_lift`,
+  `pipeline_id: ompl`, goal constraints, planning time and scaling.
+
+The full-body IK tool (`full_body_ik/run_full_body_ik.py`) sends its arm and
+lift goals this way; `--no-hybrid` sends them to `move_group` instead.
+`move_group` and its RViz panel keep working as before.
+
+??? info "How the hybrid planning nodes are wired"
+    | Node | Process | Role |
+    | --- | --- | --- |
+    | `global_planner` | `hybrid_global_planner_container` | `MoveItPlanningPipeline` (OMPL). Reads `move_group`'s `/monitored_planning_scene` |
+    | `local_planner` | `hybrid_planning_container` | `SimpleSampler` + `ForwardTrajectory` (`stop_before_collision: true`). Reads `/monitored_planning_scene` |
+    | `hybrid_planning_manager` | `hybrid_planning_container` | `ReplanInvalidatedTrajectory`: replans when the local planner reports a collision ahead or gets stuck |
+    | `hybrid_planning_relay` | own process | Fixes the global trajectory start state and splits the local solution per controller (below) |
+
+    `move_group` is the only node that builds the octomap; the hybrid
+    planners get it in the scene diffs. The parameters are in
+    `config/hybrid_planner.yaml` (not `*_planning.yaml`, which
+    `MoveItConfigsBuilder` would load as a planning pipeline).
+
+    Workarounds for `moveit_hybrid_planning` 2.12.4, all in
+    `moveit_only.launch.py` and `scripts/hybrid_planning_relay.py`:
+
+    - The global planner ignores the topics of
+      `planning_scene_monitor_options`: it listens to `/planning_scene` and
+      publishes `monitored_planning_scene`, on `move_group`'s topic. Its own
+      container remaps these process-wide (the scene monitor runs on an
+      internal node that component remappings do not reach).
+    - The global planner publishes its trajectory with an empty start state.
+      The local planner would check every waypoint with the base at the map
+      origin and the other joints at zero, so it would miss every obstacle.
+      The relay fills the start state from `/joint_states` and TF and
+      republishes it on `/hybrid_planning/global_trajectory`, which the local
+      planner and the manager read.
+    - The local planner publishes one trajectory with all 15 joints, one
+      waypoint at a time, with velocities and `time_from_start` 0. The relay
+      sends each controller its own joints, positions only, due in 0.05 s,
+      because a `joint_trajectory_controller` rejects other joints and a
+      final point with a non-zero velocity.
+    - `ForwardTrajectory` aborts as stuck after its commanded waypoint repeats
+      5 times, counted over the whole motion. The 10 Hz rate matches the
+      trajectory's 0.1 s waypoint spacing, and the 0.05 s `point_duration`
+      keeps the robot close enough that waypoints rarely repeat. When the lift
+      lags, an abort triggers a replan, which costs a second or two. In the
+      Chula room a move of both arms and 0.1 m of lift took 7 to 9 s with 1 to 2
+      replans (11 to 13 s and up to 4 replans with 0.1 s).
+    - When a replan fails while the local planner still holds the arms (for
+      example an obstacle on the robot), the manager aborts the goal and then
+      aborts it again on the next event, which throws and ends its process.
+      Both containers are respawned by the launch file (`respawn`, components
+      reloaded on every start), so hybrid planning is back about 2 s later;
+      the client has already received the abort.
+
 ## Known issues
 
 | Issue | Effect | Workaround |
 | --- | --- | --- |
-| MoveIt with `hardware_type:=mujoco` is untested, and `moveit_demo.launch.py` does not start the MuJoCo simulator (`mujoco_ros2_control`) | `moveit_demo.launch.py` starts no `ros2_control_node`. The spawners have no timeout and wait forever | Start `mujoco_omnibot.launch.py` in `robot_bringup` ([MuJoCo Simulation: Run with ROS 2](simulation-mujoco.md#run-with-ros-2)), then `moveit_only.launch.py hardware_type:=mujoco`. Untested. |
+| `moveit_demo.launch.py` does not start the MuJoCo simulator (`mujoco_ros2_control`) | `moveit_demo.launch.py` starts no `ros2_control_node`. The spawners have no timeout and wait forever | Start `nav_mujoco_omnibot.launch.py` or `mujoco_omnibot.launch.py` in `robot_bringup` ([MuJoCo Simulation: Run with ROS 2](simulation-mujoco.md#run-with-ros-2)), then `moveit_only.launch.py hardware_type:=mujoco` |
+| After a failed replan, `hybrid_planning_container` exits (`terminate called ... invalid transition from state ABORTED`) | The goal is aborted with `Global planner failed to find a solution`. The launch file restarts the container; for about 2 s `/run_hybrid_planning` is not available | Send the goal again after the restart |
+| The hybrid local planner checks each waypoint with the base where it was at planning time | While Nav2 drives the base during an arm motion, the path check uses the old base pose; only obstacles near that pose stop the arms | Keep base and arm motions short, or replan after the base moves |
 | The description has no `isaac` ros2_control block | With `hardware_type:=isaac` the URDF has no hardware, so no controller starts | None in this repository |
 | `moveit_demo_with_commander.launch.py` passes xacro arguments the description does not declare, and has no `right_joint2_fixed` | With `hardware_type:=real_robot` both arms stay mock, and `right_joint2_fixed` cannot be set | Use `moveit_demo.launch.py` plus `commander.launch.py` |
 | `commander.launch.py` does not set `use_sim_time` | In Gazebo, `move_group` and the controllers use simulation time but the commander does not, so it can fail to get the current robot state | Add `{"use_sim_time": True}` to the commander's `parameters` in `commander.launch.py` |
@@ -573,6 +684,7 @@ the largest gain.
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | `moveit_only.launch.py` in Gazebo builds no octomap | The default `point_cloud_topic` is the filtered cloud, which only the real robot publishes | Pass `point_cloud_topic:=/zed_head/zed_node/point_cloud/cloud_registered` |
+| `move_group` warns `Unable to update multi-DOF joint 'virtual_joint'` and `Missing virtual_joint`; plans fail | With `map_frame:=map` (the MuJoCo default) MoveIt needs TF `map -> base_footprint`, and nothing publishes `map` | Start Nav2 (`nav_mujoco_omnibot.launch.py`), or pass `map_frame:=none` |
 | `*_lift` plans fail to execute on the real robot | Nothing serves `lift_controller/follow_joint_trajectory`: the lift homing node is not running, or runs with `mock:=true` | Start `lift_homing.launch.py` without `mock`, or plan with `left_arm`, `right_arm`, or `both_arms` |
 
 More fixes are collected in [Troubleshooting](../troubleshooting.md).

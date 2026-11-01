@@ -2,7 +2,7 @@
 
 Full-body IK for Walkie: one damped-least-squares solver moves both OpenArm arms, the lift and the base
 (x, y, yaw) towards end-effector targets. The solution is shown in a MuJoCo preview. On **Execute**, the
-lift and both arms go to MoveIt and the base pose goes to Nav2, and both execute at the same time.
+lift and both arms go to MoveIt hybrid planning and the base pose goes to Nav2, and both execute at the same time.
 
 The IK comes from [Coordinated-Base-Arm-Motion-Control](https://github.com/MonochromePie/Coordinated-Base-Arm-Motion-Control)
 (`walker_robot/`). This folder is a standalone script with no colcon package and needs no build.
@@ -17,6 +17,11 @@ pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py
 pixi run ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=mujoco
 pixi run python full_body_ik/run_full_body_ik.py
 ```
+
+With `hardware_type:=mujoco`, MoveIt plans in the `map` frame (base pose from TF `map -> base_footprint`),
+keeps its octomap (head camera cloud) in `map`, and starts hybrid planning. See
+[Manipulation: Hybrid planning](../docs/guides/manipulation.md#hybrid-planning). Start Nav2 first: MoveIt
+needs the `map` frame.
 
 Two windows open:
 
@@ -51,13 +56,14 @@ plus 1 m. The world is built by `robot_bringup.world_loader` into `~/.ros/mujoco
 sim's own generated files are never touched. Without `--world`, the x/y sliders cover ±15 m.
 
 Options: `--velocity-scaling`, `--acceleration-scaling`, `--planning-time` (MoveIt), `--rate` (IK/preview Hz),
-`--model` (MJCF scene, default: the installed `walkie_description/mujoco/scene.xml`), `--no-precise-base` (see below).
+`--model` (MJCF scene, default: the installed `walkie_description/mujoco/scene.xml`), `--no-precise-base` (see below),
+`--no-hybrid` (send the arms and lift to `move_group` instead of hybrid planning).
 
 ## What is sent
 
 | IK joints | Sent to | How |
 |---|---|---|
-| `lift`, `q_l1..7`, `q_r1..7` | MoveIt `move_group` | `MoveGroup` action `/move_action`: one joint goal for `both_arms_lift` (`lift_joint`, `openarm_{left,right}_joint1..7`), plan + execute |
+| `lift`, `q_l1..7`, `q_r1..7` | MoveIt hybrid planning | `HybridPlanner` action `/run_hybrid_planning`: one joint goal for `both_arms_lift` (`lift_joint`, `openarm_{left,right}_joint1..7`). The global planner plans it, the local planner follows it and holds the arms when the octomap or a collision object blocks the path. With `--no-hybrid`: `MoveGroup` action `/move_action`, plan + execute |
 | `x`, `y`, `yaw` | Nav2 | `NavigateToPose` action `/navigate_to_pose`: goal pose in `map` |
 
 A base move under 1 cm and 1 deg is not sent to Nav2.
@@ -90,8 +96,10 @@ an IK base goal runs, the tool publishes `precise_goal_checker` (0.02 m, 0.01 ra
   the omni controller runs open loop). The base therefore lands within Nav2's tolerance of the goal as
   measured by odometry. In a test that moved the base 0.8 m, the hands ended 17 mm from the preview's
   expected pose, which is Nav2's 2 cm tolerance.
-- MoveIt plans the arms in the base frame and Nav2 plans the base. Neither knows about the other's motion, so
-  no collision check covers the combined motion.
+- MoveIt plans the arms with the base where it is at planning time, in the `map` frame, and Nav2 plans the
+  base. Neither knows about the other's motion. The hybrid local planner checks the rest of the arm path with
+  that planning-time base pose, so while the base drives, obstacles are checked where the arms would be if the
+  base had not moved.
 - To correct the residual base error, press **Sync preview to robot**, untick the base groups and execute
   again. Only the arms and lift then move.
 

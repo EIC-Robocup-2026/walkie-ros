@@ -1,0 +1,69 @@
+# Not named *_planning.yaml: MoveItConfigsBuilder loads every config/*_planning.yaml as a
+# planning pipeline.
+# MoveIt hybrid planning (moveit_hybrid_planning 2.12.4), started by
+# moveit_only.launch.py hybrid_planning:=true next to move_group.
+# https://moveit.picknik.ai/main/doc/examples/hybrid_planning/hybrid_planning_tutorial.html
+#
+# Clients send a moveit_msgs/action/HybridPlanner goal to run_hybrid_planning. The global
+# planner plans the whole motion with OMPL, the local planner follows it at
+# local_planning_frequency and holds position when the rest of the path collides with the
+# current scene (ForwardTrajectory with stop_before_collision); ReplanInvalidatedTrajectory
+# then asks for a new global plan.
+#
+# move_group stays the only node that builds the octomap. The hybrid planners take the
+# planning scene from move_group's /monitored_planning_scene (octomap and collision
+# objects), so they see the same map-frame scene. Keys are node names; the launch file
+# passes each dict as that node's parameters.
+
+global_planner:
+  global_planner_name: moveit_hybrid_planning/MoveItPlanningPipeline
+  planning_scene_monitor_options:
+    name: planning_scene_monitor
+    robot_description: robot_description
+    joint_state_topic: /joint_states
+    attached_collision_object_topic: /attached_collision_object
+    # The scene topics set here are ignored in 2.12.4; moveit_only.launch.py remaps them
+    # so this planner reads move_group's /monitored_planning_scene.
+    wait_for_initial_state_timeout: 10.0
+  planning_pipelines:
+    pipeline_names: [ompl]
+  # Defaults only: MoveItPlanningPipeline takes the pipeline, attempts, time and scaling
+  # of each request's MotionPlanRequest.
+  plan_request_params:
+    planning_attempts: 5
+    planning_pipeline: ompl
+    planning_time: 5.0
+    max_velocity_scaling_factor: 0.5
+    max_acceleration_scaling_factor: 0.3
+
+local_planner:
+  # The local planner runs one group; clients must plan for this group.
+  group_name: both_arms_lift
+  trajectory_operator_plugin_name: moveit_hybrid_planning/SimpleSampler
+  local_constraint_solver_plugin_name: moveit_hybrid_planning/ForwardTrajectory
+  # SimpleSampler advances at most one waypoint per iteration, and the global trajectory
+  # has a waypoint every 0.1 s (time-optimal parameterization), so 10 Hz follows it in real
+  # time; hybrid_planning_relay has the controllers reach each one in 0.05 s. Faster, the sampler either
+  # runs ahead of the robot or repeats a waypoint while it catches up, and ForwardTrajectory
+  # aborts as "stuck" after 5 repeats (counted over the whole motion in 2.12.4), which
+  # replans. The collision check also runs at this rate.
+  local_planning_frequency: 10.0
+  # hybrid_planning_relay republishes the global planner's /global_trajectory here with
+  # its start state filled in (empty in 2.12.4).
+  global_solution_topic: /hybrid_planning/global_trajectory
+  # One trajectory for every joint of the group; hybrid_planning_relay forwards the
+  # joints of each FollowJointTrajectory controller of moveit_controllers.yaml to that
+  # controller's joint_trajectory topic.
+  local_solution_topic: /hybrid_planning/local_solution
+  local_solution_topic_type: trajectory_msgs/JointTrajectory
+  publish_joint_positions: true
+  publish_joint_velocities: false
+  monitored_planning_scene_topic: /monitored_planning_scene
+  collision_object_topic: /collision_object
+  joint_states_topic: /joint_states
+  # ForwardTrajectory: check the rest of the path against the current scene every iteration
+  # and hold position (feedback collision_ahead) when it collides. Default false: no check.
+  stop_before_collision: true
+
+hybrid_planning_manager:
+  planner_logic_plugin_name: moveit_hybrid_planning/ReplanInvalidatedTrajectory

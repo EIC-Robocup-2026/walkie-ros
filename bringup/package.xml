@@ -36,6 +36,7 @@
   <exec_depend>rviz2</exec_depend>
   <exec_depend>dual_laser_merger</exec_depend>
   <exec_depend>robot_self_filter</exec_depend>
+  <exec_depend>depth_image_proc</exec_depend>
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>nav2_rviz_plugins</exec_depend>
   <exec_depend>robot_navigation</exec_depend>
