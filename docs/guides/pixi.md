@@ -534,7 +534,7 @@ How pixi chooses the environment:
 | --- | --- | --- |
 | `scripts/bringup/sim_nav_gazebo.sh`, `isaac_sim_bringup.sh`, `real_slam_nav.sh`, and `scripts/map/record_mapping_bag.sh` source `/opt/ros` | With a system ROS Jazzy installed, they mix the two installations | Run the `ros2 launch` commands from the guides directly |
 | `.gitignore` ignores `.pixi/config.toml` | A project-level `.pixi/config.toml` is never picked up by Git | `git add -f .pixi/config.toml`, or remove the earlier `.pixi` line from `.gitignore` |
-| `realsense2_camera` and `topic_tools` are not in `pixi.toml` | `real_omnibot.launch.py` fails under pixi | [Packages that pixi does not provide](real-robot.md#packages-that-pixi-does-not-provide) |
+| `realsense2_camera` is not in `pixi.toml` | `real_omnibot.launch.py` fails under pixi | [Packages that pixi does not provide](real-robot.md#packages-that-pixi-does-not-provide) |
 | `perception/uv.lock` has no Python 3.14 wheels for numpy 1.26.4 and open3d 0.19.0 | Under pixi on `_27`, `perception/setup_env.sh` stops at its lock check, and `yolo_node`, `obb3d`, and `grasp_server` do not run | [Perception: Set up the grasp pipeline](perception.md#set-up-the-grasp-pipeline) |
 
 ??? info "When each helper script sources /opt/ros"

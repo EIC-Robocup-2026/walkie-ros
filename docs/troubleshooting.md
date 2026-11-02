@@ -147,19 +147,20 @@ from the pixi environment. Or test on a computer without a system ROS.
 `Caught exception in launch` and a message such as
 `package 'realsense2_camera' not found`.
 
-Run the full bringup in the physical Docker image. It has `zed_wrapper`,
-`realsense2_camera`, and `topic_tools`, and `pixi.toml` has none of them.
+Run the full bringup in the physical Docker image. It has `zed_wrapper` and
+`realsense2_camera`, and `pixi.toml` has neither of them.
 Under pixi, `use_zed:=false` skips the ZED camera, but the launch still needs
-the other two packages.
+`realsense2_camera`.
 
 ??? info "Which packages the launch needs, and their status in pixi"
     The launch file starts `zed_wrapper` (with the default `use_zed:=true`),
-    `realsense2_camera`, and a `topic_tools` relay. See
+    `realsense2_camera`, and a `topic_tools` relay. `pixi.toml` provides
+    `topic_tools`. See
     [Packages that pixi does not provide](guides/real-robot.md#packages-that-pixi-does-not-provide).
 
-    `ros-jazzy-realsense2-camera` and `ros-jazzy-topic-tools` exist on
-    `robostack-jazzy` for the locked RoboStack build, but nobody has added
-    them to `pixi.toml` or tried them on the robot.
+    `ros-jazzy-realsense2-camera` exists on `robostack-jazzy` for the locked
+    RoboStack build, but nobody has added it to `pixi.toml` or tried it on the
+    robot.
 
 ### The lift node cannot import TMotorCANControl
 
