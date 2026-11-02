@@ -4,11 +4,12 @@ channels = ["https://prefix.dev/robostack-jazzy", "https://prefix.dev/conda-forg
 platforms = ["linux-64"]
 
 [dependencies]
-# RoboStack build set _25. Every build set rebuilds all ROS packages, so the
+# RoboStack build set _27. Every build set rebuilds all ROS packages, so the
 # mutex is pinned: adding or updating a package must not silently move the
 # environment to another set. Changing it requires `pixi run clean && pixi run build`.
-# See docs/migrations/04-robostack-build-25.md.
-ros2-distro-mutex = "0.19.*"
+# docs/migrations/07-robostack-build-27.md records this move;
+# docs/migrations/04-robostack-build-25.md explains why the mutex is pinned.
+ros2-distro-mutex = "0.20.*"
 
 # Base ROS dependencies
 ros-jazzy-ros-base = "*"
@@ -189,8 +190,8 @@ zstd = "*"
 vcstool = "*"
 openvdb = ">=13.0.0,<14"
 ros-jazzy-rmw-zenoh-cpp = ">=0.2.11,<0.3"
-# Must match the libmujoco that ros-jazzy-mujoco-vendor is built against (3.15.0 in _25).
-mujoco = "3.15.*"
+# Must match the libmujoco that ros-jazzy-mujoco-vendor is built against (3.16.0 in _27).
+mujoco = "3.16.*"
 ros-jazzy-mujoco-ros2-control = ">=0.1.2"
 # MuJoCo extension "mujoco.plugin.lidar": the head 3D lidar in description/mujoco/walkie.xml,
 # published by Mujoco3dLidarPlugin. Every MuJoCo model load needs it.
