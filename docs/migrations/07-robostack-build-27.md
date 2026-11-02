@@ -484,8 +484,8 @@ Not tested on `_27`:
 - **All real hardware:** CubeMars wheels and lift motor, Dynamixel servos,
   OpenArm, ZED, Hokuyo, Lakibeam, and Unitree lidar. The hardware plugins were
   only compiled and loaded with `dlopen`. The real launch files were only parsed.
-- `real_omnibot.launch.py` under pixi, which also stops at
-  `realsense2_camera`
+- `real_omnibot.launch.py` under pixi. `zed_wrapper`, from
+  `pixi run setup-real`, has not been built on `_27`
   ([Known issues](../guides/real-robot.md#known-issues)).
   `zed_watchdog.py` and `head_touch_beep_node.py` ran with `ros2 run` and from a
   small launch file, not from a real launch file, and without a ZED or a head

@@ -460,7 +460,7 @@ pixi run ros2 launch robot_bringup real_omnibot.launch.py use_zed:=false use_rvi
     | `twist_mux`, output to `/omni_wheel_drive_controller/cmd_vel` | `twist_mux` | always |
     | Dual 2D lidar and merger, output `/scan` | `bringup/launch/dual_lidar_hokuyo_lakibeam.launch.py` | always |
     | Unitree driver and self filter, output `/unilidar/cloud/filtered` | `unitree_lidar_ros2`, `robot_self_filter` | `use_unitree_lidar` |
-    | RealSense `bottom` camera and self filter | `realsense2_camera`, `robot_self_filter` | always |
+    | RealSense `bottom` camera and self filter | Not started: commented out in the launch file | never |
     | ZED `zed_head` camera, directly or under the watchdog | `zed_wrapper`, `robot_bringup` | `use_zed` |
     | ZED self filter, `cloud_to_map`, `ob_pose_service_cpp` | `robot_self_filter`, `walkie_perception` | `use_zed` |
     | Relay `lift/joint_states` to `/joint_states` | `topic_tools` | always |
@@ -481,8 +481,8 @@ pixi run ros2 launch robot_bringup real_omnibot.launch.py use_zed:=false use_rvi
 
 | Package | Used for | Effect under pixi |
 | --- | --- | --- |
-| `zed_wrapper` | ZED camera | Fetched via `pixi run setup-real`; requires ZED SDK 5.5 and CUDA 13.2 (see [Set up the ZED camera](#zed-setup)). Pass `use_zed:=false` if working without CUDA. |
-| `realsense2_camera` | Bottom camera | Always started. Without it, the launch stops with `package not found`. |
+| `zed_wrapper` | ZED camera | Fetched via `pixi run setup-real`; requires ZED SDK 5.5 and CUDA 13.2 (see [Set up the ZED camera](#zed-setup)). Without it, the watchdog logs `Package 'zed_wrapper' not found` and relaunches, and `use_zed_watchdog:=false` stops the launch with `package not found`. Pass `use_zed:=false` if working without CUDA. |
+| `realsense2_camera` | Bottom camera | None today: the launch file has its node commented out. |
 
 The physical Docker image installs both (see [Docker Images](docker.md)).
 For the fix under pixi, see
@@ -591,7 +591,7 @@ Run the [bringup steps](#bringup-order) by hand instead.
 | Back 2D lidar | Lakibeam | Ethernet, `10.0.0.102` | `lakibeam1` |
 | 3D lidar | Unitree 4D L2 | Ethernet (UDP), `10.0.0.103` | `unitree_lidar_ros2` |
 | Head camera | ZED 2i, camera name `zed_head` | USB | `zed_wrapper`, supervised by `zed_watchdog.py` |
-| Bottom camera | RealSense D415, camera name `bottom` | USB | `realsense2_camera` |
+| Bottom camera | RealSense D415, camera name `bottom` | USB | `realsense2_camera`, not started by `real_omnibot.launch.py` |
 | Wrist cameras | USB cameras | `/dev/left_wrist_cam`, `/dev/right_wrist_cam` | Device names only. No launch file uses them yet. |
 
 The lidar configuration expects the robot computer at `10.0.0.201` on the
@@ -634,7 +634,7 @@ lidar network. The Lakibeam `hostip` in
 | `lift/joint_states` publishes the software trajectory, not a measured position. | If the motor stalls, the published position still reaches the goal. | Check the lift on the robot. No node publishes the measured position. |
 | The lift action reports success after its 60 s wait even if the lift did not arrive. | MoveIt treats a stalled lift move as done. | Do not treat success as proof that the lift arrived. |
 | `use_arm` in `description/robots/gz_walkie.urdf.xacro` is declared but not used. | `use_arm:=false` only skips the arm controllers. The OpenArm CAN plugin still loads. | Without the arms, also pass `use_fake_arm_hardware:=true`. |
-| `pixi.toml` does not include `realsense2_camera`. | `real_omnibot.launch.py` stops with `package not found` under pixi. | See [Troubleshooting](../troubleshooting.md#real_omnibotlaunchpy-stops-with-package-not-found). |
+| `pixi.toml` does not include `zed_wrapper`. | Under pixi there is no head camera until `pixi run setup-real` and a build. The watchdog keeps relaunching, and `use_zed_watchdog:=false` stops the launch with `package not found`. | See [Troubleshooting](../troubleshooting.md#real_omnibotlaunchpy-stops-with-package-not-found). |
 | Build set `_27` has not been tested on real hardware. | The launch files parse and the plugins load, but no motor, servo, camera, or lidar has run on it. | Test each subsystem on the robot before you rely on it ([entry 7](../migrations/07-robostack-build-27.md#still-open)). |
 | [`bringup/scripts/readme.md`](https://github.com/EIC-Robocup-2026/walkie-ros/blob/main/bringup/scripts/readme.md) is out of date. | Its topic does not match the code. Its example `[0.0, 1.0]` is rejected, because the bottom is 8 cm. | Follow [Run and command the lift](#lift-node) on this page. |
 | `scripts/setup_device/` still has the older single-device setup scripts. | They and `setup_device.sh` overwrite or uninstall each other's files. | Use only `setup_all_device.sh`. |

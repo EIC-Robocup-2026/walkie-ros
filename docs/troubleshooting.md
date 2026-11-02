@@ -143,24 +143,27 @@ from the pixi environment. Or test on a computer without a system ROS.
 
 ### real_omnibot.launch.py stops with package not found
 
-`pixi run ros2 launch robot_bringup real_omnibot.launch.py` stops with
-`Caught exception in launch` and a message such as
-`package 'realsense2_camera' not found`.
+`pixi run ros2 launch robot_bringup real_omnibot.launch.py use_zed_watchdog:=false`
+stops with `Caught exception in launch` and
+`package 'zed_wrapper' not found`.
 
-Run the full bringup in the physical Docker image. It has `zed_wrapper` and
-`realsense2_camera`, and `pixi.toml` has neither of them.
-Under pixi, `use_zed:=false` skips the ZED camera, but the launch still needs
-`realsense2_camera`.
+With the default `use_zed_watchdog:=true` the launch keeps running, but the
+watchdog logs the same error and relaunches, so there is no head camera.
+
+Fetch the wrapper with `pixi run setup-real` and build it
+([Set up the ZED camera](guides/real-robot.md#zed-setup)), or pass
+`use_zed:=false` to run without the ZED. The physical Docker image already has
+`zed_wrapper`.
 
 ??? info "Which packages the launch needs, and their status in pixi"
-    The launch file starts `zed_wrapper` (with the default `use_zed:=true`),
-    `realsense2_camera`, and a `topic_tools` relay. `pixi.toml` provides
-    `topic_tools`. See
+    `zed_wrapper` is the only package named by the launch and its lidar and
+    self filter includes that pixi does not provide. See
     [Packages that pixi does not provide](guides/real-robot.md#packages-that-pixi-does-not-provide).
 
-    `ros-jazzy-realsense2-camera` exists on `robostack-jazzy` for the locked
-    RoboStack build, but nobody has added it to `pixi.toml` or tried it on the
-    robot.
+    The launch does not need `realsense2_camera`: its node and self filter are
+    commented out in `real_omnibot.launch.py`. `ros-jazzy-realsense2-camera`
+    exists on `robostack-jazzy` for the locked RoboStack build, but nobody has
+    added it to `pixi.toml` or tried it on the robot.
 
 ### The lift node cannot import TMotorCANControl
 
