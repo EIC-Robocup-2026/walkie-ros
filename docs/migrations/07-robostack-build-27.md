@@ -422,7 +422,7 @@ pixi run ros2 launch robot_bringup lift_homing.launch.py mock:=true
     | --- | --- |
     | RIHS01 type hashes | 0 of 659 environment interfaces and 0 of 100 workspace interfaces differ |
     | `_25` and `_27` nodes, one router | Topic, transient local topic, service, and Fibonacci action work in both directions. `LaserScan` and `Image` too. |
-    | `_25` router on port 7448, linked to a `_27` router on port 7447 | The same result |
+    | `_25` client on a `_25` router (port 7448), linked to a `_27` router (port 7447), against a `_27` server | Topic, transient local topic, service, and Fibonacci action work. A `_27` client through the linked routers was not run. |
     | `eclipse-zenoh` 1.7.2 client, the version in the `walkie-sdk` lock, through the `_27` router | Received 21 samples and 57 liveliness tokens |
     | Team router config | Differs from the default only in the connect endpoint `tcp/10.0.0.6:7447`. Not run. |
     | Zenoh deprecation warnings | Present on both `_25` and `_27`, so they are not new with `libzenohc` 1.10.1 |
@@ -453,7 +453,7 @@ occasional hang when Nav2 starts, on `_25` as well as on `_27`.
     | Spawners can abort with `Aborting, no controller is switched! (::STRICT switch)` | Same |
     | Stopping a launch prints a Zenoh TLS panic, `rcl_shutdown already called`, and `Received Data for unknown expr_id` at ERROR level. The last one also appears when any other node process exits. | Not compared |
     | With no window system at all, MuJoCo falls back from GLFW to EGL, logs `OpenGL error 0x502 in or before mjr_makeContext`, and writes it to `MUJOCO_LOG.TXT` in the working directory. The camera content does not change ([Simulation and MoveIt results](#verification)). In a desktop session, GLFW still starts with `DISPLAY` and `WAYLAND_DISPLAY` unset. EGL appeared only with `XDG_RUNTIME_DIR` and `XDG_SESSION_TYPE` unset too. | Same warning on EGL |
-    | `walkie-agent-ros` gets `nav2_msgs` from RoboStack, and this workspace builds it from `navigation/navigation2`. 17 interfaces differ in their RIHS01 type hash (12 actions and 5 services), among them `NavigateToPose`, which `src/walkie_agent/tools/navigation.py` uses. A goal across the two was not tried. | Same hash in the `_25` install |
+    | `walkie-agent-ros` gets `nav2_msgs` from RoboStack, and this workspace builds it from `navigation/navigation2`. 17 interfaces differ in their RIHS01 type hash (12 actions and 5 services). `NavigateToPose`, the only one `src/walkie_agent/tools/navigation.py` uses, differs only in its feedback message, so goals and results cross and the agent reads no feedback. The other 11 actions and 5 services differ on a goal, result, request, or response; no agent code calls them. | Same hash in the `_25` install |
     | `scripts/tmux_walkie.sh`, `.tmuxp.yaml`, and `walkie-run.sh` in the `walkie-run` repository run outside pixi from `~/robocup2026/walkie-ws`, so they do not follow this move. `walkie-run.sh` also starts `localization_Nav2_stvl_real.launch.py`, which no longer exists. | The code is the same |
     | `gzsim_omnibot.launch.py` has no headless argument, and the MoveIt demo launch always starts RViz | The code is the same |
     | `bringup/scripts/zed_watchdog copy.py` is a stale copy | The code is the same |
