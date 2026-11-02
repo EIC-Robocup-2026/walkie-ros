@@ -18,17 +18,19 @@ add dependencies. It assumes you have finished
     - **RoboStack** is a project that builds ROS packages as conda packages
       and publishes them on the `robostack-jazzy` channel.
     - A **build set** is one complete rebuild of all RoboStack ROS packages.
-      Its number is the suffix of the package build strings, for example `_25`
-      in `ros2-rmw-zenoh-cpp-0.2.11-np2py312h815c85b_25`. Every `ros2-`
+      Its number is the suffix of the package build strings, for example `_27`
+      in `ros2-rmw-zenoh-cpp-0.2.11-np2py314hc614d3d_27`. Every `ros2-`
       package depends on the matching version of the `ros2-distro-mutex`
-      package, so one environment holds the ROS packages of one build set.
-      See [The RoboStack build set](#the-robostack-build-set).
-    - In build set `_25`, a `ros-jazzy-<name>` package contains no files. It
+      package, so one environment holds the ROS packages of one mutex version.
+      That can include a few rebuilds with the next number: the `_27` lock
+      holds 417 `ros2-` packages with `_27` and 6 with `_28`, all on mutex
+      0.20.0. See [The RoboStack build set](#the-robostack-build-set).
+    - Since build set `_25`, a `ros-jazzy-<name>` package contains no files. It
       is an alias that depends on `ros2-<name>`, the package with the files.
       `pixi.toml` uses the `ros-jazzy-` names, which still resolve, and
-      `pixi list` shows both names. A few aliases, such as
-      `ros-jazzy-ros-base`, still carry the build number `_21`. The `ros2-`
-      packages they depend on are from build set `_25`.
+      `pixi list` shows both names. The aliases keep the build numbers `_25`
+      and `_21` in the `_27` lock, so look at a `ros2-` package to see the
+      build set.
 
     | Channel | What it provides |
     | --- | --- |
@@ -80,7 +82,7 @@ To see what is installed:
 ```bash
 pixi list                      # all packages in the default environment
 pixi list ros2-rmw             # only packages whose name matches
-pixi list ros2-distro-mutex    # the build set: version 0.19.0, build jazzy_25
+pixi list ros2-distro-mutex    # the build set: version 0.20.0, build jazzy_27
 pixi list -e docs              # packages in the docs environment
 ```
 
@@ -275,8 +277,8 @@ pixi lock
 git add pixi.toml pixi.lock
 ```
 
-A branch that is still on an older build set, such as `feat/Pixi` on `_21`,
-conflicts on `pixi.lock` when it is merged with a branch on `_25`. Resolve it
+A branch that is still on an older build set, such as a branch on `_25`,
+conflicts on `pixi.lock` when it is merged with a branch on `_27`. Resolve it
 the same way. `pixi lock` solves for the `ros2-distro-mutex` pin in the merged
 `pixi.toml`. If that moves the lock to another build set, run `pixi install`,
 then `pixi run clean && pixi run build`.
@@ -334,24 +336,29 @@ By keeping these drivers out of the default repository and ignoring them in `.gi
 
 ## The RoboStack build set
 
-`pixi.lock` uses RoboStack build set `_25`. The first entry of
+`pixi.lock` uses RoboStack build set `_27`. The first entry of
 `[dependencies]` pins it through the `ros2-distro-mutex` package:
 
 ```toml title="pixi.toml"
-ros2-distro-mutex = "0.19.*"
+ros2-distro-mutex = "0.20.*"
 ```
 
 `pixi list ros2-distro-mutex` shows the build set of the installed
-environment: version 0.19.0, build `jazzy_25`.
+environment: version 0.20.0, build `jazzy_27`.
 
-- `pixi add` and `pixi update` stay inside build set `_25`. A ROS package
+- `pixi add` and `pixi update` stay inside build set `_27`. A ROS package
   that exists only in another build set cannot be added until the pin
   changes.
 - A new build set changes every ROS package and needs a full rebuild. See
   [Changing the build set](#changing-the-build-set).
-- Build set `_25` requires OpenCV 5.0 (`libopencv`, `py-opencv`). apt Jazzy
-  and the [Docker images](docker.md) use Ubuntu's OpenCV 4.6, so code that
-  uses OpenCV must work with both versions. See
+- Build set `_27` uses Python 3.14. A script that starts with
+  `#!/usr/bin/python3` runs Ubuntu's Python 3.12, which cannot import the
+  packages of this environment. A script that must not use `python3` from `PATH`
+  can follow the environment with the header of `bringup/scripts/zed_watchdog.py`.
+- Build set `_27` installs OpenCV 5.0 as a headless build (`libopencv`,
+  `py-opencv`). `cv2.imshow` cannot open a window. apt Jazzy and the
+  [Docker images](docker.md) use Ubuntu's OpenCV 4.6, so code that uses OpenCV
+  must work with both versions. See
   [Perception: OpenCV under pixi](perception.md#opencv-under-pixi).
 
 ??? info "Why the mutex is pinned"
@@ -368,22 +375,24 @@ environment: version 0.19.0, build `jazzy_25`.
     `pixi add ros-jazzy-mujoco-ros2-control` both did this.
     [4. Move to RoboStack Build Set _25](../migrations/04-robostack-build-25.md)
     records the move to `_25` and the pin.
+    [7. Move to RoboStack Build Set _27](../migrations/07-robostack-build-27.md)
+    records the move to `_27`.
 
 ### Entries that depend on the build set
 
 | Entry in `pixi.toml` | Why |
 | --- | --- |
-| `ros2-distro-mutex = "0.19.*"` | Keeps the environment in build set `_25` |
-| `mujoco = "3.15.*"` | Must match the libmujoco 3.15.0 that `ros-jazzy-mujoco-vendor` 0.1.0 is built against |
-| `ros-jazzy-mujoco-ros2-control = ">=0.1.2"` | The MuJoCo ros2_control runtime. Version 0.1.x exists only in build set `_25`. See [MuJoCo Simulation](simulation-mujoco.md#run-with-ros-2). |
-| `ros-jazzy-mujoco-3d-lidar = ">=0.1.2,<0.2"` | The MuJoCo extension of the simulated head 3D lidar, which every load of `walkie.xml` needs. Version 0.1.2 exists only in build set `_25` and is built against libmujoco 3.15.0. See [2.8 Head 3D Lidar](../migrations/02-mujoco/08-3d-lidar.md#packaged-extension). |
+| `ros2-distro-mutex = "0.20.*"` | Keeps the environment in build set `_27` |
+| `mujoco = "3.16.*"` | Must match the libmujoco 3.16.0 that `ros-jazzy-mujoco-vendor` 0.1.0 is built against. MuJoCo 3.15 cannot load the `walkie.xml` that 3.16 writes. |
+| `ros-jazzy-mujoco-ros2-control = ">=0.1.2"` | The MuJoCo ros2_control runtime. Version 0.1.2 exists in build sets `_25` and `_27`. See [MuJoCo Simulation](simulation-mujoco.md#run-with-ros-2). |
+| `ros-jazzy-mujoco-3d-lidar = ">=0.1.2,<0.2"` | The MuJoCo extension of the simulated head 3D lidar, which every load of `walkie.xml` needs. Version 0.1.2 exists in build sets `_25` and `_27`. In `_27`, it is built against libmujoco 3.16.0. See [2.8 Head 3D Lidar](../migrations/02-mujoco/08-3d-lidar.md#packaged-extension). |
 | `ros-jazzy-rmw-zenoh-cpp = ">=0.2.11,<0.3"` | 0.2.11 fixes a lost-wakeup bug of 0.2.10. See [Middleware (Zenoh)](middleware.md#turn-on-zenoh-in-every-terminal). |
 | `python-graphviz = "*"` | Provides the Python `graphviz` module for `ros2 control view_controller_chains`. Without it, the verb fails with `KeyError: 'view_controller_chains'`. A build does not catch this. See [One break and its fix](../migrations/04-robostack-build-25.md#one-break-and-its-fix). |
 
 ### Changing the build set
 
 Change the build set on purpose, in its own commit. These are the steps used
-for build set `_25`:
+for build sets `_25` and `_27`:
 
 1. Find the mutex version of the new build set with
    `pixi search ros2-distro-mutex`. Set the pin in `pixi.toml` to it, and
@@ -394,7 +403,7 @@ for build set `_25`:
    `mujoco_vendor` is built against.
 3. Run `pixi lock`. Compare the old and new versions of the libraries that
    the workspace uses. Build set `_25`, for example, moved OpenCV from 4.13
-   to 5.0.
+   to 5.0, and `_27` moved Python from 3.12 to 3.14.
 4. Install the new environment and rebuild everything. `build-pkg` is not
    enough: the CMake caches in `build/` point at the old library versions,
    and libraries can change their ABI between build sets.
@@ -404,18 +413,25 @@ for build set `_25`:
     pixi run clean && pixi run build
     ```
 
-    [After pulling this change](../migrations/04-robostack-build-25.md#after-pulling-this-change)
-    records how long the full build took for build set `_25`.
+    The full build took 1 h 19 min for
+    [build set `_25`](../migrations/04-robostack-build-25.md#after-pulling-this-change)
+    and 1 h 9 min for
+    [build set `_27`](../migrations/07-robostack-build-27.md#after-pulling-this-change).
 
 5. Run the tests (see [Tests](testing.md)). `test_generated_model_is_up_to_date`
    in `test_mjcf.py` also catches a MuJoCo version that writes a different
-   `walkie.xml`.
-6. Commit `pixi.toml` and `pixi.lock` together. Record the move in the
-   [Migration Log](../migrations/index.md), with what was checked and what
-   was not, as in
-   [4. Move to RoboStack Build Set _25](../migrations/04-robostack-build-25.md).
-7. Tell the team. After they pull the change, every computer runs
-   `pixi install`, then `pixi run clean && pixi run build`.
+   `walkie.xml`. If it fails, run `pixi run mjcf`, and commit the regenerated
+   file in the `description` submodule.
+6. If the Python version changed, recreate the venvs
+   ([below](#python-virtual-environments-next-to-pixi)), and check that the
+   locked PyPI packages have wheels for the new Python.
+7. Commit `pixi.toml`, `pixi.lock`, and the `description` pointer together.
+   Record the move in the [Migration Log](../migrations/index.md), with what
+   was checked and what was not, as in
+   [7. Move to RoboStack Build Set _27](../migrations/07-robostack-build-27.md).
+8. Tell the team. After they pull the change, every computer updates the
+   submodules, then runs `pixi install`, then
+   `pixi run clean && pixi run build`, and recreates its venvs.
 
 ## Python virtual environments next to pixi
 
@@ -428,7 +444,7 @@ computers that need it.
 | --- | --- | --- |
 | Package | `robot_bringup` | `walkie_perception` |
 | venv location | `bringup/.venv` | `~/perception-venv` |
-| Created by | `pixi run uv` inside `bringup/` (below) | `perception/setup_env.sh`, on the system Python |
+| Created by | `pixi run uv` inside `bringup/` (below) | `perception/setup_env.sh`, on the active environment's Python. Under pixi on `_27`, it stops at its lock check. |
 | Full setup | [Real Robot](real-robot.md#python-environment) | [Perception](perception.md#what-a-pixi-user-must-do), including a computer with pixi only |
 
 !!! warning "Do not pip install into the pixi environment"
@@ -443,14 +459,25 @@ Create the lift node venv inside `bringup/`:
 
 ```bash
 cd bringup
-pixi run uv venv --python python3.12 --system-site-packages
-pixi run uv sync
+pixi run uv venv --python python --system-site-packages
+pixi run uv sync --python python
 ```
 
+`--python python` keeps `uv sync` on that venv. A bare `uv sync` replaces it, with
+another Python and without access to `rclpy`, when `.python-version` asks for
+another version or the venv's base interpreter is gone.
+
+To replace an existing venv, for example after a move to a new Python, add
+`--clear` to the `uv venv` command. Without it, uv stops with
+`A virtual environment already exists`. A venv from an older Python must be
+replaced, because `lift_homing.launch.py` looks in the `lib/pythonX.Y` folder of
+the Python that runs it.
+
 !!! warning "Run uv through pixi run for the lift node"
-    Inside `pixi run`, uv uses the pixi Python 3.12, the one that runs the
-    node, as the venv's base interpreter. Outside pixi, uv picks another
-    Python 3.12, such as the system `/usr/bin/python3.12`. With
+    Inside `pixi run`, `--python python` selects the pixi Python, the one that
+    runs the node, as the venv's base interpreter. Outside pixi, the same
+    command fails on a stock Ubuntu with
+    ``No interpreter found for executable name `python` ``. With
     `--system-site-packages`, the venv can also import the packages of its
     base interpreter, so a pixi-based venv sees `rclpy` and the other ROS
     packages from pixi.
@@ -469,7 +496,7 @@ pixi run uv sync
 
 | Environment | Contents | Size |
 | --- | --- | --- |
-| `default` | ROS 2 Jazzy, Gazebo, MoveIt, compilers, MuJoCo, and the other build and simulation dependencies | 1188 packages, about 1.7 GB download |
+| `default` | ROS 2 Jazzy, Gazebo, MoveIt, compilers, MuJoCo, and the other build and simulation dependencies | 1187 packages, about 1.7 GB download |
 | `docs` | MkDocs and the Material theme. No ROS. It does not source `install/setup.bash` or set the CUDA variables. It sets `RMW_IMPLEMENTATION=rmw_zenoh_cpp`, like `default`. | 63 packages, about 70 MB download |
 
 How pixi chooses the environment:
@@ -508,7 +535,7 @@ How pixi chooses the environment:
 | `scripts/bringup/sim_nav_gazebo.sh`, `isaac_sim_bringup.sh`, `real_slam_nav.sh`, and `scripts/map/record_mapping_bag.sh` source `/opt/ros` | With a system ROS Jazzy installed, they mix the two installations | Run the `ros2 launch` commands from the guides directly |
 | `.gitignore` ignores `.pixi/config.toml` | A project-level `.pixi/config.toml` is never picked up by Git | `git add -f .pixi/config.toml`, or remove the earlier `.pixi` line from `.gitignore` |
 | `realsense2_camera` and `topic_tools` are not in `pixi.toml` | `real_omnibot.launch.py` fails under pixi | [Packages that pixi does not provide](real-robot.md#packages-that-pixi-does-not-provide) |
-| `perception/setup_env.sh` builds its venv from `/usr/bin/python3.12`, not the pixi Python | From a plain shell without a system ROS, it stops at its `import rclpy` check | [Perception: Create the venv](perception.md#what-a-pixi-user-must-do) |
+| `perception/uv.lock` has no Python 3.14 wheels for numpy 1.26.4 and open3d 0.19.0 | Under pixi on `_27`, `perception/setup_env.sh` stops at its lock check, and `yolo_node`, `obb3d`, and `grasp_server` do not run | [Perception: Set up the grasp pipeline](perception.md#set-up-the-grasp-pipeline) |
 
 ??? info "When each helper script sources /opt/ros"
     `scripts/bringup/sim_nav_gazebo.sh`, `scripts/bringup/isaac_sim_bringup.sh`,

@@ -138,10 +138,12 @@ without ROS 2. Press ++f1++ for the full list of shortcuts.
    submodule. Then commit the updated submodule pointer in walkie-ros.
 
 ??? info "Why the MuJoCo version is pinned"
-    `pixi.toml` pins `mujoco` to `3.15.*`, the libmujoco version that `mujoco_vendor`
+    `pixi.toml` pins `mujoco` to `3.16.*`, the libmujoco version that `mujoco_vendor`
     0.1.0, and with it `mujoco_ros2_control`, is built against. The MjSpec serializer
-    differs between versions: MuJoCo 3.10 writes a different `walkie.xml` than the
-    checked-in 3.15 output.
+    differs between versions: MuJoCo 3.15 writes a different `walkie.xml` than the
+    checked-in 3.16 output. MuJoCo 3.15 also cannot load the 3.16 output: it stops with
+    `input is only available for so3, pid and dcmotor actuators`. See
+    [7. Move to RoboStack Build Set _27](../migrations/07-robostack-build-27.md#consequences).
 
 ### Change a MuJoCo-only value { #mujoco-only-values }
 
@@ -149,6 +151,9 @@ Some values exist only in the MuJoCo model, for example actuator gains and the i
 estimates for `base_link` and `lift_link`. They are constants at the top of
 `description/scripts/build_mjcf.py`. Change the constant and run `pixi run mjcf`. The URDF
 is not changed.
+
+Do not edit a gain in `walkie.xml` by hand. MuJoCo 3.16 writes the computed velocity gain
+into each position actuator, so a changed `kp` in the XML no longer changes the damping.
 
 ??? info "MuJoCo-only constants and why some are estimates"
     | Constant | Value | Meaning |
@@ -189,7 +194,7 @@ the robot.
 7. **Open the world.** See [Open the world](#open-the-world).
 
 ??? info "Why each rule exists"
-    - **File location:** `walkie.xml` finds its meshes with `meshdir="../"`, and MuJoCo
+    - **File location:** `walkie.xml` finds its meshes with `meshdir=".."`, and MuJoCo
       resolves that path from the directory of the top-level file.
     - **Robot first:** the robot's degrees of freedom then come first in `qpos`, and the
       `home` keyframe still lands on the right joints. A movable object declared before
