@@ -15,7 +15,9 @@ concurrency:
 
 env:
   # Tests that must pass. Lint tests (CTest label "linter") are excluded from this run.
-  TEST_PACKAGES: walkie_description openarm_bimanual_moveit_config topic_based_ros2_control
+  # robot_bringup checks the venv path that lift_homing.launch.py gives to the lift node, and
+  # the Python that zed_watchdog.py and head_touch_beep_node.py choose.
+  TEST_PACKAGES: walkie_description openarm_bimanual_moveit_config topic_based_ros2_control robot_bringup
   # First-party packages whose lint tests run but do not fail the job, because they fail today.
   LINT_PACKAGES: robot_bringup robot_simulation robot_navigation dual_laser_merger joy_interface
   CCACHE_DIR: ${{ github.workspace }}/.ccache

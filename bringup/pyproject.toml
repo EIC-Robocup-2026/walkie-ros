@@ -1,8 +1,9 @@
 [project]
 name = "robot-bringup-pyenv"
 version = "0.0.1"
-description = "Python runtime deps for robot_bringup nodes (TMotor bridge). Uses --system-site-packages so rclpy from /opt/ros stays visible."
-requires-python = ">=3.12,<3.13"
+description = "Python runtime deps for robot_bringup nodes (TMotor bridge). Uses --system-site-packages so the active environment's rclpy stays visible."
+# No upper bound: the venv must use the Python that provides rclpy, and that follows the environment.
+requires-python = ">=3.12"
 dependencies = [
     "TMotorCANControl",
     "python-can>=4.0.0",
@@ -12,8 +13,9 @@ dependencies = [
 ]
 
 [tool.uv]
-# Required so the .venv can still import rclpy / sensor_msgs / std_msgs from /opt/ros/jazzy.
-# Re-create the venv with `uv venv --python python3.12 --system-site-packages` before `uv sync`.
+# The .venv needs --system-site-packages to import rclpy / sensor_msgs / std_msgs from the
+# active environment (pixi or /opt/ros). Create it with the environment's own Python, then run
+# `uv sync --python python`: a bare `uv sync` can replace the venv with one on another Python.
 
 [tool.uv.sources]
 TMotorCANControl = { git = "https://github.com/EIC-Robocup-2026/TMotorCANControl.git" }
