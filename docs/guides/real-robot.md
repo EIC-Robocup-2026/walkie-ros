@@ -222,12 +222,14 @@ Then start each step in its own terminal, in this order:
 | 2 | `pixi run ros2 launch robot_bringup lift_homing.launch.py` | Resets `can2` and homes the lift. Wait for `Homing Successful`. |
 | 3 | `pixi run ros2 launch robot_bringup real_omnibot.launch.py` | Hardware, sensors, and controllers |
 | 4 | `pixi run ros2 launch robot_navigation localization_Nav2_real.launch.py` | Localization and Nav2. See [Navigation](navigation.md). |
-| 5 | `pixi run ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=real_robot` | MoveIt. See [Manipulation](manipulation.md). |
-| 6 | `pixi run ros2 launch openarm_bimanual_commander_cpp commander.launch.py` | Arm commander |
+| 5 | `pixi run ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=real_robot base_mode:=fixed` | MoveIt. See [Manipulation](manipulation.md). |
+| 6 | `pixi run ros2 launch openarm_bimanual_commander_cpp commander.launch.py base_mode:=fixed` | Arm commander |
 | 7 | `pixi run ros2 launch joy_interface joy_control_smooth.launch.py` | Joystick teleoperation |
 
 - `moveit_only.launch.py` also has a `right_joint2_fixed` argument. Give it
   the same value as in `real_omnibot.launch.py`.
+- `base_mode:=fixed` is the default. Give steps 5 and 6 the same value. Whole-body
+  goals are [not tested on the real robot](manipulation.md#whole-body-goals) yet.
 - Under pixi, step 3 stops with `package not found`. See
   [Packages that pixi does not provide](#packages-that-pixi-does-not-provide).
 - Step 4 is ready when `lifecycle_manager_nav2` logs `Managed nodes are active`.

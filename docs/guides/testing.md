@@ -153,16 +153,17 @@ also start it by hand in the Actions tab of the repository.
 | pixi | Installs the `default` environment from `pixi.lock` with `--locked`. The job fails if `pixi.toml` and `pixi.lock` disagree. |
 | Build | `colcon build` of the whole workspace, Nav2 included |
 | Start the Zenoh router | Starts `rmw_zenohd` with the default config (port 7447) in the background and waits until the port accepts connections. The router runs until the job ends. |
-| Test | The tests of `walkie_description`, `openarm_bimanual_moveit_config`, and `topic_based_ros2_control`, without their lint tests. `topic_based_system_test` runs on Fast DDS, the others on Zenoh (see [Known issues](#known-issues)). A failure fails the job. |
+| Test | The tests of `walkie_description`, `openarm_bimanual_moveit_config`, `openarm_bimanual_commander_cpp`, and `topic_based_ros2_control`, without their lint tests. `topic_based_system_test` runs on Fast DDS, the others on Zenoh (see [Known issues](#known-issues)). A failure fails the job. |
 | Lint (not enforced) | The lint tests of `robot_bringup`, `robot_simulation`, `robot_navigation`, `dual_laser_merger`, and `joy_interface`. A failure is reported, but the job still passes. |
 
 Run the enforced tests the way CI does. Start a Zenoh router in another
 terminal first (`pixi run ros2 run rmw_zenoh_cpp rmw_zenohd`), because the
-launch test of `topic_based_ros2_control` needs one:
+launch tests of `topic_based_ros2_control` and `openarm_bimanual_commander_cpp`
+need one:
 
 ```bash
 pixi run build
-pixi run test --packages-select walkie_description openarm_bimanual_moveit_config topic_based_ros2_control --ctest-args " -LE" linter " -E" "^topic_based_system_test$"
+pixi run test --packages-select walkie_description openarm_bimanual_moveit_config openarm_bimanual_commander_cpp topic_based_ros2_control --ctest-args " -LE" linter " -E" "^topic_based_system_test$"
 pixi run env RMW_IMPLEMENTATION=rmw_fastrtps_cpp colcon test --packages-select topic_based_ros2_control --ctest-args " -R" "^topic_based_system_test$"
 pixi run colcon test-result --verbose
 ```
@@ -248,13 +249,15 @@ files (`build/*/test_results/`).
 
 ## What each suite checks
 
-The four suites below are in `walkie_description` and
-`openarm_bimanual_moveit_config`.
+The first four suites below are in `walkie_description` and
+`openarm_bimanual_moveit_config`. The last is in
+`openarm_bimanual_commander_cpp`.
 
 ??? info "Tests in the other packages"
     | Package | Tests | Registered by |
     | --- | --- | --- |
-    | `openarm_bimanual_moveit_config` | `test_srdf_urdf_contract` | `ament_add_pytest_test(... TIMEOUT 120)` in its `CMakeLists.txt` |
+    | `openarm_bimanual_moveit_config` | `test_srdf_urdf_contract`, `test_cloud_floor_gate` | `ament_add_pytest_test` in its `CMakeLists.txt`, with `TIMEOUT 120` and `TIMEOUT 60` |
+    | `openarm_bimanual_commander_cpp` | The [whole-body launch tests](#whole-body-launch-tests) | `add_ros_test` in its `CMakeLists.txt` |
     | `robot_bringup`, `robot_simulation`, `robot_navigation`, `lakibeam1`, `dual_laser_merger`, `dynamixel_hardware_interface`, `dynamixel_interfaces`, `dynamixel_sdk_examples`, `spatio_temporal_voxel_layer` | Lint tests (some linters turned off per package) | `ament_lint_auto_find_test_dependencies()` |
     | `topic_based_ros2_control` | Lint tests, the gtest `topic_based_system_test`, and the launch test `test/ros2_control.test.py` (`TIMEOUT 120`) | Its `CMakeLists.txt` (submodule) |
     | `urg_node2` | gtest `urg_node2_test` (`TIMEOUT 200`) | Its `CMakeLists.txt`. Needs a real lidar. |
@@ -262,7 +265,7 @@ The four suites below are in `walkie_description` and
     | Nav2 packages in `navigation/navigation2/` | Upstream Nav2 tests, including `nav2_system_tests` | Upstream |
 
     `walkie_perception`, `my_robot_interfaces`, `walkie_tf_interfaces`,
-    `openarm_bimanual_commander_cpp`, `cubemars_hardware`, `openarm_hardware`,
+    `cubemars_hardware`, `openarm_hardware`,
     and `unitree_lidar_ros2` list `ament_lint_auto` in `package.xml`, but their
     `CMakeLists.txt` registers no tests. The other packages, including
     `walkie_tf`, have no tests.
@@ -370,6 +373,41 @@ File: `description/test/test_pep257.py`. It runs `ament_pep257` on `.` and
 `test`, which checks the docstring style of the Python files. Under colcon the
 working folder is `description/`, so it checks the `walkie_description`
 package.
+
+### Whole-body launch tests { #whole-body-launch-tests }
+
+Folder: `manipulate/openarm_bimanual_commander_cpp/test/`. They start the real
+`move_group` and the real commander against `whole_body_stub_world`, which stands in
+for the controllers and TF, so they need no simulator. They need a Zenoh router.
+Together they take about 12 minutes, which CI spends too.
+
+```bash
+pixi run ros2 run rmw_zenoh_cpp rmw_zenohd    # in another terminal
+pixi run test --packages-select openarm_bimanual_commander_cpp
+pixi run colcon test-result --verbose
+```
+
+To run one file, add `--ctest-args -R whole_body_clock`. Stop any running demo first,
+because the tests share the graph with it. When a test fails, its details are in
+`build/openarm_bimanual_commander_cpp/ros_test/test_<name>.test.py.txt`.
+
+| File | Time | Checks |
+| --- | --- | --- |
+| `whole_body_option.test.py` | About 2 min 15 s | On a `whole_body` bring-up: arm groups never command the base, far goals move it near the straight line, near goals keep it still, the heading seam, every refusal, single-flight, cancel, and the execution deadline |
+| `whole_body_gate.test.py` | About 4 min 40 s | Five bring-ups with `move_group` and the commander in `fixed`, `map`, and `whole_body`, matching and mismatched: which goals each one refuses, and that arm groups still work |
+| `whole_body_plan_only.test.py` | About 10 s | A stored plan runs only while the base is where it was planned from |
+| `whole_body_clock.test.py` | About 25 s | The commander on simulation time: a clock at 0.1 of real time passes the gate, a stopped clock is refused |
+| `whole_body_stopping.test.py` | About 4 min | Every way a motion stops: a cancel at any moment, the deadline, an aborted controller, and Nav2 taking a goal. Each leaves no controller running. Also a base that moves during planning, the commander's heartbeat, and that an old abort does not stop the next goal. |
+| `whole_body_follower.test.py` | About 25 s | The real follower against a fake base, with no `move_group`: tracking in `map`, the heartbeat, collision monitor stops and slowdowns, the stop event, a stale transform, a far start, and a base that does not follow |
+
+!!! note "The exit codes of these tests are not asserted"
+    `move_group` and the commander abort with signal 6 during shutdown, in a panic inside
+    `libzenohc`. So the launch tests only assert their active stage. The block
+    `Ran 0 tests ... NO TESTS RAN` in the output is the empty post-shutdown stage.
+
+The whole-body demo measures what the stub cannot, such as tip error and base travel
+against MuJoCo's ground truth. It is not part of CI. See
+[Move the base with a whole-body goal](manipulation.md#whole-body-goals).
 
 ## Strict expected failure
 

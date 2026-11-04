@@ -21,7 +21,7 @@ is a git submodule, so commit changes there first (see
 | `meshes/` | Visual and collision meshes. The `.dae` files are in Git LFS. |
 | `launch/` | `robot_state_publisher.launch.py`, two RViz preview launches, and `rviz.launch.py` |
 | `rviz/robot_preview.rviz` | RViz config for the previews |
-| `mujoco/` | `walkie.xml` (generated) and `scene.xml` (hand-written world) |
+| `mujoco/` | `walkie.xml` (generated), `scene.xml` and `scene_whole_body.xml` (hand-written worlds) |
 | `scripts/build_mjcf.py` | Generates `mujoco/walkie.xml` from the xacro |
 | `scripts/create_gz_walkie_urdf.sh` | Writes expanded URDF files to `robots/`. See [Export a plain URDF](#export-a-plain-urdf). |
 | `readme.md` | Why the mirrored OpenArm links use pre-mirrored meshes instead of a negative scale |
@@ -492,6 +492,7 @@ in `robot_bringup` (see
 | `scripts/build_mjcf.py` | yes | Expands `gz_walkie.urdf.xacro` with `ros2_control:=mujoco` from the source tree, then adds what URDF cannot describe. All other arguments keep their defaults, so the model has no rollers and the lift is mounted at the bottom (`roller:=false`, `lift_at_top:=false`). |
 | `mujoco/walkie.xml` | no, generated | The robot. It has no floor. |
 | `mujoco/scene.xml` | yes | Default world: floor, light, and the four wheel-floor contact pairs |
+| `mujoco/scene_whole_body.xml` | yes | World of the whole-body demo: `scene.xml` plus a table, a box on it, and a wall |
 
 ??? info "What the generator adds, and what the file headers document"
     - `build_mjcf.py` adds the free joint, wheel contact capsules, actuators,

@@ -156,7 +156,8 @@ failed to load`, the environment is older than `pixi.lock`: run
 ## Send goals with the commander
 
 The commander node (`bimanual_commander`) wraps a `MoveGroupInterface` for each
-of the eight [planning groups](#planning-groups-and-named-states). Send it
+of the eight arm and gripper
+[planning groups](#planning-groups-and-named-states). Send it
 goals with `ros2 action send_goal` or from task code:
 
 ```bash
@@ -211,8 +212,8 @@ pixi run ros2 param set /bimanual_commander <name> <value>
 ```
 
 Most parameters take effect live. The node reads `plan_only` and
-`grasp_attach_enable` only at startup, and `commander.launch.py` does not
-expose them.
+`grasp_attach_enable` only at startup. `commander.launch.py` has an argument for
+`plan_only`, and none for `grasp_attach_enable`.
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
@@ -327,6 +328,287 @@ The mock lift node (`lift_homing.launch.py mock:=true`) does not serve it, so
     `lift_controller`. The lift homing node owns the action server directly
     and reports success when the motor reaches the goal.
 
+## Move the base with a whole-body goal { #whole-body-goals }
+
+A whole-body goal moves the base, the lift, and one arm together, to reach a
+target the arm cannot reach from where the robot stands. A caller chooses it per
+request: send `group_name: whole_body_left` or `whole_body_right` on `/go_to_pose`
+or `/go_to_pose_quat`. Every other group name keeps its old behaviour and cannot
+command the base.
+
+!!! warning "Tested in MuJoCo only"
+    No whole-body goal has run on the real robot. The default, `base_mode:=fixed`,
+    refuses these goals, so the option stays off until a launch command turns it on.
+
+Run the demo in two terminals:
+
+```bash
+pixi run ros2 launch robot_bringup whole_body_demo.launch.py
+pixi run ros2 run openarm_bimanual_commander_cpp whole_body_demo
+```
+
+The launch file starts the obstacle scene, Nav2 (idle, it owns the collision
+monitor), `move_group` with `base_mode:=whole_body`, the commander, the base
+follower, RViz, and a Zenoh router. Pass `start_router:=false` if a router already
+runs, and `headless:=true use_rviz:=false` for no windows. The client prints one
+JSON report and exits non-zero if a step misses its expectation.
+
+Send your own goal once the launch file is up:
+
+```bash
+pixi run ros2 action send_goal /go_to_pose my_robot_interfaces/action/GoToPose \
+  "{group_name: whole_body_left, x: 1.75, y: 0.15, z: 1.05, roll: 0.0, pitch: 1.5708, yaw: 0.0, frame_id: map}"
+```
+
+The status of a successful goal ends in `(base fixed)` when the arm and lift
+reached the target alone, or in `(base travel <length> m)` with the length of the
+planned base path.
+
+??? info "Demo steps and options"
+    | Step | Group | Expected |
+    | --- | --- | --- |
+    | `far_arm` | `left_arm_lift` | Target on the table, out of reach: fails, with no base command |
+    | `near_arm` | `left_arm_lift` | Reachable target: the arm moves, the base stays |
+    | `near_body` | `whole_body_left` | Target the arm reaches alone: the status says `base fixed` |
+    | `far_body` | `whole_body_left` | The target of `far_arm`: base, lift, and arm move together |
+    | `home_<n>`, `far_<n>` | `whole_body_left` | Only with `--cycles N`: `N` round trips to a target near the start and back |
+    | `seam_turn` | `whole_body_left` | Hand along -x, which turns the body to a heading near +π |
+    | `seam_cross` | `whole_body_left` | A hand direction that makes the base turn through ±π the short way |
+
+    A whole-body step also fails on a tip error above `--tip-tolerance` (0.03 m),
+    a turn more than π above the heading change, or a base path above 1.5 times the
+    displacement plus 0.3 m. `--report <file>` writes the report to a file, because
+    `rmw_zenoh_cpp` also logs to stdout. `--skip-near` skips `near_arm` and
+    `near_body`, and `--settle` sets how long the octomap fills before the first goal.
+
+    The simulation runs slower than real time: a real-time factor of about 0.5
+    headless, and 0.16 to 0.30 with the viewer and RViz, depending on what else the
+    laptop runs. A step takes about 40 to 70 s of wall time.
+
+### Keep the base still
+
+| You want | Send | What happens |
+| --- | --- | --- |
+| The base must not move | An arm group, such as `left_arm_lift` | These groups have no base variables, so they cannot command the base. A target out of reach fails with `Planning Failed`. |
+| The base may move when it has to | `whole_body_left`, `whole_body_right` | The current base pose is tried first. If that does not work, the base moves. |
+
+!!! warning "A whole-body goal near the edge of the arm's reach can move the base a little"
+    The first attempt of a whole-body goal needs an exact IK solution from the
+    current base. An arm group's pose goal also accepts a solution within the goal
+    tolerances, so it reaches a little further. A target in that gap succeeds on
+    `left_arm_lift` without moving the base, and moves the base by a few centimeters
+    on `whole_body_left`. If the base must not move, use an arm group.
+
+### Choose the base model
+
+`base_mode` selects the model. Give `moveit_only.launch.py` and
+`commander.launch.py` the same value.
+
+| `base_mode` | Model | Octomap frame | Whole-body goals |
+| --- | --- | --- | --- |
+| `fixed` (default) | Fixed joint from `world` to `base_footprint`, as before | `base_link` | Refused |
+| `map` | Planar joint from `map` to `base_footprint`. `map` is the planning frame. | `map` | Refused |
+| `whole_body` | `map`, plus the whole-body option | `map` | Accepted |
+
+To bring the option up without the demo launch file, for example in MuJoCo with
+Nav2 already running:
+
+```bash
+pixi run ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=mujoco base_mode:=whole_body
+pixi run ros2 launch openarm_bimanual_commander_cpp commander.launch.py base_mode:=whole_body use_sim_time:=true
+pixi run ros2 run openarm_bimanual_commander_cpp whole_body_base_follower --ros-args -p use_sim_time:=true
+```
+
+- Under `map` and `whole_body`, `moveit_only.launch.py` waits for
+  `map` to `base_footprint` before it starts `move_group`.
+- `base_mode:=whole_body` needs `openarm_bimanual_commander_cpp` built, also for
+  `move_group`, because the `UnwrapPlanarHeading` plugin lives in that package.
+- The octomap keeps the whole room in `map`, so it needs a working localization. A
+  stale or jumping `map` to `odom` leaves ghost obstacles.
+- The follower takes goals only while the commander is running, and stops the base
+  if the commander goes quiet for 2 s. So **Plan & Execute** on a whole-body group in
+  RViz needs the commander too.
+- Restart the commander along with `move_group`. A motion holds the commander's
+  motion slot until `move_group` finishes it, so after a crash of `move_group` new
+  whole-body and arm goals stay refused.
+
+### Why a goal is refused
+
+Every refusal is an accepted goal that aborts with a reason in `status`, because a
+rejected goal gives the client no reason. A motion that already started ends the same
+way, and stops every controller it was using.
+
+| Status | Fix |
+| --- | --- |
+| `Whole-body mode unavailable: this bring-up runs base_mode:=...` | Start the commander with `base_mode:=whole_body` |
+| `move_group's robot model has no base joint: start it with base_mode:=whole_body` | `move_group` and the commander disagree. Give both the same value. |
+| `Octomap collision checking is off: call toggle_octomap_collision first` | Turn the octomap back on. A base moving without it could hit what the camera sees. |
+| `Collision checking is off: call toggle_all_collision_checking first` | Turn collision checking back on |
+| `No base server on /base_controller/follow_joint_trajectory: is the base follower running?` | Start `whole_body_base_follower`. Arm groups keep working without it. |
+| `Nav2 has an active goal on ...: the base is in use` | Wait for the Nav2 goal or cancel it |
+| `The base is moving (...)` | Wait until the base is at rest: below 0.03 m/s and 0.05 rad/s |
+| `The node's clock is not advancing: is the simulation running?` | The node's clock did not move for 5 s of wall time. Check that the simulation is running and not paused. |
+| `Refused: another motion is in progress` | A whole-body goal runs alone. Wait for the running arm goal. |
+| `Refused: a whole-body motion is in progress` | The same, seen from an arm goal |
+| `Cartesian paths are not supported on ...: use ...` | Set `cartesian_path: false`, or send the arm group the status names |
+| `No base pose found to reach the target (...)` | No sampled base pose gave a usable IK solution. The numbers say how many samples had one and how many sat on a joint limit. |
+| `Planning Failed for N sampled base pose(s), last MoveIt code ...` | IK found base poses, but no path to them. Code `-10` means the start state is in collision, and `-2` that the planner found no path in time. |
+| `Execution deadline of N s exceeded: stop sent` | A controller did not finish in 1.5 times the planned duration plus `whole_body_execution_margin`. Check the follower's log. |
+| `Base moved ... since the plan: plan again` | The base moved by more than 0.05 m or 0.05 rad while planning ran, or, with `(plan still stored)`, since a `plan_only` plan was stored. Send the goal again. |
+| `Stopped: <controller> aborted its goal` | One controller failed, so the others were stopped. Check that controller's log. The follower's reasons are [below](#why-the-follower-stops). |
+| `Stopped: Nav2 took a goal on <action>` | Nav2 got a goal while the motion ran. Wait for it, or cancel it. |
+| Any of the stops above, ending in `(move_group has not finished: new whole-body and arm goals stay refused until it does)` | `move_group` did not end the motion within 10 s of the stop. Check that the robot stopped, then restart `move_group` and the commander. |
+
+### Why the follower stops
+
+`whole_body_base_follower` ends a goal, and with it the whole motion, when:
+
+- the goal is canceled,
+- a `stop` arrives on `/trajectory_execution_event`,
+- the commander's heartbeat stops,
+- the collision monitor reports a stop,
+- the base is more than `abort_position_error` (0.25 m) or `abort_yaw_error` (0.35 rad)
+  behind the plan,
+- the transform is older than `max_transform_age` (0.5 s), or
+- the base does not settle within `goal_settle_time` (3 s) of the end.
+
+The follower's log names the reason. The slowdown polygon of the collision monitor
+does not end a goal: its speed limit matches the plan's base limit of 0.12 m/s.
+
+### Whole-body parameters
+
+Set them with `pixi run ros2 param set /bimanual_commander <name> <value>`. They
+take effect on the next goal. `base_mode` is read once, at startup.
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `base_mode` | `fixed` | `fixed`, `map`, or `whole_body`, see [Choose the base model](#choose-the-base-model) |
+| `whole_body_planner_id` | `RRTConnect` | OMPL planner of a whole-body goal |
+| `whole_body_planning_time` | `5.0` | Planning time per sampled base pose, in seconds. The first 2 s at most go to the small box, see below. |
+| `whole_body_velocity_scaling` | `1.0` | Velocity scaling of a plan that moves the base, in (0, 1] |
+| `whole_body_acceleration_scaling` | `1.0` | Acceleration scaling of a plan that moves the base, in (0, 1] |
+| `whole_body_goal_joint_tolerance` | `0.001` | Joint tolerance of the goal |
+| `whole_body_execution_margin` | `15.0` | Seconds added to 1.5 times the planned duration for the execution deadline, on the node's clock |
+
+A goal the arm reaches alone uses the arm groups' `max_velocity_scaling_factor`
+and `max_acceleration_scaling_factor`. The base limits are `virtual_joint/*` in
+`config/joint_limits.yaml`: 0.12 m/s and 0.2 m/s², 0.3 rad/s and 0.4 rad/s². They
+match the `PolygonSlow` speed of the collision monitor.
+
+??? info "How a whole-body goal runs"
+    1. The commander takes a motion slot and runs the gate behind the
+       [refusals](#why-a-goal-is-refused).
+    2. It freezes the goal in `map`, so a goal in `base_footprint` does not move along
+       with the base.
+    3. It solves IK with the base where it is. If that works and the goal has
+       clearance, the matching `*_arm_lift` group plans and runs it. The status says
+       `base fixed`.
+    4. Otherwise it samples base poses that put the arm's shoulder behind the hand,
+       nearest first. Up to five with a usable IK solution are planned to.
+    5. Each plan first runs in a small box, 0.3 m around the start and the end of the
+       move, for at most 2 s. Only if that fails does it run in a 5 m box. RRTConnect
+       samples the base uniformly in the box, and path simplification does not always
+       remove a waypoint far off the straight line. A 5 m box alone gave 2.18 m of
+       travel for a 1.02 m displacement.
+    6. It runs the gate's Nav2 check again and compares the base with where it was at
+       step 3, because planning takes seconds and the first check is old by then.
+    7. `move_group` runs the plan on `base_controller` and on the arm and lift
+       controllers together. The commander watches for a canceled goal, an aborted
+       controller goal, a Nav2 goal, and the deadline. On any of them it sends a stop
+       every 500 ms until `move_group` ends the motion.
+
+    `move_group` waits for the results of its controllers one at a time, in name order.
+    Without the watch in step 7, an arm that aborts while the base is still running goes
+    unnoticed until the base finishes.
+
+    The sampled poses come in two tiers of 40. The first keeps to where IK finds usable
+    goals for a hand pointing forward at about 1 m: shoulder 0.3 to 0.6 m behind the
+    hand, body turned up to 1 rad away from the hand direction, mirrored for the right
+    arm. The second tier is wider, for other hand orientations. So the base often
+    arrives turned away from the target, which matters if the head camera has to see it.
+
+    A pose goal at z = 1.05 m often needs the lift at the top. The lift moves at
+    0.03 m/s, so it often sets the duration of the whole motion.
+
+??? info "How the base follows the plan"
+    MoveIt's `base_controller` entry sends a `FollowJointTrajectory` goal with the base
+    motion in `multi_dof_trajectory`, as `map`-frame poses. The stock
+    `joint_trajectory_controller` ignores that field, so `whole_body_base_follower` is
+    its own server on `/base_controller/follow_joint_trajectory`. The omni controller
+    runs open loop, so the follower closes the loop on `map` to `base_footprint`.
+
+    It publishes to `/cmd_vel_smoothed`, the input of Nav2's collision monitor, so
+    whole-body base motion passes the same stop and slowdown polygons as Nav2. Its
+    reasons to stop are listed under [Why the follower stops](#why-the-follower-stops).
+    Every one of them publishes zero commands and `stop` on
+    `/trajectory_execution_event`, which also halts the arm and the lift.
+
+    The collision monitor reports its state only when the active polygon changes, and it
+    only looks when a command arrives. So a stop on record can be stale, with nothing to
+    correct it while no commands flow. A goal that arrives during a stop therefore
+    publishes one zero command and waits up to 500 ms for the state to change. If the
+    stop is still active, the follower rejects the goal.
+
+    | Parameter | Default | Meaning |
+    | --- | --- | --- |
+    | `position_gain`, `yaw_gain` | `1.5` | Proportional gains on the error to the plan |
+    | `max_linear_speed`, `max_angular_speed` | `0.25`, `0.6` | Command limits |
+    | `start_position_tolerance`, `start_yaw_tolerance` | `0.05`, `0.1` | Largest difference to the plan's start. A larger one rejects the goal. |
+    | `goal_position_tolerance`, `goal_yaw_tolerance` | `0.02`, `0.03` | Tolerance at the end of the plan |
+    | `cmd_topic` | `/cmd_vel_smoothed` | Output |
+    | `monitor_state_topic` | `/collision_monitor_state` | Collision monitor state. `nav_mujoco_omnibot.launch.py` turns it on; the real-robot Nav2 parameters do not set `state_topic` yet. |
+    | `commander_topic` | `/whole_body/commander_alive` | Commander heartbeat, 5 Hz of wall time |
+    | `commander_timeout` | `2.0` | Wall seconds without a heartbeat before the follower stops. At 0.12 m/s the base can travel about 24 cm in that time. |
+
+??? info "The heading seam"
+    OMPL returns the planar joint's heading normalized to [-π, π]. Time parameterization
+    treats it as a plain number, so a path across ±π would jump by almost 2π, and the
+    base would turn the long way round. Under `base_mode:=whole_body`,
+    `moveit_only.launch.py` puts the response adapter
+    `openarm_bimanual_commander_cpp/UnwrapPlanarHeading` in front of
+    `AddTimeOptimalParameterization`. It rewrites the headings of the path so that each
+    step takes the short way. Values outside [-π, π] are safe: MoveIt only uses the angle,
+    and the trajectory message carries quaternions. The commander still rejects a plan
+    that turns more than π above the heading change.
+
+??? info "The octomap in map"
+    Under `map` and `whole_body`, `moveit_only.launch.py`:
+
+    - sets no `octomap_frame`, so the octree frame is the planning frame, `map`.
+    - uses `planar_octomap_resolution` (0.03 m) and `planar_octomap_max_range` (1.5 m,
+      3.5 m in the demo). Anything farther is unknown, and unknown plans as free.
+    - starts `cloud_floor_gate.py`, which decimates the cloud and keeps the base out of
+      collision with the floor. A floor return moves out along its ray past the updater's
+      range, so it clears the voxels on the way and marks nothing.
+    - starts `octomap_jump_guard.py`, which clears the octomap when `map` to `odom` jumps
+      by more than 0.1 m or 0.1 rad.
+    - sets `padding_offset` to 0.10 m, because the self-filter mask is built from the
+      collision geometry and the camera sees the visual meshes. Obstacles within that
+      padding of the robot are not marked.
+    - loads `config/moveit_map.rviz`, which uses `map` as its fixed frame. With
+      `hardware_type:=mujoco` it also starts `depth_image_proc`, because MuJoCo publishes
+      depth images and no cloud.
+
+    `publish_planning_scene_hz` drops to 1 Hz, because each scene update carries the
+    whole octree.
+
+??? info "Repairs before a plan"
+    Under `map` and `whole_body` the commander repairs three states that would otherwise
+    fail every plan. Under `fixed` it does nothing and the old behaviour stays.
+
+    - **Voxels inside the robot.** A stale voxel behind the robot's own surface gets no
+      ray through it. If the current state touches the octomap, the commander clears the
+      whole octree, waits 1 s, and logs a warning. MoveIt cannot edit part of an octree, so
+      whatever is out of view at that moment is forgotten and plans as free.
+    - **A joint just past its limit.** A position controller can stop there. A joint up to
+      0.02 past its limit starts from the limit. A joint farther out is left for MoveIt to
+      report.
+    - **Self-contact.** The MuJoCo lift settled 2.65 mm below its command, which was enough
+      to put the idle arm's fingers on the base. A plan then starts from the lift 2, 5, 10,
+      or 20 mm higher, whichever is free, and goals must stay valid 10 mm below where they
+      stop the lift. `allowed_start_tolerance` in `config/move_group.yaml` accepts these
+      raises.
+
 ## How the parts fit together
 
 The MoveIt configuration, the commander, and its interfaces are in
@@ -345,6 +627,11 @@ flowchart LR
     arms --> hw["ros2_control hardware"]
     grip --> hw
     lift --> lifthw["JointTrajectoryController (mock, Gazebo, MuJoCo) or lift_homing_node (real robot)"]
+    mg -->|"FollowJointTrajectory, whole-body plans only"| follower["whole_body_base_follower"]
+    follower -->|"/cmd_vel_smoothed"| monitor["collision_monitor"]
+    monitor -->|"/cmd_vel_nav"| mux["twist_mux"]
+    mux --> omni["omni_wheel_drive_controller"]
+    omni --> hw
 ```
 
 !!! note "Older packages"
@@ -395,6 +682,12 @@ and the real robot publish the ZED point cloud.
     | `right_joint2_fixed` | `false` | `false` | Treat `openarm_right_joint2` as fixed. It is dropped from the SRDF named states and from `right_joint_trajectory_controller` |
     | `controllers_file` | `config/ros2_controllers.yaml` | not available | ros2_control parameters for the `mock_components`, `isaac`, and `real_robot` branches |
     | `use_rviz` | not available | `true` | Start RViz |
+    | `base_mode` | not available | `fixed` | Base model: `fixed`, `map`, or `whole_body`. See [Choose the base model](#choose-the-base-model). `commander.launch.py` has the same argument. |
+    | `planar_octomap_resolution` | not available | `0.03` | Octomap voxel size under `map` and `whole_body`, in meters. `fixed` uses `octomap_resolution`. |
+    | `planar_octomap_max_range` | not available | `1.5` | Octomap updater range under `map` and `whole_body`, in meters. Anything farther is unknown, which plans as free. |
+
+    `commander.launch.py` has the arguments `gripper_speed`, `gripper_init_pos`,
+    `base_mode` (`fixed`), `plan_only` (`false`), and `use_sim_time` (`false`).
 
 ??? info "What each `hardware_type` starts"
     `hardware_type` selects which ros2_control backend the robot description
@@ -415,9 +708,10 @@ and the real robot publish the ZED point cloud.
     `right_use_fake_arm_hardware`.
 
 ??? info "Octomap anchoring and sensor settings"
-    The octomap is anchored to `base_link`, so the voxels move with the
-    mobile base. The sensor settings are in `config/sensors_3d.yaml` (range
-    1.5 m, update rate 5 Hz).
+    Under `base_mode:=fixed` the octomap is anchored to `base_link`, so the voxels
+    move with the mobile base. Under `map` and `whole_body` it stays in `map`, see
+    [Move the base with a whole-body goal](#whole-body-goals). The sensor settings
+    are in `config/sensors_3d.yaml` (range 1.5 m, update rate 5 Hz).
 
 ??? info "Other launch files in the package"
     | File | Purpose |
@@ -432,6 +726,9 @@ The groups are defined in `config/openarm_bimanual.srdf`:
 - Arms: `left_arm`, `right_arm`, `both_arms`.
 - Arms with the lift: `left_arm_lift`, `right_arm_lift`, `both_arms_lift`.
 - Grippers: `left_gripper`, `right_gripper`.
+- Base, lift, and arm: `whole_body_left`, `whole_body_right`. The commander only
+  plans with them under `base_mode:=whole_body`, see
+  [Move the base with a whole-body goal](#whole-body-goals).
 
 ??? info "Chains and joints of each group"
     | Group | Contents | Includes the lift |
@@ -444,6 +741,11 @@ The groups are defined in `config/openarm_bimanual.srdf`:
     | `both_arms_lift` | `left_arm_lift` and `right_arm_lift` | yes |
     | `left_gripper` | joint `openarm_left_finger_joint1` | no |
     | `right_gripper` | joint `openarm_right_finger_joint1` | no |
+    | `whole_body_left` | joint `virtual_joint` and `left_arm_lift` | yes |
+    | `whole_body_right` | joint `virtual_joint` and `right_arm_lift` | yes |
+
+    Every `base_mode` has the same group list. Under the fixed virtual joint the
+    `whole_body_*` groups have no base variables.
 
 Named states, for `go_to_home` and for the MoveIt RViz panel:
 
@@ -458,10 +760,10 @@ Named states, for `go_to_home` and for the MoveIt RViz panel:
     In the `*_lift` variants, the lift is at 0.7435 m for every state except
     `pre-place` (0.735 m) and `basket` (0.303 m).
 
-    The SRDF also defines a fixed virtual joint from `world` to
-    `base_footprint`, the end effectors `left_ee` and `right_ee`, and the
-    passive joints `openarm_left_finger_joint2` and
-    `openarm_right_finger_joint2`.
+    The SRDF also defines the virtual joint `virtual_joint` (fixed from `world` to
+    `base_footprint` under `base_mode:=fixed`, planar from `map` to `base_footprint`
+    otherwise), the end effectors `left_ee` and `right_ee`, and the passive joints
+    `openarm_left_finger_joint2` and `openarm_right_finger_joint2`.
 
 ### Kinematics, planners, and controllers
 
@@ -491,9 +793,14 @@ Named states, for `go_to_home` and for the MoveIt RViz panel:
     obstacles between checked points. A smaller value is safer and costs more
     planning time.
 
+    The `whole_body_*` groups use the same value and RRTConnect. They have no IK
+    solver of their own: the commander solves IK on the `*_arm_lift` group with the
+    base held at a sampled pose.
+
 ??? info "Controllers and their actions"
     | Controller | Action | Joints |
     | --- | --- | --- |
+    | `base_controller` | `FollowJointTrajectory`, `follow_joint_trajectory`, served by `whole_body_base_follower` | `virtual_joint` |
     | `left_joint_trajectory_controller` | `FollowJointTrajectory`, `follow_joint_trajectory` | `openarm_left_joint1` to `openarm_left_joint7` |
     | `right_joint_trajectory_controller` | `FollowJointTrajectory`, `follow_joint_trajectory` | `openarm_right_joint1` to `openarm_right_joint7` |
     | `left_gripper_controller` | `GripperCommand`, `gripper_cmd` | `openarm_left_finger_joint1` |
@@ -535,7 +842,14 @@ pixi run test --packages-select openarm_bimanual_moveit_config
 pixi run colcon test-result --verbose
 ```
 
-See [Tests](testing.md) for the other suites.
+The launch tests of the whole-body option are in `openarm_bimanual_commander_cpp`.
+They need a Zenoh router, and take about 7 minutes:
+
+```bash
+pixi run test --packages-select openarm_bimanual_commander_cpp
+```
+
+See [Tests](testing.md#whole-body-launch-tests) for what they check.
 
 ## Why MuJoCo collision settings do not affect MoveIt
 
@@ -584,10 +898,13 @@ the largest gain.
 
 | Issue | Effect | Workaround |
 | --- | --- | --- |
-| MoveIt with `hardware_type:=mujoco` is untested, and `moveit_demo.launch.py` does not start the MuJoCo simulator (`mujoco_ros2_control`) | `moveit_demo.launch.py` starts no `ros2_control_node`. The spawners have no timeout and wait forever | Start `mujoco_omnibot.launch.py` in `robot_bringup` ([MuJoCo Simulation: Run with ROS 2](simulation-mujoco.md#run-with-ros-2)), then `moveit_only.launch.py hardware_type:=mujoco`. Untested. |
+| `moveit_demo.launch.py` does not start the MuJoCo simulator (`mujoco_ros2_control`) | With `hardware_type:=mujoco`, `moveit_demo.launch.py` starts no `ros2_control_node`. The spawners have no timeout and wait forever | Use `whole_body_demo.launch.py` in `robot_bringup`, or start `mujoco_omnibot.launch.py` ([MuJoCo Simulation: Run with ROS 2](simulation-mujoco.md#run-with-ros-2)) and then `moveit_only.launch.py hardware_type:=mujoco` |
+| MoveIt in MuJoCo is tested only with `base_mode:=whole_body` | `hardware_type:=mujoco` with `base_mode:=fixed` starts no octomap, and nobody has run it | Use `base_mode:=whole_body` in MuJoCo |
+| Whole-body goals have not run on the real robot | The follower, the octomap in `map`, and the repairs are tested only against MuJoCo and a stub. The real lift has its own driver, and the real-robot Nav2 parameters set no `state_topic`, so the follower would not see a collision monitor stop | Keep `base_mode:=fixed` on the real robot |
+| The idle arm limits the lift during a whole-body goal | In the home pose the right arm's fingers reach the base at a lift position of about 0.495 m. The planner rejects lower lift positions, so targets that need them fail. | Move the idle arm first |
 | The description has no `isaac` ros2_control block | With `hardware_type:=isaac` the URDF has no hardware, so no controller starts | None in this repository |
 | `moveit_demo_with_commander.launch.py` passes xacro arguments the description does not declare, and has no `right_joint2_fixed` | With `hardware_type:=real_robot` both arms stay mock, and `right_joint2_fixed` cannot be set | Use `moveit_demo.launch.py` plus `commander.launch.py` |
-| `commander.launch.py` does not set `use_sim_time` | In Gazebo, `move_group` and the controllers use simulation time but the commander does not, so it can fail to get the current robot state | Add `{"use_sim_time": True}` to the commander's `parameters` in `commander.launch.py` |
+| `commander.launch.py` defaults to `use_sim_time:=false` | In Gazebo and MuJoCo, `move_group` and the controllers use simulation time but the commander does not, so it can fail to get the current robot state | Pass `use_sim_time:=true` |
 | `commander.launch.py` builds the robot description from the package's `.setup_assistant` defaults | The commander's description ignores `hardware_type` and `right_joint2_fixed` | None in this repository |
 | `action/GoToPoseRelativeQuaternion.action` is not listed in `CMakeLists.txt` | No code is generated for it | Use `GoToPoseRelative` |
 
@@ -597,5 +914,10 @@ the largest gain.
 | --- | --- | --- |
 | `moveit_only.launch.py` in Gazebo builds no octomap | The default `point_cloud_topic` is the filtered cloud, which only the real robot publishes | Pass `point_cloud_topic:=/zed_head/zed_node/point_cloud/cloud_registered` |
 | `*_lift` plans fail to execute on the real robot | Nothing serves `lift_controller/follow_joint_trajectory`: the lift homing node is not running, or runs with `mock:=true` | Start `lift_homing.launch.py` without `mock`, or plan with `left_arm`, `right_arm`, or `both_arms` |
+| `move_group` cannot load `openarm_bimanual_commander_cpp/UnwrapPlanarHeading` | `base_mode:=whole_body` needs the plugin from the commander package | `pixi run build-pkg openarm_bimanual_commander_cpp` |
+| The log says `Clearing the octomap: the current state touches voxels at ...` | A stale voxel lies inside the robot. The commander cleared the octree, see `Repairs before a plan` under [whole-body goals](#whole-body-goals) | Nothing, if it is rare. If it repeats, check localization and the self-filter. |
+| RViz does not start from a launch file that includes `nav_mujoco_omnibot.launch.py` with `use_rviz:=false` | An include's launch arguments stay set after it, so a later include reads the same `false` | Wrap the include in a `GroupAction`, as `whole_body_demo.launch.py` does |
+| RViz logs `moveit.core.dynamics_solver: Group 'whole_body_left' does not have a parent link` at ERROR | The group starts at the planar joint from `map`, so it has no parent link. RViz's plan display builds a dynamics solver for it. | Nothing. Plans and execution were not affected in the MuJoCo runs. |
+| A whole-body goal from RViz fails with the base controller rejecting it | The follower rejects goals while no commander reports on `/whole_body/commander_alive` | Start the commander |
 
 More fixes are collected in [Troubleshooting](../troubleshooting.md).

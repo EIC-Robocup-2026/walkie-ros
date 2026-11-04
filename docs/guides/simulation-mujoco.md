@@ -3,8 +3,8 @@
 This guide shows how to run Walkie in MuJoCo with ROS 2 and Nav2, how to view and
 regenerate the MuJoCo model, and how to build your own world around it. Two launch files
 in `robot_bringup` start the simulation: `mujoco_omnibot.launch.py` with the controllers
-and RViz, and `nav_mujoco_omnibot.launch.py` with Nav2 on top. MoveIt with MuJoCo is not
-tested yet.
+and RViz, and `nav_mujoco_omnibot.launch.py` with Nav2 on top. MoveIt with MuJoCo runs on
+the planar base model, in the whole-body demo.
 
 ## Quick start { #what-works-now }
 
@@ -12,6 +12,7 @@ tested yet.
 | --- | --- |
 | Run MuJoCo with ROS 2, the controllers and RViz | `pixi run ros2 launch robot_bringup mujoco_omnibot.launch.py` |
 | The same, plus Nav2: send goals from RViz | `pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py` |
+| Run MoveIt whole-body goals in a scene with a table, see [Manipulation](manipulation.md#whole-body-goals) | `pixi run ros2 launch robot_bringup whole_body_demo.launch.py` |
 | Open the robot on a floor, in the `home` pose | `pixi run mjcf-view` |
 | Open any world file, with a working **Reload** button | `pixi run python -m mujoco.viewer --mjcf=description/mujoco/scene.xml` |
 | Regenerate the robot model after a description change | `pixi run mjcf` |
@@ -452,6 +453,7 @@ pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py headless:=true u
 | `rviz_config` | Both | `<robot_bringup share>/config/rviz/mujoco.rviz`, or `mujoco_nav.rviz` for Nav2 | RViz config file |
 | `map` | `nav_mujoco_omnibot.launch.py` | `<robot_bringup share>/config/map/empty_floor.yaml` | Map for `map_server`. Its origin must match the MuJoCo world origin. |
 | `params_file` | `nav_mujoco_omnibot.launch.py` | `<robot_navigation share>/config/nav2/nav2_mppi_walkie_sim_params.yaml` | Nav2 parameter file |
+| `truth_map_odom` | `nav_mujoco_omnibot.launch.py` | `false` | `true` computes `map` to `odom` from `/mujoco_ground_truth/odom` instead of a static transform, so the robot's `map` pose is its true pose. The whole-body demo needs it, because the omni controller's odometry reports commands and not wheel motion. |
 
 ### Topics
 
@@ -692,7 +694,8 @@ Each 2D lidar is one entry under the plugin instance:
 - No ZED point cloud is published. Nodes that read
   `/zed_head/zed_node/point_cloud/cloud_registered` or its filtered copy, such as the
   grasp node of `walkie_perception`, get no cloud. MoveIt with `hardware_type:=mujoco`
-  runs without an octomap.
+  and `base_mode:=fixed` runs without an octomap. Under `map` and `whole_body`, MoveIt
+  builds its own cloud from the depth image with `depth_image_proc`.
 
 ??? info "How the file maps to the model"
     - One lidar instance serves both lidars. `front_lidar` and `back_lidar` are the sensor
@@ -731,9 +734,9 @@ pixi run python -m pytest description/test/test_mjcf.py
 
 | Feature | Status | Details |
 | --- | --- | --- |
-| MoveIt with `hardware_type:=mujoco` | The launch option exists. MoveIt has not been tested with MuJoCo. | [2.5 ros2_control](../migrations/02-mujoco/05-ros2-control.md) |
+| MoveIt with `hardware_type:=mujoco` and `base_mode:=fixed` | The launch option exists, with no octomap. Only `base_mode:=whole_body` has been tested with MuJoCo. | [Manipulation](manipulation.md#whole-body-goals) |
 | Robot base collisions with the world | Left out by design. Navigation relies on the lidars. | [2.3 Collisions](../migrations/02-mujoco/03-collisions.md) |
-| Localization in the map | Odometry only: a static `map` to `odom` transform. No AMCL and no localization from the ground truth, so the pose drifts. | [Drive with Nav2 and RViz](#drive-with-nav2-and-rviz) |
+| Localization in the map | Odometry only by default: a static `map` to `odom` transform, so the pose drifts. `truth_map_odom:=true` uses the ground truth instead. No AMCL. | [Drive with Nav2 and RViz](#drive-with-nav2-and-rviz) |
 | Interactive use of RViz | Not yet checked by a person. The plugin classes and topics of both RViz configs were checked. | [Drive with Nav2 and RViz](#drive-with-nav2-and-rviz) |
 | Nav2 with the head 3D lidar | The cloud is published and filtered, but the simulation Nav2 parameter file reads only `/scan`. The file is shared with Gazebo, which has no 3D lidar, and `collision_monitor` stops every Nav2 command while a source has no data. | [2.8 Head 3D Lidar](../migrations/02-mujoco/08-3d-lidar.md#still-open) |
 | `intensity`, `ring` and `time` in the 3D lidar cloud | The simulated cloud has `x`, `y` and `z` only | [2.8 Head 3D Lidar](../migrations/02-mujoco/08-3d-lidar.md#real-and-simulated) |
