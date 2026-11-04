@@ -38,6 +38,10 @@ Client (Python / C++ / CLI)
 | `both_arms_lift` | 15 (both arms + lift_joint) | Bimanual + lift |
 | `left_gripper` | 1 | Gripper open/close (use `control_gripper`) |
 | `right_gripper` | 1 | Gripper open/close (use `control_gripper`) |
+| `whole_body_left` | Planar base + `left_arm_lift` | Base, lift and arm together. Needs `base_mode:=whole_body`. |
+| `whole_body_right` | Planar base + `right_arm_lift` | Base, lift and arm together. Needs `base_mode:=whole_body`. |
+
+The arm and gripper groups never command the base. See [Move the base with a whole-body goal](../../docs/guides/manipulation.md#whole-body-goals).
 
 All arm groups run with `planningTime=5.0s` (`arm_planning_time`), `numPlanningAttempts=10000`, and the velocity and acceleration scaling of the `max_velocity_scaling_factor` and `max_acceleration_scaling_factor` parameters (default 0.5 and 0.3 from `joint_limits.yaml`).
 
@@ -49,6 +53,8 @@ All arm groups run with `planningTime=5.0s` (`arm_planning_time`), `numPlanningA
 # Requires openarm_bimanual_moveit_config to be sourced
 ros2 launch openarm_bimanual_commander_cpp commander.launch.py
 ```
+
+Arguments: `base_mode` (`fixed`, give it the same value as `moveit_only.launch.py`), `plan_only` (`false`), `use_sim_time` (`false`), `gripper_speed`, `gripper_init_pos`.
 
 ---
 

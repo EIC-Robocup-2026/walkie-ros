@@ -1,0 +1,10 @@
+<library path="unwrap_planar_heading">
+  <class name="openarm_bimanual_commander_cpp/UnwrapPlanarHeading"
+         type="openarm_bimanual_commander_cpp::UnwrapPlanarHeading"
+         base_class_type="planning_interface::PlanningResponseAdapter">
+    <description>
+      Makes the theta variable of planar joints continuous along a path, so that time
+      parameterization does not turn the base the long way round across +-pi.
+    </description>
+  </class>
+</library>

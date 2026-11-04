@@ -15,7 +15,7 @@ concurrency:
 
 env:
   # Tests that must pass. Lint tests (CTest label "linter") are excluded from this run.
-  TEST_PACKAGES: walkie_description openarm_bimanual_moveit_config topic_based_ros2_control
+  TEST_PACKAGES: walkie_description openarm_bimanual_moveit_config openarm_bimanual_commander_cpp topic_based_ros2_control
   # First-party packages whose lint tests run but do not fail the job, because they fail today.
   LINT_PACKAGES: robot_bringup robot_simulation robot_navigation dual_laser_merger joy_interface
   CCACHE_DIR: ${{ github.workspace }}/.ccache

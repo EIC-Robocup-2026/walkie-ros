@@ -46,6 +46,8 @@
 #include <vector>
 #include <algorithm>
 
+#include "whole_body_option.hpp"
+
 using MoveGroupInterface = moveit::planning_interface::MoveGroupInterface;
 using PlanningSceneInterface = moveit::planning_interface::PlanningSceneInterface;
 using GoToPose = my_robot_interfaces::action::GoToPose;
@@ -258,6 +260,12 @@ public:
         apply_planning_scene_client_ = node_->create_client<moveit_msgs::srv::ApplyPlanningScene>(
             "/apply_planning_scene", rclcpp::ServicesQoS(), callback_group_);
 
+        // Whole-body option, selected per request by group_name. Declares base_mode.
+        whole_body_ = std::make_unique<WholeBodyOption>(
+            node_, callback_group_, tf_buffer_, get_planning_scene_client_,
+            left_arm_->getRobotModel(), [this]() { flushPendingGraspRemovals(); });
+        planar_base_ = node_->get_parameter("base_mode").as_string() != "fixed";
+
         // ClearCollisionObjects: detach anything held by the grippers and remove
         // every world collision object from the planning scene. Trigger service
         // (no request fields); returns success + a count message.
@@ -420,11 +428,16 @@ public:
                         result.reason = name + " must be in (0, 1]";
                         return result;
                     }
+                    if (!whole_body_->validateParameter(p, result.reason)) {
+                        result.successful = false;
+                        return result;
+                    }
                 }
                 bool finger_changed = false;
                 bool table_changed = false;
                 bool octomap_changed = false;
                 for (const auto & p : params) {
+                    whole_body_->applyParameter(p);
                     if (p.get_name() == "planner_id") {
                         for (auto & grp : {left_arm_, right_arm_, left_arm_lift_,
                                            right_arm_lift_, both_arms_, both_arms_lift_})
@@ -482,10 +495,17 @@ public:
         }
 
         // Defer the table write (needs move_group up); reads table_enable live so
-        // it's a clean no-op when disabled.
+        // it's a clean no-op when disabled. Under a planar base_mode the table is
+        // written against the map frame, so a table added before map exists would
+        // land at the wrong place: keep retrying on this timer until map resolves.
         table_timer_ = node_->create_wall_timer(
             std::chrono::seconds(3),
             [this]() {
+                if (planar_base_ &&
+                    !tf_buffer_->canTransform("map", "base_footprint", tf2::TimePointZero)) {
+                    RCLCPP_INFO(node_->get_logger(), "Holding the table until map is available");
+                    return;
+                }
                 table_timer_->cancel();
                 buildAndApplyTable();
             },
@@ -692,6 +712,18 @@ public:
         if (group_name.empty()) {
             response->success = false;
             response->message = "Set 'execute_plan_group' param to the target group name first";
+            return;
+        }
+        if (WholeBodyOption::isWholeBodyName(group_name)) {
+            const auto outcome = whole_body_->executeStored(group_name);
+            response->success = outcome.success;
+            response->message = outcome.status;
+            return;
+        }
+        const auto arm_motion = whole_body_->beginArmMotion();
+        if (!arm_motion) {
+            response->success = false;
+            response->message = WholeBodyOption::armRefusedStatus();
             return;
         }
         auto it = stored_plans_.find(group_name);
@@ -1201,6 +1233,40 @@ public:
         return nullptr;
     }
 
+    // Runs the whole-body path and reports its outcome on the action. The goal is
+    // always accepted first, so a refusal reaches the client with its reason.
+    template <typename ActionT>
+    void finishWholeBody(const std::shared_ptr<rclcpp_action::ServerGoalHandle<ActionT>> & goal_handle,
+                         const std::string & group_name, const std::string & frame_id,
+                         const geometry_msgs::msg::Pose & target, bool cartesian)
+    {
+        const auto outcome = whole_body_->moveTo(
+            group_name, frame_id, target, cartesian, plan_only_,
+            [&goal_handle]() { return goal_handle->is_canceling(); });
+        auto result = std::make_shared<typename ActionT::Result>();
+        result->success = outcome.success;
+        result->status = outcome.status;
+        RCLCPP_INFO(node_->get_logger(), "[%s] %s", group_name.c_str(), outcome.status.c_str());
+        if (outcome.canceled) {
+            goal_handle->canceled(result);
+        } else if (outcome.success) {
+            goal_handle->succeed(result);
+        } else {
+            goal_handle->abort(result);
+        }
+    }
+
+    // Under a planar base_mode a Cartesian goal needs the transform to map, and
+    // without it MoveIt fails with code -21, so report the real reason. Under fixed
+    // this keeps the behaviour of today.
+    bool cartesianFrameUsable(bool cartesian, const std::string & frame, std::string & why)
+    {
+        if (!cartesian || !planar_base_) return true;
+        if (tf_buffer_->canTransform("map", frame, tf2::TimePointZero)) return true;
+        why = "Cannot plan a Cartesian path: no transform from " + frame + " to map";
+        return false;
+    }
+
     // --- Helper: gripper client selection ---
     rclcpp_action::Client<GripperCommand>::SharedPtr getGripperClient(const std::string & group_name)
     {
@@ -1214,7 +1280,7 @@ public:
     {
         if (!group) return false;
 
-        group->setStartStateToCurrentState();
+        whole_body_->setStartToCurrent(group);
         group->setPoseReferenceFrame("base_footprint");
         group->setGoalTolerance(0.02);
 
@@ -1507,7 +1573,8 @@ public:
         const std::shared_ptr<GetJointStates::Request> request,
         std::shared_ptr<GetJointStates::Response> response)
     {
-        auto group = getGroup(request->group_name);
+        const std::string group_name = WholeBodyOption::queryGroupFor(request->group_name);
+        auto group = getGroup(group_name);
         if (!group) {
             response->success = false;
             response->status  = "Invalid group: " + request->group_name;
@@ -1520,10 +1587,10 @@ public:
             response->status  = "Failed to get current robot state";
             return;
         }
-        auto jmg = state->getJointModelGroup(request->group_name);
+        auto jmg = state->getJointModelGroup(group_name);
         if (!jmg) {
             response->success = false;
-            response->status  = "Joint model group not found: " + request->group_name;
+            response->status  = "Joint model group not found: " + group_name;
             return;
         }
         response->joint_names = jmg->getVariableNames();
@@ -1540,7 +1607,7 @@ public:
         const std::shared_ptr<GetEEPose::Request> request,
         std::shared_ptr<GetEEPose::Response> response)
     {
-        auto group = getGroup(request->group_name);
+        auto group = getGroup(WholeBodyOption::queryGroupFor(request->group_name));
         if (!group) {
             response->success = false;
             response->status = "Invalid group: " + request->group_name;
@@ -1581,7 +1648,7 @@ public:
         std::shared_ptr<const GoToPose::Goal> goal)
     {
         (void)uuid;
-        if (!getGroup(goal->group_name)) {
+        if (!getGroup(goal->group_name) && !WholeBodyOption::isWholeBodyName(goal->group_name)) {
             RCLCPP_ERROR(node_->get_logger(), "Invalid group: %s", goal->group_name.c_str());
             return rclcpp_action::GoalResponse::REJECT;
         }
@@ -1608,17 +1675,6 @@ public:
     {
         auto result = std::make_shared<GoToPose::Result>();
         const auto goal = goal_handle->get_goal();
-        auto group = getGroup(goal->group_name);
-
-        if (!group) {
-            result->success = false; result->status = "Invalid Group";
-            goal_handle->abort(result); return;
-        }
-
-        group->setStartStateToCurrentState();
-        std::string frame = goal->frame_id.empty() ? "base_footprint" : goal->frame_id;
-        group->setPoseReferenceFrame(frame);
-        group->setGoalTolerance(0.02);
 
         tf2::Quaternion q;
         q.setRPY(goal->roll, goal->pitch, goal->yaw);
@@ -1629,6 +1685,34 @@ public:
         target_pose.position.y = goal->y;
         target_pose.position.z = goal->z;
         target_pose.orientation = tf2::toMsg(q);
+
+        if (WholeBodyOption::isWholeBodyName(goal->group_name)) {
+            finishWholeBody<GoToPose>(goal_handle, goal->group_name, goal->frame_id, target_pose,
+                                      goal->cartesian_path);
+            return;
+        }
+        const auto arm_motion = whole_body_->beginArmMotion();
+        if (!arm_motion) {
+            result->success = false; result->status = WholeBodyOption::armRefusedStatus();
+            goal_handle->abort(result); return;
+        }
+
+        auto group = getGroup(goal->group_name);
+
+        if (!group) {
+            result->success = false; result->status = "Invalid Group";
+            goal_handle->abort(result); return;
+        }
+
+        whole_body_->setStartToCurrent(group);
+        std::string frame = goal->frame_id.empty() ? "base_footprint" : goal->frame_id;
+        std::string frame_problem;
+        if (!cartesianFrameUsable(goal->cartesian_path, frame, frame_problem)) {
+            result->success = false; result->status = frame_problem;
+            goal_handle->abort(result); return;
+        }
+        group->setPoseReferenceFrame(frame);
+        group->setGoalTolerance(0.02);
 
         RCLCPP_INFO(node_->get_logger(), "[%s] Planning to X:%.2f Y:%.2f Z:%.2f",
                     goal->group_name.c_str(), goal->x, goal->y, goal->z);
@@ -1712,6 +1796,11 @@ public:
     {
         auto result = std::make_shared<GoToPoseRelative::Result>();
         const auto goal = goal_handle->get_goal();
+        const auto arm_motion = whole_body_->beginArmMotion();
+        if (!arm_motion) {
+            result->success = false; result->status = WholeBodyOption::armRefusedStatus();
+            goal_handle->abort(result); return;
+        }
         auto group = getGroup(goal->group_name);
 
         if (!group) {
@@ -1739,7 +1828,7 @@ public:
             goal_handle->abort(result); return;
         }
 
-        group->setStartStateToCurrentState();
+        whole_body_->setStartToCurrent(group);
         group->setPoseReferenceFrame(target_frame);
         group->setGoalTolerance(0.02);
 
@@ -1840,7 +1929,7 @@ public:
         std::shared_ptr<const GoToPoseQuaternion::Goal> goal)
     {
         (void)uuid;
-        if (!getGroup(goal->group_name)) {
+        if (!getGroup(goal->group_name) && !WholeBodyOption::isWholeBodyName(goal->group_name)) {
             RCLCPP_ERROR(node_->get_logger(), "Invalid group: %s", goal->group_name.c_str());
             return rclcpp_action::GoalResponse::REJECT;
         }
@@ -1867,17 +1956,6 @@ public:
     {
         auto result = std::make_shared<GoToPoseQuaternion::Result>();
         const auto goal = goal_handle->get_goal();
-        auto group = getGroup(goal->group_name);
-
-        if (!group) {
-            result->success = false; result->status = "Invalid Group";
-            goal_handle->abort(result); return;
-        }
-
-        group->setStartStateToCurrentState();
-        std::string frame = goal->frame_id.empty() ? "base_footprint" : goal->frame_id;
-        group->setPoseReferenceFrame(frame);
-        group->setGoalTolerance(0.02);
 
         tf2::Quaternion q(goal->qx, goal->qy, goal->qz, goal->qw);
         q.normalize();
@@ -1887,6 +1965,34 @@ public:
         target_pose.position.y = goal->y;
         target_pose.position.z = goal->z;
         target_pose.orientation = tf2::toMsg(q);
+
+        if (WholeBodyOption::isWholeBodyName(goal->group_name)) {
+            finishWholeBody<GoToPoseQuaternion>(goal_handle, goal->group_name, goal->frame_id, target_pose,
+                                                goal->cartesian_path);
+            return;
+        }
+        const auto arm_motion = whole_body_->beginArmMotion();
+        if (!arm_motion) {
+            result->success = false; result->status = WholeBodyOption::armRefusedStatus();
+            goal_handle->abort(result); return;
+        }
+
+        auto group = getGroup(goal->group_name);
+
+        if (!group) {
+            result->success = false; result->status = "Invalid Group";
+            goal_handle->abort(result); return;
+        }
+
+        whole_body_->setStartToCurrent(group);
+        std::string frame = goal->frame_id.empty() ? "base_footprint" : goal->frame_id;
+        std::string frame_problem;
+        if (!cartesianFrameUsable(goal->cartesian_path, frame, frame_problem)) {
+            result->success = false; result->status = frame_problem;
+            goal_handle->abort(result); return;
+        }
+        group->setPoseReferenceFrame(frame);
+        group->setGoalTolerance(0.02);
 
         RCLCPP_INFO(node_->get_logger(),
                     "[%s] Planning to X:%.2f Y:%.2f Z:%.2f | Q:[%.2f,%.2f,%.2f,%.2f]",
@@ -2078,6 +2184,11 @@ public:
     {
         auto result = std::make_shared<GoToHome::Result>();
         const auto goal = goal_handle->get_goal();
+        const auto arm_motion = whole_body_->beginArmMotion();
+        if (!arm_motion) {
+            RCLCPP_WARN(node_->get_logger(), "%s", WholeBodyOption::armRefusedStatus().c_str());
+            goal_handle->abort(result); return;
+        }
         auto group = getGroup(goal->group_name);
 
         if (!group) {
@@ -2090,7 +2201,7 @@ public:
         RCLCPP_INFO(node_->get_logger(), "Executing GoToHome (%s) for %s",
                     pose_name.c_str(), goal->group_name.c_str());
 
-        group->setStartStateToCurrentState();
+        whole_body_->setStartToCurrent(group);
         group->setPoseReferenceFrame("base_footprint");
         group->setGoalTolerance(0.02);
 
@@ -2188,6 +2299,11 @@ public:
     {
         auto result = std::make_shared<SetJointPosition::Result>();
         const auto goal = goal_handle->get_goal();
+        const auto arm_motion = whole_body_->beginArmMotion();
+        if (!arm_motion) {
+            result->success = false; result->status = WholeBodyOption::armRefusedStatus();
+            goal_handle->abort(result); return;
+        }
         auto group = getGroup(goal->group_name);
 
         if (!group) {
@@ -2195,7 +2311,7 @@ public:
             goal_handle->abort(result); return;
         }
 
-        group->setStartStateToCurrentState();
+        whole_body_->setStartToCurrent(group);
         group->setGoalTolerance(0.02);
 
         RCLCPP_INFO(node_->get_logger(), "SetJointPosition for %s:", goal->group_name.c_str());
@@ -2304,6 +2420,9 @@ private:
     std::shared_ptr<MoveGroupInterface> right_arm_lift_;
     std::shared_ptr<MoveGroupInterface> both_arms_;
     std::shared_ptr<MoveGroupInterface> both_arms_lift_;
+
+    std::unique_ptr<WholeBodyOption> whole_body_;
+    bool planar_base_{false};   // base_mode is map or whole_body
 
     std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;

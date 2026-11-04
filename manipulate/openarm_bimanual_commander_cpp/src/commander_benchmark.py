@@ -491,6 +491,11 @@ def main():
                         help="Sine trajectory frequency in Hz")
     args, _ = parser.parse_known_args()
 
+    # The benchmark sends joint streams, which whole_body_* groups refuse, and a run
+    # against them could move the base.
+    if args.group.startswith("whole_body_"):
+        parser.error(f"--group {args.group} is not supported: use an arm group")
+
     rclpy.init()
     node = BenchmarkNode(args.group)
 

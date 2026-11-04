@@ -21,7 +21,8 @@ from my_robot_interfaces.action import (
 from my_robot_interfaces.srv import GetEEPose, GetJointStates
 
 GROUPS = ["left_arm", "right_arm", "left_arm_lift", "right_arm_lift",
-          "both_arms", "both_arms_lift", "left_gripper", "right_gripper"]
+          "both_arms", "both_arms_lift", "left_gripper", "right_gripper",
+          "whole_body_left", "whole_body_right"]
 
 MENU = """
 ╔══════════════════════════════════════════╗
@@ -29,8 +30,9 @@ MENU = """
 ╚══════════════════════════════════════════╝
 Groups: left_arm  right_arm  left_arm_lift  right_arm_lift
         both_arms  both_arms_lift  left_gripper  right_gripper
+        whole_body_left  whole_body_right  (go_to_pose and go_to_pose_quat only, may move the base)
 
- [1] go_to_pose          x y z roll pitch yaw [frame] [cartesian]
+ [1] go_to_pose         x y z roll pitch yaw [frame] [cartesian]
  [2] go_to_pose_relative x y z roll pitch yaw [frame] [cartesian]
  [3] go_to_pose_quat     x y z qx qy qz qw   [frame] [cartesian]
  [4] go_to_home          group  (pose: home/standby/hands_up/pre-place/tray)
