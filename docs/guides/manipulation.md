@@ -218,10 +218,31 @@ expose them.
 | --- | --- | --- |
 | `planner_id` | `RRTConnect` | OMPL planner for the arm groups |
 | `arm_planning_time` | `5.0` | Planning time per request, in seconds |
+| `max_velocity_scaling_factor` | `0.5` from `config/joint_limits.yaml` | Velocity scaling for the arm groups, in (0, 1]. Applies to the next plan |
+| `max_acceleration_scaling_factor` | `0.3` from `config/joint_limits.yaml` | Acceleration scaling for the arm groups, in (0, 1]. Applies to the next plan |
 | `plan_only` | `false` | Plan without executing. The plan is stored per group |
 | `execute_plan_group` | empty | Group whose stored plan `/execute_stored_plan` runs |
 | `gripper_speed` | `0.1` from the launch file (`1.0` in code) | Gripper ramp speed; `<= 0` disables the ramp |
 | `grasp_scene_action` | `none` | `grasp`, `place`, or `none`, see [Grippers](#grippers) |
+
+!!! warning "The arms no longer run at full speed"
+    The commander used to run every arm group at full speed (`1.0`) and ignore
+    `joint_limits.yaml`. It now starts with the file's
+    `default_velocity_scaling_factor` (0.5) and
+    `default_acceleration_scaling_factor` (0.3), so arm moves take about twice
+    as long, in simulation too. The node rejects a value outside (0, 1], and
+    refuses to start with one. Write `1.0`, not `1`: the parameters are
+    doubles and reject an integer.
+
+    For full speed in one session:
+
+    ```bash
+    pixi run ros2 param set /bimanual_commander max_velocity_scaling_factor 1.0
+    pixi run ros2 param set /bimanual_commander max_acceleration_scaling_factor 1.0
+    ```
+
+    To change the default, edit the two values in `config/joint_limits.yaml`.
+    A plan stored with `plan_only` keeps the speed it was planned with.
 
 ??? info "Planning-scene parameters"
     | Parameter | Default | Meaning |
@@ -497,8 +518,11 @@ Named states, for `go_to_home` and for the MoveIt RViz panel:
     lift moves that are still in progress.
 
     Velocity and acceleration scaling defaults are in
-    `config/joint_limits.yaml` (0.5 and 0.3). The commander overrides both to
-    1.0 for the arm groups.
+    `config/joint_limits.yaml` (0.5 and 0.3). The commander reads them at
+    startup into `max_velocity_scaling_factor` and
+    `max_acceleration_scaling_factor`, see
+    [Change commander parameters](#change-commander-parameters). Lower scaling
+    gives longer planned durations, and the execution allowance grows with them.
 
 ### Run the package tests
 
@@ -565,7 +589,6 @@ the largest gain.
 | `moveit_demo_with_commander.launch.py` passes xacro arguments the description does not declare, and has no `right_joint2_fixed` | With `hardware_type:=real_robot` both arms stay mock, and `right_joint2_fixed` cannot be set | Use `moveit_demo.launch.py` plus `commander.launch.py` |
 | `commander.launch.py` does not set `use_sim_time` | In Gazebo, `move_group` and the controllers use simulation time but the commander does not, so it can fail to get the current robot state | Add `{"use_sim_time": True}` to the commander's `parameters` in `commander.launch.py` |
 | `commander.launch.py` builds the robot description from the package's `.setup_assistant` defaults | The commander's description ignores `hardware_type` and `right_joint2_fixed` | None in this repository |
-| The commander README gives a 1.0 s planning time | The code uses 5.0 s (`arm_planning_time`) | Trust the code |
 | `action/GoToPoseRelativeQuaternion.action` is not listed in `CMakeLists.txt` | No code is generated for it | Use `GoToPoseRelative` |
 
 ## Troubleshooting
