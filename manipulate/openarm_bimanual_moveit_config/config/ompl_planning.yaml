@@ -140,3 +140,13 @@ both_arms_lift:
     - BKPIECE
     - BITstar
     - TRRT
+whole_body_left:
+  longest_valid_segment_fraction: 0.003
+  default_planner_config: RRTConnect
+  planner_configs:
+    - RRTConnect
+whole_body_right:
+  longest_valid_segment_fraction: 0.003
+  default_planner_config: RRTConnect
+  planner_configs:
+    - RRTConnect

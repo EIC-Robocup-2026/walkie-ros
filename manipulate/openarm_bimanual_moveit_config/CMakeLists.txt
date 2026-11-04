@@ -22,6 +22,9 @@ if(BUILD_TESTING)
   # Checks that every link/joint named in the SRDF exists in the walkie URDF.
   ament_add_pytest_test(test_srdf_urdf_contract test/test_srdf_urdf_contract.py
     TIMEOUT 120)
+  # Checks that floor returns reach the octomap updater as rays that mark nothing.
+  ament_add_pytest_test(test_cloud_floor_gate test/test_cloud_floor_gate.py
+    TIMEOUT 60)
 endif()
 
 ament_package()
@@ -35,3 +38,8 @@ endif()
 
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 install(FILES .setup_assistant DESTINATION share/${PROJECT_NAME})
+install(PROGRAMS
+  scripts/cloud_floor_gate.py
+  scripts/octomap_jump_guard.py
+  scripts/wait_for_graph.py
+  DESTINATION lib/${PROJECT_NAME})

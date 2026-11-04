@@ -6,10 +6,12 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from moveit_configs_utils import MoveItConfigsBuilder
 
-def _make_nodes(context: LaunchContext, output_json_lc, collision_checks_lc, planning_trials_lc):
+def _make_nodes(context: LaunchContext, output_json_lc, collision_checks_lc, planning_trials_lc,
+                base_mode_lc):
     output_json = context.perform_substitution(output_json_lc)
     collision_checks = context.perform_substitution(collision_checks_lc)
     planning_trials = context.perform_substitution(planning_trials_lc)
+    base_mode = context.perform_substitution(base_mode_lc)
 
     mappings = {
         "ros2_control": "mock",
@@ -27,7 +29,7 @@ def _make_nodes(context: LaunchContext, output_json_lc, collision_checks_lc, pla
         )
         .robot_description_semantic(
             file_path="config/openarm_bimanual.srdf",
-            mappings={"right_joint2_fixed": "false"},
+            mappings={"right_joint2_fixed": "false", "base_mode": base_mode},
         )
         .planning_pipelines(pipelines=["ompl"])
         .to_moveit_configs()
@@ -53,6 +55,11 @@ def generate_launch_description():
         DeclareLaunchArgument("output_json", default_value="benchmark_results.json"),
         DeclareLaunchArgument("collision_checks", default_value="5000"),
         DeclareLaunchArgument("planning_trials", default_value="20"),
+        DeclareLaunchArgument(
+            "base_mode",
+            default_value="fixed",
+            description="Base model of the SRDF: fixed, map or whole_body.",
+        ),
     ]
 
     output_json = LaunchConfiguration("output_json")
@@ -61,7 +68,7 @@ def generate_launch_description():
 
     nodes_func = OpaqueFunction(
         function=_make_nodes,
-        args=[output_json, collision_checks, planning_trials],
+        args=[output_json, collision_checks, planning_trials, LaunchConfiguration("base_mode")],
     )
 
     return LaunchDescription(declared_arguments + [nodes_func])

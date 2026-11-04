@@ -32,6 +32,26 @@ default_acceleration_scaling_factor: 0.3
 # the planner reject the request. joint1 / joint2 differ between arms because the
 # URDF applies a per-arm offset (and reflection) to those two joints.
 joint_limits:
+  # Planar base variables, used only under base_mode map or whole_body. Unused
+  # keys are harmless under fixed. Time parameterization fails without velocity
+  # and acceleration limits on all three. x and y have no position limits because
+  # their values are map coordinates. 0.12 m/s is the speed that stays below
+  # Nav2's collision monitor slowdown in a tight space.
+  virtual_joint/x:
+    has_velocity_limits: true
+    max_velocity: 0.12
+    has_acceleration_limits: true
+    max_acceleration: 0.2
+  virtual_joint/y:
+    has_velocity_limits: true
+    max_velocity: 0.12
+    has_acceleration_limits: true
+    max_acceleration: 0.2
+  virtual_joint/theta:
+    has_velocity_limits: true
+    max_velocity: 0.3
+    has_acceleration_limits: true
+    max_acceleration: 0.4
   openarm_left_finger_joint1:
     min_position: 0.0
     max_position: 0.044

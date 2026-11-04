@@ -23,10 +23,10 @@ windows:
             enter: false
       # --- bottom row ---
       - shell_command:
-          - cmd: ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=real_robot
+          - cmd: ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=real_robot base_mode:=fixed
             enter: false
       - shell_command:
-          - cmd: ros2 launch openarm_bimanual_commander_cpp commander.launch.py
+          - cmd: ros2 launch openarm_bimanual_commander_cpp commander.launch.py base_mode:=fixed
             enter: false
       - shell_command:
           - cmd: ros2 launch joy_interface joy_control_smooth.launch.py

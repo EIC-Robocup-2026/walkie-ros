@@ -54,8 +54,8 @@ tmux send-keys -t "${P[0]}" -l 'ros2 run rmw_zenoh_cpp rmw_zenohd'
 tmux send-keys -t "${P[1]}" -l 'ros2 launch robot_bringup lift_homing.launch.py'
 tmux send-keys -t "${P[2]}" -l 'ros2 launch robot_bringup real_omnibot.launch.py'
 tmux send-keys -t "${P[3]}" -l 'ros2 launch robot_navigation localization_Nav2_real.launch.py'
-tmux send-keys -t "${P[4]}" -l 'ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=real_robot'
-tmux send-keys -t "${P[5]}" -l 'ros2 launch openarm_bimanual_commander_cpp commander.launch.py'
+tmux send-keys -t "${P[4]}" -l 'ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=real_robot base_mode:=fixed'
+tmux send-keys -t "${P[5]}" -l 'ros2 launch openarm_bimanual_commander_cpp commander.launch.py base_mode:=fixed'
 tmux send-keys -t "${P[6]}" -l 'ros2 launch joy_interface joy_control_smooth.launch.py'
 # P[7] left idle.
 

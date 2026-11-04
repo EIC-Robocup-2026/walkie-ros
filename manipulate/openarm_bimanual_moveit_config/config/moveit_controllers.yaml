@@ -18,13 +18,26 @@
 moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
 
 moveit_simple_controller_manager:
+  # base_controller is listed on every bring-up: an absent server does not delay
+  # startup, and only whole_body_* plans under a planar base_mode ever use it.
+  # The name matters. The execution manager dispatches controllers in name order,
+  # and base_controller has to sort before left_* and lift_* so that a base server
+  # that refuses a goal stops the dispatch before the arm and lift start moving.
   controller_names:
+    - base_controller
     - left_joint_trajectory_controller
     - right_joint_trajectory_controller
     - left_gripper_controller
     - right_gripper_controller
     - lift_controller
 
+  # Served by the whole_body_base_follower node, which reads multi_dof_trajectory.
+  base_controller:
+    type: FollowJointTrajectory
+    joints:
+      - virtual_joint
+    action_ns: follow_joint_trajectory
+    default: true
   left_joint_trajectory_controller:
     type: FollowJointTrajectory
     joints:

@@ -24,17 +24,44 @@
          when true, openarm_right_joint2 is a fixed URDF joint (0 DOF) and must
          not appear in group_state default values below. -->
     <xacro:arg name="right_joint2_fixed" default="false"/>
+    <!-- base_mode selects how the model anchors the base. It is the only thing
+         that varies in this file between modes:
+           fixed (default)  - fixed joint, world -> base_footprint; base never moves
+           map, whole_body  - planar joint, map -> base_footprint; the model frame
+                              and the octree frame become map
+         Keep map and whole_body identical here: the commander separates them
+         through its base_mode parameter. See docs/guides/manipulation.md. -->
+    <xacro:arg name="base_mode" default="fixed"/>
 
-    <!--VIRTUAL JOINT: connects world frame to walkie robot root-->
-    <virtual_joint name="virtual_joint" type="fixed" parent_frame="world" child_link="base_footprint"/>
+    <!--VIRTUAL JOINT: connects the model frame to walkie robot root-->
+    <xacro:if value="${'$(arg base_mode)' == 'fixed'}">
+        <virtual_joint name="virtual_joint" type="fixed" parent_frame="world" child_link="base_footprint"/>
+    </xacro:if>
+    <xacro:unless value="${'$(arg base_mode)' == 'fixed'}">
+        <virtual_joint name="virtual_joint" type="planar" parent_frame="map" child_link="base_footprint"/>
+    </xacro:unless>
 
     <!--GROUPS-->
-    <!-- WHOLE BODY GROUPS (Includes lift_joint) -->
+    <!-- ARM AND LIFT GROUPS (Include lift_joint; the base stays still) -->
     <group name="left_arm_lift">
         <chain base_link="base_link" tip_link="openarm_left_hand"/>
     </group>
     <group name="right_arm_lift">
         <chain base_link="base_link" tip_link="openarm_right_hand"/>
+    </group>
+
+    <!-- WHOLE BODY GROUPS (Base, lift and one arm). Stay unconditional so every
+         base_mode has the same group list; under the fixed joint they have no
+         base variables and the commander refuses them. Never define a group_state
+         on these groups, because their base values are absolute map coordinates,
+         and never give them a name ending in _lift. -->
+    <group name="whole_body_left">
+        <joint name="virtual_joint"/>
+        <group name="left_arm_lift"/>
+    </group>
+    <group name="whole_body_right">
+        <joint name="virtual_joint"/>
+        <group name="right_arm_lift"/>
     </group>
 
     <!-- ARM ONLY GROUPS (Ignores lift_joint) -->
