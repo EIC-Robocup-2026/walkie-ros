@@ -14,6 +14,7 @@ install(
   DESTINATION share/${PROJECT_NAME})
 
 install(PROGRAMS
+  scripts/ground_truth_map_odom.py
   scripts/lift_homing_node.py
   scripts/lift_homing_mock_node.py
   scripts/zed_watchdog.py

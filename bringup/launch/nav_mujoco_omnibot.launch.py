@@ -12,6 +12,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node, SetRemap
@@ -102,6 +103,13 @@ def generate_launch_description():
         default_value=os.path.join(pkg_robot_bringup, "config", "rviz", "mujoco_nav.rviz"),
         description="RViz config file",
     )
+    truth_map_odom = LaunchConfiguration("truth_map_odom")
+    declare_truth_map_odom_arg = DeclareLaunchArgument(
+        "truth_map_odom",
+        default_value="false",
+        description="Feed map -> odom from /mujoco_ground_truth/odom instead of a static "
+                    "identity, so the map pose of the base is the true one",
+    )
 
     mujoco_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -124,9 +132,18 @@ def generate_launch_description():
         output="screen",
         arguments=["--frame-id", "map", "--child-frame-id", "odom"],
         parameters=[{"use_sim_time": True}],
+        condition=UnlessCondition(truth_map_odom),
+    )
+    ground_truth_map_odom = Node(
+        package="robot_bringup",
+        executable="ground_truth_map_odom.py",
+        output="screen",
+        parameters=[{"use_sim_time": True}],
+        condition=IfCondition(truth_map_odom),
     )
 
-    # Simulation parameter substitutions via RewrittenYaml
+    # Simulation parameter substitutions via RewrittenYaml. state_topic lets the
+    # whole-body base follower see a monitor stop as soon as it happens.
     nav2_rewritten_params = RewrittenYaml(
         source_file=nav2_config,
         root_key="",
@@ -134,6 +151,7 @@ def generate_launch_description():
             "use_sim_time": "true",
             "local_costmap.local_costmap.ros__parameters.stvl_layer.enabled": "false",
             "collision_monitor.ros__parameters.pointcloud.enabled": "false",
+            "collision_monitor.ros__parameters.state_topic": "/collision_monitor_state",
         },
         convert_types=True,
     )
@@ -198,9 +216,11 @@ def generate_launch_description():
     ld.add_action(declare_headless_arg)
     ld.add_action(declare_use_rviz_arg)
     ld.add_action(declare_rviz_config_arg)
+    ld.add_action(declare_truth_map_odom_arg)
 
     ld.add_action(mujoco_launch)
     ld.add_action(map_to_odom)
+    ld.add_action(ground_truth_map_odom)
     ld.add_action(nav2_launch)
     ld.add_action(nav_commander)
 

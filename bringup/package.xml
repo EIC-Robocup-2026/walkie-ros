@@ -33,6 +33,9 @@
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>nav2_rviz_plugins</exec_depend>
   <exec_depend>robot_navigation</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>openarm_bimanual_moveit_config</exec_depend>
+  <exec_depend>openarm_bimanual_commander_cpp</exec_depend>
   <!-- mujoco_omnibot.launch.py also needs mujoco_ros2_control and the MuJoCo
        extension mujoco_3d_lidar (head 3D lidar), which the pixi environment
        provides. They are not declared so that rosdep does not install MuJoCo
