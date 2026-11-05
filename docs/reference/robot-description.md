@@ -392,7 +392,11 @@ git submodule foreach --recursive git lfs pull
     The collision meshes of the arm links, the hands, the wrist camera
     brackets, and the head mount (`HeadCameraMount_collision.stl`) are
     low-poly meshes of fewer than 100 triangles each. The ZED camera links
-    have no collision geometry.
+    have no collision geometry. Each collision mesh is in the frame of the
+    visual mesh of its link, because both use the same `<origin>`. For
+    example, the gripper rail of `collision/hand.stl` runs along y, the
+    finger travel axis, like `visual/hand.dae`. The simplified `hand.stl`
+    was exported rotated by 90 degrees about z until description `da46ecd`.
 
     Both changes came with the merge of description `main` (description
     `f6649ee`).

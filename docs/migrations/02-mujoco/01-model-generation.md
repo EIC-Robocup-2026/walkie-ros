@@ -81,6 +81,13 @@ D415 camera look simpler in the viewer and in simulated camera images.
     | `openarm_*_hand`, `openarm_*_left_finger`, `openarm_*_right_finger` | `meshes/openarm/ee/openarm_hand/visual/*.dae` | COLLADA |
     | `bottom_link` (D415 camera) | `urdf/walkie/depth_camera/d415/visual/d415.stl` | 425,160 faces, above the limit |
 
+    For these links the MuJoCo viewer shows the collision mesh, while RViz shows the visual
+    mesh unless its collision display is on. A collision mesh in the wrong frame is therefore
+    easy to miss in RViz and obvious in MuJoCo. The simplified
+    `meshes/openarm/ee/openarm_hand/collision/hand.stl` was rotated by 90 degrees about z, so
+    the gripper rail looked turned in the viewer. Description `da46ecd` fixed the mesh; the
+    generated `walkie.xml` did not change, because it references the mesh by path.
+
 ## Step 3: Import with MjSpec and set the options
 
 The script imports the prepared URDF with `mujoco.MjSpec.from_string()` (`MjSpec` is
