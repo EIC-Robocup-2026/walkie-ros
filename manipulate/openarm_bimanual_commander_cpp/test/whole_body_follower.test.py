@@ -21,7 +21,7 @@ import pytest
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.executors import MultiThreadedExecutor
-from std_msgs.msg import Empty, String
+from std_msgs.msg import Bool, String
 from tf2_ros import TransformBroadcaster
 from trajectory_msgs.msg import MultiDOFJointTrajectoryPoint
 
@@ -73,7 +73,7 @@ class World:
         self.lock = threading.Lock()
         self.reset()
         self.transforms = TransformBroadcaster(self.node)
-        self.heartbeat = self.node.create_publisher(Empty, '/whole_body/commander_alive', 10)
+        self.heartbeat = self.node.create_publisher(Bool, '/whole_body/commander_alive', 10)
         self.events = self.node.create_publisher(String, '/trajectory_execution_event', 10)
         self.monitor = self.node.create_publisher(
             CollisionMonitorState, '/collision_monitor_state', 10)
@@ -95,6 +95,10 @@ class World:
             self.commands = []
             self.stops = 0
             self.commander_alive = True
+            # Whether the heartbeat reports a running whole-body motion.
+            self.commander_executing = False
+            # The fraction of each command the base carries out.
+            self.command_scale = 1.0
             self.publish_tf = True
             self.follow_commands = True
             # What the real monitor does with a zero command when nothing is in the polygon.
@@ -111,7 +115,7 @@ class World:
         with self.lock:
             self.commands.append(command)
             if self.follow_commands:
-                self.twist = command
+                self.twist = tuple(self.command_scale * value for value in command)
             clear = self.monitor_clears_on_command
         if clear:
             self.set_monitor(CollisionMonitorState.DO_NOTHING, '')
@@ -148,8 +152,9 @@ class World:
     def beat(self):
         with self.lock:
             alive = self.commander_alive
+            executing = self.commander_executing
         if alive:
-            self.heartbeat.publish(Empty())
+            self.heartbeat.publish(Bool(data=executing))
 
     def set_monitor(self, action_type, polygon):
         self.monitor.publish(CollisionMonitorState(action_type=action_type, polygon_name=polygon))
@@ -268,11 +273,26 @@ class TestWholeBodyFollower(unittest.TestCase):
         handle = self.send(line_goal(START, 2.0))
         self.assertFalse(handle.accepted)
         self.assertEqual(self.world.get_commands(), [])
+        # The commander was idle, so there was nothing to stop.
+        self.assertEqual(self.world.get_stops(), 0)
 
     def test_stops_when_the_commander_goes_silent(self):
         handle = self.start()
         self.world.set(commander_alive=False)
         self.assert_aborted_with_stop(handle, 'commander', COMMANDER_TIMEOUT + PROMPT)
+
+    def test_silent_commander_during_a_motion_sends_one_stop(self):
+        # A whole-body motion that keeps the base still sends no goal here, but move_group
+        # would run it to the end for a commander that has died.
+        self.world.set(commander_executing=True)
+        time.sleep(0.5)
+        self.world.set(commander_alive=False)
+        deadline = time.monotonic() + COMMANDER_TIMEOUT + PROMPT
+        while time.monotonic() < deadline and self.world.get_stops() == 0:
+            time.sleep(0.05)
+        self.assertEqual(self.world.get_stops(), 1)
+        time.sleep(1.0)
+        self.assertEqual(self.world.get_stops(), 1)
 
     def test_refuses_a_goal_during_a_monitor_stop(self):
         self.world.set_monitor(CollisionMonitorState.STOP, 'PolygonStop')
@@ -313,6 +333,10 @@ class TestWholeBodyFollower(unittest.TestCase):
         handle = self.start()
         self.world.events.publish(String(data='stop'))
         self.assert_aborted_with_stop(handle, 'stop')
+        # MoveIt heard the same event, so the follower adds none of its own. Each one it
+        # sends could reach a later goal, because an event carries no time.
+        time.sleep(0.5)
+        self.assertEqual(self.world.get_stops(), 1)
 
     def test_old_stop_event_does_not_end_the_next_goal(self):
         self.world.events.publish(String(data='stop'))
@@ -339,8 +363,22 @@ class TestWholeBodyFollower(unittest.TestCase):
         self.assertFalse(self.send(line_goal(far_start, 2.0)).accepted)
         self.assertEqual(self.world.get_commands(), [])
 
-    def test_aborts_when_the_base_does_not_follow(self):
+    def test_aborts_at_once_when_the_base_does_not_move(self):
+        # What a collision monitor stop looks like when its state message never arrived.
         self.world.set(follow_commands=False)
         handle = self.start()
-        # 0.25 m of error at 0.12 m/s.
-        self.assert_aborted_with_stop(handle, 'tracking error', 2.1 + PROMPT)
+        # One stall window to fall 5 cm behind, and one more if the first ends just short.
+        self.assert_aborted_with_stop(handle, 'not moving', 1.0 + PROMPT)
+
+    def test_aborts_when_a_slow_base_falls_behind(self):
+        self.world.set(command_scale=0.3)
+        handle = self.start()
+        # At most 0.075 m/s against 0.12 m/s reaches 0.25 m of error after about 4.5 s.
+        self.assert_aborted_with_stop(handle, 'tracking error', 5.5 + PROMPT)
+
+    def test_a_slowed_base_is_not_stalled(self):
+        # A slowdown polygon at ratio 0.5. The base lags but moves.
+        self.world.set(command_scale=0.5)
+        handle = self.start(2.0)
+        outcome = self.world.wait(handle.get_result_async(), 8.0)
+        self.assertEqual(outcome.status, GoalStatus.STATUS_SUCCEEDED, outcome.result.error_string)

@@ -13,6 +13,7 @@ on /stub_world/command, and each one is answered with an event that carries its 
     {"id": 3, "base": [x, y, yaw]}       move the base at once
     {"id": 4, "base_velocity": 0.2}      drive the base along map x, in m/s
     {"id": 5, "abort": "lift_controller"}  abort the running goal of that controller
+    {"id": 6, "joints": {"lift_joint": 0.5}}  set joint positions at once
 """
 import json
 import math
@@ -138,6 +139,8 @@ class StubWorld(Node):
                 self.base_velocity = command['base_velocity']
             if 'abort' in command:
                 self.aborting.add(command['abort'])
+            if 'joints' in command:
+                self.joints.update(command['joints'])
         self.emit(ack=command['id'])
 
     def tick(self):

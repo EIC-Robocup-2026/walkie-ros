@@ -13,11 +13,17 @@
 // therefore also publishes "stop" on trajectory_execution_event, which halts the
 // arm and the lift with the base.
 //
-// Base motion needs a live caller. The commander publishes a heartbeat, and without
-// one this node refuses a goal and stops a running one, because move_group would
-// otherwise carry on with the plan of a commander that has died. A "stop" on
+// Base motion needs a live caller. The commander publishes a heartbeat that also says
+// whether one of its motions is executing. Without a heartbeat this node refuses a goal
+// and stops a running one, because move_group would otherwise carry on with the plan of
+// a commander that has died. When the heartbeat stops during a motion that sent no base
+// goal, this node still publishes one "stop" for move_group. A "stop" on
 // trajectory_execution_event also ends a goal directly, which still works when
 // move_group itself is what has hung.
+//
+// The collision monitor reports a STOP only when its state changes, so this node can
+// miss one. A base that lags its trajectory and does not move under the commands is
+// therefore treated as stopped, whatever the cause.
 
 #include <algorithm>
 #include <atomic>
@@ -35,7 +41,8 @@
 #include <nav2_msgs/msg/collision_monitor_state.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
-#include <std_msgs/msg/empty.hpp>
+#include <rmw/rmw.h>
+#include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/exceptions.h>
@@ -130,6 +137,12 @@ public:
     // Wall time. At the planned 0.12 m/s the base covers about 24 cm in this time, and
     // a machine under load can stall a healthy commander for a second.
     commander_timeout_ = declare_parameter<double>("commander_timeout", 2.0);
+    // Seconds between transform stamps. A base that lags by more than the errors below,
+    // and covered less than a tenth of them over this window, is not moving under the
+    // commands.
+    stall_time_ = declare_parameter<double>("stall_time", 0.5);
+    stall_error_ = declare_parameter<double>("stall_error", 0.05);
+    stall_yaw_error_ = declare_parameter<double>("stall_yaw_error", 0.1);
 
     tf_buffer_ = std::make_shared<tf2_ros::Buffer>(get_clock());
     tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -156,20 +169,33 @@ public:
         }
       },
       options);
+    // This node hears its own events too, and one that arrives late would end the next goal.
     event_sub_ = create_subscription<std_msgs::msg::String>(
       event_topic, 10,
-      [this](std_msgs::msg::String::ConstSharedPtr msg) {
-        if (msg->data == "stop") {
+      [this](std_msgs::msg::String::ConstSharedPtr msg, const rclcpp::MessageInfo & info) {
+        if (msg->data == "stop" && !fromOwnEventPublisher(info)) {
           stop_requested_ = true;
         }
       },
       options);
-    commander_sub_ = create_subscription<std_msgs::msg::Empty>(
+    commander_sub_ = create_subscription<std_msgs::msg::Bool>(
       commander_topic_, 10,
-      [this](std_msgs::msg::Empty::ConstSharedPtr) {
+      [this](std_msgs::msg::Bool::ConstSharedPtr msg) {
         last_heartbeat_ = std::chrono::steady_clock::now().time_since_epoch().count();
+        commander_executing_ = msg->data;
+        stop_sent_since_beat_ = false;
       },
       options);
+    silence_timer_ = create_wall_timer(
+      std::chrono::milliseconds(100),
+      [this]() {
+        if (commander_executing_ && !commanderAlive() && sendStopEvent()) {
+          RCLCPP_ERROR(
+            get_logger(), "The commander stopped reporting on %s during a motion: stop sent",
+            commander_topic_.c_str());
+        }
+      },
+      options.callback_group);
 
     server_ = rclcpp_action::create_server<FollowJointTrajectory>(
       this, "/base_controller/follow_joint_trajectory",
@@ -319,14 +345,17 @@ private:
     return true;
   }
 
-  std::optional<Pose2D> lookupBasePose()
+  std::optional<Pose2D> lookupBasePose(rclcpp::Time * stamp = nullptr)
   {
     try {
       const auto transform =
         tf_buffer_->lookupTransform(map_frame_, base_frame_, tf2::TimePointZero);
-      const double age = (now() - rclcpp::Time(transform.header.stamp)).seconds();
-      if (age > max_transform_age_) {
+      const rclcpp::Time transform_stamp(transform.header.stamp);
+      if ((now() - transform_stamp).seconds() > max_transform_age_) {
         return std::nullopt;
+      }
+      if (stamp) {
+        *stamp = transform_stamp;
       }
       Pose2D pose;
       pose.x = transform.transform.translation.x;
@@ -361,12 +390,45 @@ private:
     }
   }
 
-  void abortAll(const std::shared_ptr<GoalHandle> & goal_handle, const std::string & reason)
+  bool fromOwnEventPublisher(const rclcpp::MessageInfo & info) const
   {
-    publishStop();
+    bool same = false;
+    const rmw_gid_t own = event_pub_->get_gid();
+    if (rmw_compare_gids_equal(&info.get_rmw_message_info().publisher_gid, &own, &same) !=
+      RMW_RET_OK)
+    {
+      return false;
+    }
+    return same;
+  }
+
+  // One event per heartbeat period at most. Every event this node sends could reach a later
+  // goal, because an event carries no time, and move_group acts on the first one.
+  bool sendStopEvent()
+  {
+    if (stop_sent_since_beat_.exchange(true)) {
+      return false;
+    }
     std_msgs::msg::String event;
     event.data = "stop";
     event_pub_->publish(event);
+    return true;
+  }
+
+  // The first zero command goes out before the event, because the base is what can hit
+  // something. An abort caused by an incoming event sends none: move_group heard it too.
+  void abortAll(
+    const std::shared_ptr<GoalHandle> & goal_handle, const std::string & reason,
+    bool announce = true)
+  {
+    publishTwist(0.0, 0.0, 0.0);
+    if (announce) {
+      sendStopEvent();
+    }
+    for (int i = 0; i < 4; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      publishTwist(0.0, 0.0, 0.0);
+    }
     auto result = std::make_shared<FollowJointTrajectory::Result>();
     result->error_code = FollowJointTrajectory::Result::PATH_TOLERANCE_VIOLATED;
     result->error_string = reason;
@@ -382,6 +444,10 @@ private:
     feedback->multi_dof_joint_names = {joint_name_};
     rclcpp::WallRate rate(control_rate_);
     int tick = 0;
+    // The stall window runs on transform stamps. A transform that stops updating keeps
+    // its last pose in the buffer, and that is a stale transform, not a stalled base.
+    std::optional<Pose2D> window_pose;
+    rclcpp::Time window_stamp(0, 0, RCL_ROS_TIME);
 
     while (rclcpp::ok()) {
       if (goal_handle->is_canceling()) {
@@ -393,7 +459,7 @@ private:
         return;
       }
       if (stop_requested_) {
-        abortAll(goal_handle, "a stop was requested on trajectory_execution_event");
+        abortAll(goal_handle, "a stop was requested on trajectory_execution_event", false);
         return;
       }
       if (!commanderAlive()) {
@@ -409,7 +475,8 @@ private:
         abortAll(goal_handle, "collision monitor stop on polygon " + polygon);
         return;
       }
-      const auto current = lookupBasePose();
+      rclcpp::Time pose_stamp(0, 0, RCL_ROS_TIME);
+      const auto current = lookupBasePose(&pose_stamp);
       if (!current) {
         abortAll(
           goal_handle, "no fresh transform from " + map_frame_ + " to " + base_frame_);
@@ -428,6 +495,25 @@ private:
           goal_handle, "tracking error " + std::to_string(position_error) + " m, " +
           std::to_string(error_yaw) + " rad");
         return;
+      }
+      if (!window_pose || pose_stamp < window_stamp) {
+        window_pose = current;
+        window_stamp = pose_stamp;
+      }
+      if ((pose_stamp - window_stamp).seconds() >= stall_time_) {
+        const bool lagging =
+          position_error > stall_error_ || std::fabs(error_yaw) > stall_yaw_error_;
+        const double moved = std::hypot(current->x - window_pose->x, current->y - window_pose->y);
+        const double turned = std::fabs(normalizeAngle(current->yaw - window_pose->yaw));
+        if (lagging && moved < 0.1 * stall_error_ && turned < 0.1 * stall_yaw_error_) {
+          abortAll(
+            goal_handle, "the base is not moving under its commands (" +
+            std::to_string(position_error) + " m, " + std::to_string(error_yaw) +
+            " rad behind): a collision monitor stop or a dead command path");
+          return;
+        }
+        window_pose = current;
+        window_stamp = pose_stamp;
       }
       if (elapsed >= duration) {
         if (position_error <= goal_position_tolerance_ &&
@@ -490,6 +576,9 @@ private:
   double goal_settle_time_{3.0};
   double max_transform_age_{0.5};
   double commander_timeout_{2.0};
+  double stall_time_{0.5};
+  double stall_error_{0.05};
+  double stall_yaw_error_{0.1};
   std::string commander_topic_;
 
   std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
@@ -498,13 +587,16 @@ private:
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr event_pub_;
   rclcpp::Subscription<CollisionMonitorState>::SharedPtr monitor_sub_;
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr event_sub_;
-  rclcpp::Subscription<std_msgs::msg::Empty>::SharedPtr commander_sub_;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr commander_sub_;
+  rclcpp::TimerBase::SharedPtr silence_timer_;
   rclcpp_action::Server<FollowJointTrajectory>::SharedPtr server_;
 
   std::vector<TrajectorySample> samples_;
   std::atomic<bool> busy_{false};
   std::atomic<bool> monitor_stop_{false};
   std::atomic<bool> stop_requested_{false};
+  std::atomic<bool> commander_executing_{false};
+  std::atomic<bool> stop_sent_since_beat_{false};
   // steady_clock ticks. A start far in the past makes every check fail until the first beat.
   std::atomic<std::chrono::steady_clock::rep> last_heartbeat_{
     std::chrono::steady_clock::duration::min().count() / 2};

@@ -31,7 +31,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
-#include <std_msgs/msg/empty.hpp>
+#include <std_msgs/msg/bool.hpp>
 #include <std_srvs/srv/empty.hpp>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Vector3.h>
@@ -62,7 +62,8 @@ public:
     using FollowJointTrajectory = control_msgs::action::FollowJointTrajectory;
     using BasePose = std::array<double, 3>;  // x, y, yaw in map
     using CancelCheck = std::function<bool()>;
-    // Holds a motion slot until it is destroyed. Null when the motion is refused.
+    // Holds a motion slot until it is destroyed. Null when the motion is refused. A ticket
+    // can outlive this object in an execution thread, so it keeps the slot state alive.
     using MotionTicket = std::shared_ptr<void>;
 
     struct Outcome
@@ -158,21 +159,26 @@ public:
         // The execution manager waits for its controllers one after another and looks at an
         // aborted goal only when that controller's turn comes. An arm that aborts 1 s into a
         // 20 s plan would leave the base driving behind the wait for base_controller, so
-        // execute() hears about an abort directly. These are the controllers a whole-body
-        // plan can use, as named in moveit_controllers.yaml.
-        for (const std::string controller :
-             {"base_controller", "left_joint_trajectory_controller", "right_joint_trajectory_controller",
-              "lift_controller"}) {
+        // execute() hears about an abort directly.
+        for (const auto & [controller, joint] : controllerJoints()) {
+            (void)joint;
             controller_status_subs_.push_back(node_->create_subscription<action_msgs::msg::GoalStatusArray>(
                 "/" + controller + "/follow_joint_trajectory/_action/status",
                 rclcpp::QoS(10).reliable().transient_local(),
-                [this, controller](action_msgs::msg::GoalStatusArray::ConstSharedPtr msg) {
+                [this, controller = controller](action_msgs::msg::GoalStatusArray::ConstSharedPtr msg) {
                     std::lock_guard<std::mutex> lock(mutex_);
+                    auto & goals = controller_goals_[controller];
+                    goals.clear();
                     for (const auto & status : msg->status_list) {
-                        // A status array keeps finished goals for a while, so one abort
-                        // appears in many messages.
+                        const auto & uuid = status.goal_info.goal_id.uuid;
+                        goals.insert(uuid);
+                        // A status array keeps finished goals for a while, and another client
+                        // can use a controller this plan does not. Only a goal that appeared
+                        // after the execution began, on a controller the plan uses, is one
+                        // this execution sent.
                         if (status.status == action_msgs::msg::GoalStatus::STATUS_ABORTED &&
-                            seen_aborts_.insert(status.goal_info.goal_id.uuid).second) {
+                            watched_controllers_.count(controller) > 0 &&
+                            goals_before_execution_.count(uuid) == 0) {
                             aborted_controller_ = controller;
                         }
                     }
@@ -181,11 +187,21 @@ public:
         }
 
         // The base follower refuses goals without this and stops a running one when it ends,
-        // so a dead commander cannot leave the base driving. A wall timer, because this
-        // reports on the process and not on the simulation.
-        alive_pub_ = node_->create_publisher<std_msgs::msg::Empty>("/whole_body/commander_alive", 10);
+        // so a dead commander cannot leave the base driving. While a whole-body motion runs
+        // the message is true, and the follower stops move_group if it then ends, because a
+        // motion without a base goal would otherwise run on unwatched. A wall timer, because
+        // this reports on the process and not on the simulation.
+        alive_pub_ = node_->create_publisher<std_msgs::msg::Bool>("/whole_body/commander_alive", 10);
         alive_timer_ = node_->create_wall_timer(
-            std::chrono::milliseconds(200), [this]() { alive_pub_->publish(std_msgs::msg::Empty()); },
+            std::chrono::milliseconds(200),
+            [this]() {
+                std_msgs::msg::Bool beat;
+                {
+                    std::lock_guard<std::mutex> lock(motion_->mutex);
+                    beat.data = motion_->executing > 0;
+                }
+                alive_pub_->publish(beat);
+            },
             callback_group_);
 
         const std::vector<std::array<std::string, 4>> specs = {
@@ -250,12 +266,12 @@ public:
     // arm-on-arm behaviour is unchanged and this never refuses without a whole-body goal.
     MotionTicket beginArmMotion()
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (whole_body_active_) return nullptr;
-        ++arm_active_;
-        return MotionTicket(static_cast<void *>(this), [this](void *) {
-            std::lock_guard<std::mutex> release(mutex_);
-            --arm_active_;
+        std::lock_guard<std::mutex> lock(motion_->mutex);
+        if (motion_->whole_body_active) return nullptr;
+        ++motion_->arm_active;
+        return MotionTicket(motion_.get(), [motion = motion_](void *) {
+            std::lock_guard<std::mutex> release(motion->mutex);
+            --motion->arm_active;
         });
     }
 
@@ -270,7 +286,7 @@ public:
         group->setStartStateToCurrentState();
         if (base_mode_ == "fixed") return;
         clearVoxelsInsideRobot();
-        const auto start = repairedStart();
+        const auto start = repairedStart(group->getName());
         if (!start.joint_state.name.empty()) group->setStartState(start);
     }
 
@@ -279,18 +295,8 @@ public:
         const std::string & group_name, const std::string & frame_id, const geometry_msgs::msg::Pose & target,
         bool cartesian, bool plan_only, const CancelCheck & canceled)
     {
-        MotionTicket ticket;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (whole_body_active_ || arm_active_ > 0) {
-                return fail("Refused: another motion is in progress");
-            }
-            whole_body_active_ = true;
-            ticket = MotionTicket(static_cast<void *>(this), [this](void *) {
-                std::lock_guard<std::mutex> release(mutex_);
-                whole_body_active_ = false;
-            });
-        }
+        const MotionTicket ticket = beginWholeBodyMotion();
+        if (!ticket) return fail("Refused: another motion is in progress");
 
         std::string why;
         if (!passesGate(group_name, why)) return fail(why);
@@ -365,7 +371,6 @@ public:
     // MoveIt's own start check is one-sided for the planar joint, so this checks both sides.
     Outcome executeStored(const std::string & group_name)
     {
-        MotionTicket ticket;
         StoredPlan stored;
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -373,16 +378,10 @@ public:
             if (it == stored_.end()) {
                 return fail("No stored plan for group '" + group_name + "'");
             }
-            if (whole_body_active_ || arm_active_ > 0) {
-                return fail("Refused: another motion is in progress (plan still stored)");
-            }
-            whole_body_active_ = true;
-            ticket = MotionTicket(static_cast<void *>(this), [this](void *) {
-                std::lock_guard<std::mutex> release(mutex_);
-                whole_body_active_ = false;
-            });
             stored = it->second;
         }
+        const MotionTicket ticket = beginWholeBodyMotion();
+        if (!ticket) return fail("Refused: another motion is in progress (plan still stored)");
         std::string why;
         if (!passesGate(group_name, why)) return fail(why + " (plan still stored)");
         if (baseMovedSince(stored.base, why)) return fail(why + " (plan still stored)");
@@ -415,6 +414,52 @@ private:
         BasePose base;
         bool arm_only;
     };
+
+    // Shared with tickets and execution threads, which can outlive this object at shutdown.
+    struct MotionState
+    {
+        std::mutex mutex;
+        bool whole_body_active{false};
+        int arm_active{0};
+        int executing{0};  // whole-body executions move_group has not finished
+    };
+
+    MotionTicket beginWholeBodyMotion()
+    {
+        std::lock_guard<std::mutex> lock(motion_->mutex);
+        if (motion_->whole_body_active || motion_->arm_active > 0) return nullptr;
+        motion_->whole_body_active = true;
+        return MotionTicket(motion_.get(), [motion = motion_](void *) {
+            std::lock_guard<std::mutex> release(motion->mutex);
+            motion->whole_body_active = false;
+        });
+    }
+
+    // The controllers a whole-body plan can use, as named in moveit_controllers.yaml, each
+    // with a joint that only it moves.
+    static const std::vector<std::pair<std::string, std::string>> & controllerJoints()
+    {
+        static const std::vector<std::pair<std::string, std::string>> joints = {
+            {"base_controller", "virtual_joint"},
+            {"left_joint_trajectory_controller", "openarm_left_joint1"},
+            {"right_joint_trajectory_controller", "openarm_right_joint1"},
+            {"lift_controller", "lift_joint"}};
+        return joints;
+    }
+
+    static std::set<std::string> controllersOf(const MoveGroupInterface::Plan & plan)
+    {
+        std::set<std::string> joints(
+            plan.trajectory.joint_trajectory.joint_names.begin(), plan.trajectory.joint_trajectory.joint_names.end());
+        joints.insert(
+            plan.trajectory.multi_dof_joint_trajectory.joint_names.begin(),
+            plan.trajectory.multi_dof_joint_trajectory.joint_names.end());
+        std::set<std::string> controllers;
+        for (const auto & [controller, joint] : controllerJoints()) {
+            if (joints.count(joint) > 0) controllers.insert(controller);
+        }
+        return controllers;
+    }
 
     static Outcome fail(const std::string & status)
     {
@@ -506,12 +551,20 @@ private:
         return true;
     }
 
-    // The Nav2 action with an active goal, or an empty string.
+    // The Nav2 action with an active goal, or an empty string. A server that dies during a
+    // goal never reports its end, and its last status stays latched here, so an action
+    // whose status topic has no publisher left counts as idle.
     std::string nav2ActiveAction()
     {
-        std::lock_guard<std::mutex> lock(mutex_);
-        for (const auto & [action, active] : nav2_active_) {
-            if (active) return action;
+        std::vector<std::string> active;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (const auto & [action, on] : nav2_active_) {
+                if (on) active.push_back(action);
+            }
+        }
+        for (const auto & action : active) {
+            if (node_->count_publishers("/" + action + "/_action/status") > 0) return action;
         }
         return "";
     }
@@ -683,23 +736,32 @@ private:
         RCLCPP_WARN(node_->get_logger(), "Clearing the octomap: the current state touches voxels at%s", links.c_str());
         auto cleared = clear_octomap_->async_send_request(std::make_shared<std_srvs::srv::Empty::Request>());
         if (cleared.wait_for(std::chrono::seconds(2)) != std::future_status::ready) return;
-        // The updater runs at about 5 Hz, so this lets it put back what the camera sees.
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        // The camera publishes at about 5 Hz of the node's clock, so a second on that clock
+        // lets the updater put back what the camera sees. A simulator below real time
+        // stretches that second; the wall bound catches a clock that has stopped.
+        const rclcpp::Time cleared_at = node_->now();
+        const auto give_up = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while ((node_->now() - cleared_at).seconds() < 1.0 && std::chrono::steady_clock::now() < give_up) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
     }
 
     // A position controller can stop just past a joint limit, and from there every plan
     // fails with "Start state out of bounds" until something moves that joint. MoveIt's
     // fix_start_state does not help: it only normalizes continuous and planar joints. So
     // a joint slightly past its limit starts from the limit. A joint farther out than
-    // this is left alone, and MoveIt reports it, because that is a real fault.
-    moveit_msgs::msg::RobotState startAtJointLimits()
+    // this is left alone, and MoveIt reports it, because that is a real fault. MoveIt
+    // checks the bounds of the planned group only, so other joints keep their real value.
+    moveit_msgs::msg::RobotState startAtJointLimits(const std::vector<std::string> & variables)
     {
         const double tolerance = 0.02;
         moveit_msgs::msg::RobotState start;
         start.is_diff = true;
         std::lock_guard<std::mutex> lock(mutex_);
-        for (const auto & [name, value] : joint_positions_) {
-            if (!model_->hasJointModel(name)) continue;
+        for (const auto & name : variables) {
+            const auto known = joint_positions_.find(name);
+            if (known == joint_positions_.end()) continue;
+            const double value = known->second;
             const auto & bounds = model_->getVariableBounds(name);
             if (!bounds.position_bounded_) continue;
             const double limit = std::clamp(value, bounds.min_position_, bounds.max_position_);
@@ -755,10 +817,17 @@ private:
     }
 
     // The current state with the small repairs a plan needs to be able to start from it.
-    moveit_msgs::msg::RobotState repairedStart()
+    // Each repair changes only joints of the planned group: the trajectory commands those
+    // joints alone, so a change to any other joint would plan for a robot that is not there.
+    // A group without the lift therefore gets no raise, and MoveIt reports the contact.
+    moveit_msgs::msg::RobotState repairedStart(const std::string & group_name)
     {
-        auto start = startAtJointLimits();
-        raiseLiftOutOfSelfContact(start);
+        if (!model_->hasJointModelGroup(group_name)) return moveit_msgs::msg::RobotState();
+        const auto & variables = model_->getJointModelGroup(group_name)->getVariableNames();
+        auto start = startAtJointLimits(variables);
+        if (std::find(variables.begin(), variables.end(), "lift_joint") != variables.end()) {
+            raiseLiftOutOfSelfContact(start);
+        }
         return start;
     }
 
@@ -904,7 +973,7 @@ private:
             joints["virtual_joint/y"] = sample[1];
             joints["virtual_joint/theta"] = sample[2];
             // By-name start: the current-state message fails to plan in part of the heading range.
-            moveit_msgs::msg::RobotState start = repairedStart();
+            moveit_msgs::msg::RobotState start = repairedStart(entry.body->getName());
             start.joint_state.name.insert(
                 start.joint_state.name.end(), {"virtual_joint/x", "virtual_joint/y", "virtual_joint/theta"});
             start.joint_state.position.insert(start.joint_state.position.end(), {base[0], base[1], base[2]});
@@ -993,8 +1062,8 @@ private:
     // the execution manager does not act on one controller's abort until it reaches that
     // controller. So execute() runs on its own thread while this loop watches for every
     // reason to stop. The thread owns copies of what it uses, so it stays safe if it
-    // outlives this call, and its copy of the ticket keeps the motion slot taken until
-    // move_group has really finished.
+    // outlives this call or this object, and its copy of the ticket keeps the motion slot
+    // taken until move_group has really finished.
     Outcome execute(
         const std::shared_ptr<MoveGroupInterface> & group, const MoveGroupInterface::Plan & plan,
         const CancelCheck & canceled, const MotionTicket & ticket)
@@ -1004,12 +1073,32 @@ private:
             std::lock_guard<std::mutex> lock(mutex_);
             margin = execution_margin_;
             aborted_controller_.clear();
+            watched_controllers_ = controllersOf(plan);
+            goals_before_execution_.clear();
+            for (const auto & [controller, goals] : controller_goals_) {
+                (void)controller;
+                goals_before_execution_.insert(goals.begin(), goals.end());
+            }
         }
         auto promise = std::make_shared<std::promise<int>>();
-        auto future = promise->get_future();
+        const std::shared_future<int> future = promise->get_future().share();
         auto plan_copy = std::make_shared<MoveGroupInterface::Plan>(plan);
-        std::thread([group, plan_copy, promise, ticket]() {
-            promise->set_value(group->execute(*plan_copy).val);
+        {
+            std::lock_guard<std::mutex> lock(motion_->mutex);
+            ++motion_->executing;
+        }
+        std::thread([group, plan_copy, promise, ticket, motion = motion_]() {
+            int code = moveit_msgs::msg::MoveItErrorCodes::FAILURE;
+            try {
+                code = group->execute(*plan_copy).val;
+            } catch (const std::exception &) {
+                // The context shut down during the motion.
+            }
+            {
+                std::lock_guard<std::mutex> lock(motion->mutex);
+                --motion->executing;
+            }
+            promise->set_value(code);
         }).detach();
 
         // Trajectories run on the node's clock, and a simulator can run far below real
@@ -1047,19 +1136,37 @@ private:
 
     // stop() only reaches what the execution manager is already running. A request still on
     // its way to move_group would start after it, so the stop repeats until execute() ends.
+    // The caller gets its answer after 10 s at most, and a thread carries on the repeats.
     static Outcome halt(
-        const std::shared_ptr<MoveGroupInterface> & group, std::future<int> & future, Outcome outcome)
+        const std::shared_ptr<MoveGroupInterface> & group, const std::shared_future<int> & future, Outcome outcome)
     {
         const auto give_up = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-        group->stop();
-        while (future.wait_for(std::chrono::milliseconds(500)) != std::future_status::ready) {
-            if (std::chrono::steady_clock::now() > give_up) {
-                outcome.status += " (move_group has not finished: new whole-body and arm goals stay refused until it does)";
-                return outcome;
-            }
-            group->stop();
+        if (!stopUntilFinished(group, future, give_up)) {
+            std::thread([group, future]() {
+                stopUntilFinished(group, future, std::chrono::steady_clock::time_point::max());
+            }).detach();
+            outcome.status +=
+                " (move_group has not finished: the stop repeats, and new whole-body and arm goals stay refused, "
+                "until it does)";
         }
         return outcome;
+    }
+
+    // Returns whether execute() finished before the given time.
+    static bool stopUntilFinished(
+        const std::shared_ptr<MoveGroupInterface> & group, const std::shared_future<int> & future,
+        std::chrono::steady_clock::time_point give_up)
+    {
+        do {
+            if (!rclcpp::ok()) return true;
+            try {
+                group->stop();
+            } catch (const std::exception &) {
+                return true;  // The context shut down.
+            }
+            if (std::chrono::steady_clock::now() > give_up) return false;
+        } while (future.wait_for(std::chrono::milliseconds(500)) != std::future_status::ready);
+        return true;
     }
 
     std::shared_ptr<rclcpp::Node> node_;
@@ -1074,7 +1181,7 @@ private:
     std::vector<rclcpp::Subscription<action_msgs::msg::GoalStatusArray>::SharedPtr> nav2_status_subs_;
     std::vector<rclcpp::Subscription<action_msgs::msg::GoalStatusArray>::SharedPtr> controller_status_subs_;
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
-    rclcpp::Publisher<std_msgs::msg::Empty>::SharedPtr alive_pub_;
+    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr alive_pub_;
     rclcpp::TimerBase::SharedPtr alive_timer_;
     std::function<void()> on_motion_success_;
 
@@ -1091,10 +1198,15 @@ private:
     double goal_joint_tolerance_{0.001};
     double execution_margin_{15.0};
     std::map<std::string, bool> nav2_active_;
-    std::set<std::array<uint8_t, 16>> seen_aborts_;
+    // The goals each controller's status topic lists, and which of them existed before
+    // the current execution: only a new goal on a controller of the plan is its abort.
+    std::map<std::string, std::set<std::array<uint8_t, 16>>> controller_goals_;
+    std::set<std::array<uint8_t, 16>> goals_before_execution_;
+    std::set<std::string> watched_controllers_;
     std::string aborted_controller_;
     std::map<std::string, double> joint_positions_;
     std::map<std::string, StoredPlan> stored_;
-    bool whole_body_active_{false};
-    int arm_active_{0};
+
+    // Shared with the tickets and the execute threads, which can outlive this object.
+    std::shared_ptr<MotionState> motion_{std::make_shared<MotionState>()};
 };

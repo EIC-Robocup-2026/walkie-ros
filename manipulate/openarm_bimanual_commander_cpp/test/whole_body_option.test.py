@@ -134,6 +134,54 @@ class TestWholeBodyOption(unittest.TestCase):
         self.client.node.destroy_publisher(publisher)
         self.assertIn('Nav2 has an active goal', status)
 
+    def test_status_left_by_a_dead_nav2_server_does_not_refuse(self):
+        # A server that dies during a goal never reports its end, so its last status
+        # stays EXECUTING in every subscriber.
+        latched = QoSProfile(
+            depth=10, reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        topic = '/navigate_through_poses/_action/status'
+        publisher = self.client.node.create_publisher(GoalStatusArray, topic, latched)
+        active = GoalStatusArray(status_list=[GoalStatus(status=GoalStatus.STATUS_EXECUTING)])
+        status = ''
+        for _ in range(10):
+            publisher.publish(active)
+            time.sleep(0.5)
+            status = self.client.pose(
+                'whole_body_left', harness.NEAR_TARGET, frame='base_footprint').status
+            if 'Nav2 has an active goal' in status:
+                break
+            self.client.reset_world()
+        self.client.node.destroy_publisher(publisher)
+        try:
+            self.assertIn('Nav2 has an active goal', status)
+            # The commander sees the server leave the graph.
+            time.sleep(2.0)
+            self.client.reset_world()
+            result = self.client.pose('whole_body_left', harness.NEAR_TARGET, frame='base_footprint')
+            self.assertTrue(result.success, result.status)
+        finally:
+            # An EXECUTING status left in the commander would refuse every later test.
+            cleanup = self.client.node.create_publisher(GoalStatusArray, topic, latched)
+            time.sleep(1.0)
+            cleanup.publish(GoalStatusArray())
+            time.sleep(1.0)
+            self.client.node.destroy_publisher(cleanup)
+
+    def test_start_repair_only_changes_joints_of_the_group(self):
+        # In the home pose the right arm's fingers reach the base below a lift position of
+        # about 0.495 m, so this state is in contact with the robot itself.
+        self.client.command(joints={'lift_joint': 0.488})
+        self.client.settle()
+        # left_arm cannot move the lift. A start with the lift raised would describe a
+        # robot that is not there, so MoveIt has to see the contact and refuse.
+        self.assertFalse(self.client.named('left_arm', 'standby').success)
+        self.assertEqual(self.client.goals(), [])
+        # left_arm_lift moves the lift, so it plans from the raised lift and the controller
+        # closes the difference.
+        self.assertTrue(self.client.named('left_arm_lift', 'standby').success)
+        self.assertIn(harness.LEFT_ARM, self.client.controllers())
+
     def test_refused_while_the_base_is_moving(self):
         self.client.command(base_velocity=0.2)
         self.client.settle()

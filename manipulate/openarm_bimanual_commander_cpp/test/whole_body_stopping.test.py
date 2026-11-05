@@ -11,12 +11,14 @@ import time
 import unittest
 
 from action_msgs.msg import GoalStatus, GoalStatusArray
+from control_msgs.action import FollowJointTrajectory
 from launch import LaunchDescription
 import launch_testing
 import pytest
 import rclpy
+from rclpy.action import ActionClient
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from std_msgs.msg import Empty
+from std_msgs.msg import Bool
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import whole_body_harness as harness  # noqa: E402
@@ -193,20 +195,54 @@ class TestWholeBodyStopping(unittest.TestCase):
                 return
         self.fail(f'No delay landed between the two looks at the base: {statuses}')
 
-    def test_commander_reports_that_it_is_alive(self):
+    def test_abort_on_a_controller_outside_the_plan_does_not_stop_the_motion(self):
+        handle = self.start_frozen_far_goal()
+        # Another client's goal on the right arm, which a whole_body_left plan does not use.
+        right_arm = ActionClient(
+            self.client.node, FollowJointTrajectory,
+            f'/{harness.RIGHT_ARM}/follow_joint_trajectory')
+        try:
+            self.assertTrue(right_arm.wait_for_server(timeout_sec=10.0))
+            other = self.client.wait(right_arm.send_goal_async(FollowJointTrajectory.Goal()), 10.0)
+            self.assertTrue(other.accepted)
+            self.client.command(abort=harness.RIGHT_ARM)
+            self.client.wait(other.get_result_async(), 10.0)
+            result = handle.get_result_async()
+            time.sleep(2.0)
+            if result.done():
+                self.fail(f'The motion stopped: {result.result().result.status}')
+            self.client.command(freeze=False)
+            outcome = self.client.wait(result, 60.0)
+            self.assertTrue(outcome.result.success, outcome.result.status)
+        finally:
+            right_arm.destroy()
+
+    def test_commander_reports_that_it_is_alive_and_executing(self):
         beats = []
         lock = threading.Lock()
 
-        def on_beat(_message):
+        def on_beat(message):
             with lock:
-                beats.append(time.monotonic())
+                beats.append(message.data)
 
         subscription = self.client.node.create_subscription(
-            Empty, '/whole_body/commander_alive', on_beat, 10)
-        time.sleep(3.0)
-        self.client.node.destroy_subscription(subscription)
-        with lock:
-            self.assertGreaterEqual(len(beats), 5)
+            Bool, '/whole_body/commander_alive', on_beat, 10)
+        try:
+            time.sleep(3.0)
+            with lock:
+                self.assertGreaterEqual(len(beats), 5)
+                self.assertFalse(any(beats), 'The commander reported a motion while idle')
+            handle = self.start_frozen_far_goal()
+            time.sleep(1.0)
+            with lock:
+                self.assertTrue(beats[-1], 'The commander did not report its motion')
+            self.client.wait(handle.cancel_goal_async(), 30.0)
+            self.client.wait(handle.get_result_async(), PROMPT_STOP)
+            time.sleep(1.0)
+            with lock:
+                self.assertFalse(beats[-1], 'The commander still reports a motion that ended')
+        finally:
+            self.client.node.destroy_subscription(subscription)
 
     def test_near_goal_after_an_arm_goal_keeps_the_base_still(self):
         # The sequence of the MuJoCo demo. In one run the arm goal left the arm in a state
