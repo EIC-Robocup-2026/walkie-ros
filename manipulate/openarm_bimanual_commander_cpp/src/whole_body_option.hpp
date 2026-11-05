@@ -30,6 +30,7 @@
 #include <moveit_msgs/srv/get_state_validity.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
+#include <rmw/types.h>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_srvs/srv/empty.hpp>
@@ -46,9 +47,11 @@
 #include <cmath>
 #include <functional>
 #include <future>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <random>
 #include <set>
 #include <string>
@@ -143,15 +146,19 @@ public:
         for (const std::string action : {"navigate_to_pose", "navigate_through_poses", "follow_path"}) {
             nav2_status_subs_.push_back(node_->create_subscription<action_msgs::msg::GoalStatusArray>(
                 "/" + action + "/_action/status", rclcpp::QoS(10).reliable().transient_local(),
-                [this, action](action_msgs::msg::GoalStatusArray::ConstSharedPtr msg) {
-                    bool active = false;
+                [this, action](
+                    action_msgs::msg::GoalStatusArray::ConstSharedPtr msg, const rclcpp::MessageInfo & info) {
+                    Nav2Status reported;
                     for (const auto & status : msg->status_list) {
-                        active = active || status.status == action_msgs::msg::GoalStatus::STATUS_ACCEPTED ||
-                                 status.status == action_msgs::msg::GoalStatus::STATUS_EXECUTING ||
-                                 status.status == action_msgs::msg::GoalStatus::STATUS_CANCELING;
+                        reported.active = reported.active ||
+                                          status.status == action_msgs::msg::GoalStatus::STATUS_ACCEPTED ||
+                                          status.status == action_msgs::msg::GoalStatus::STATUS_EXECUTING ||
+                                          status.status == action_msgs::msg::GoalStatus::STATUS_CANCELING;
                     }
+                    const auto & gid = info.get_rmw_message_info().publisher_gid;
+                    std::copy(std::begin(gid.data), std::end(gid.data), reported.server.begin());
                     std::lock_guard<std::mutex> lock(mutex_);
-                    nav2_active_[action] = active;
+                    nav2_status_[action] = reported;
                 },
                 options));
         }
@@ -162,6 +169,11 @@ public:
         // execute() hears about an abort directly.
         for (const auto & [controller, joint] : controllerJoints()) {
             (void)joint;
+            // Any client may ask a server for a goal's result by its UUID, and the result
+            // carries the server's reason, which move_group logs but does not return.
+            result_clients_[controller] = node_->create_client<GetResultService>(
+                "/" + controller + "/follow_joint_trajectory/_action/get_result", rclcpp::ServicesQoS(),
+                callback_group_);
             controller_status_subs_.push_back(node_->create_subscription<action_msgs::msg::GoalStatusArray>(
                 "/" + controller + "/follow_joint_trajectory/_action/status",
                 rclcpp::QoS(10).reliable().transient_local(),
@@ -173,13 +185,24 @@ public:
                         const auto & uuid = status.goal_info.goal_id.uuid;
                         goals.insert(uuid);
                         // A status array keeps finished goals for a while, and another client
-                        // can use a controller this plan does not. Only a goal that appeared
-                        // after the execution began, on a controller the plan uses, is one
-                        // this execution sent.
-                        if (status.status == action_msgs::msg::GoalStatus::STATUS_ABORTED &&
+                        // can use a controller this plan does not. Only a goal that is new
+                        // since the execution began, on a controller the plan uses, is one
+                        // this execution sent. The server stamps a goal when it accepts it,
+                        // which also rules out the late status of an older goal that never
+                        // reached this list, and one accepted after the execution ended, which
+                        // is not its cause. Another client's new goal on the same controller
+                        // still counts during the execution: it preempts this execution's goal
+                        // anyway. The first abort is kept, because the stop it causes can
+                        // abort others.
+                        const rclcpp::Time accepted(status.goal_info.stamp, RCL_ROS_TIME);
+                        if (aborted_controller_.empty() &&
+                            status.status == action_msgs::msg::GoalStatus::STATUS_ABORTED &&
                             watched_controllers_.count(controller) > 0 &&
-                            goals_before_execution_.count(uuid) == 0) {
+                            goals_before_execution_.count(uuid) == 0 &&
+                            accepted >= execution_started_ - rclcpp::Duration::from_seconds(0.1) &&
+                            (!execution_ended_ || accepted <= *execution_ended_)) {
                             aborted_controller_ = controller;
+                            aborted_goal_ = uuid;
                         }
                     }
                 },
@@ -187,19 +210,19 @@ public:
         }
 
         // The base follower refuses goals without this and stops a running one when it ends,
-        // so a dead commander cannot leave the base driving. While a whole-body motion runs
-        // the message is true, and the follower stops move_group if it then ends, because a
-        // motion without a base goal would otherwise run on unwatched. A wall timer, because
-        // this reports on the process and not on the simulation.
+        // so a dead commander cannot leave the base driving. While a whole-body goal executes,
+        // including one the arm reaches alone, the message is true, and the follower stops
+        // move_group if it then ends, because a motion without a base goal would otherwise
+        // run on unwatched. Arm-group goals do not set it. A wall timer, because this reports
+        // on the process and not on the simulation. Beats go out under the motion lock, so
+        // they keep the order of the changes they report (see execute()).
         alive_pub_ = node_->create_publisher<std_msgs::msg::Bool>("/whole_body/commander_alive", 10);
         alive_timer_ = node_->create_wall_timer(
             std::chrono::milliseconds(200),
             [this]() {
                 std_msgs::msg::Bool beat;
-                {
-                    std::lock_guard<std::mutex> lock(motion_->mutex);
-                    beat.data = motion_->executing > 0;
-                }
+                std::lock_guard<std::mutex> lock(motion_->mutex);
+                beat.data = motion_->executing > 0;
                 alive_pub_->publish(beat);
             },
             callback_group_);
@@ -415,6 +438,16 @@ private:
         bool arm_only;
     };
 
+    using Gid = std::array<uint8_t, RMW_GID_STORAGE_SIZE>;
+    using Uuid = std::array<uint8_t, 16>;
+    using GetResultService = FollowJointTrajectory::Impl::GetResultService;
+
+    struct Nav2Status
+    {
+        bool active{false};
+        Gid server{};  // the publisher of the status
+    };
+
     // Shared with tickets and execution threads, which can outlive this object at shutdown.
     struct MotionState
     {
@@ -552,19 +585,22 @@ private:
     }
 
     // The Nav2 action with an active goal, or an empty string. A server that dies during a
-    // goal never reports its end, and its last status stays latched here, so an action
-    // whose status topic has no publisher left counts as idle.
+    // goal never reports its end, and its last status stays here. A restarted server
+    // publishes no status until its first goal, so a publisher on the topic proves nothing
+    // either: a status counts only while the server that sent it is still in the graph.
     std::string nav2ActiveAction()
     {
-        std::vector<std::string> active;
+        std::vector<std::pair<std::string, Gid>> active;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            for (const auto & [action, on] : nav2_active_) {
-                if (on) active.push_back(action);
+            for (const auto & [action, status] : nav2_status_) {
+                if (status.active) active.emplace_back(action, status.server);
             }
         }
-        for (const auto & action : active) {
-            if (node_->count_publishers("/" + action + "/_action/status") > 0) return action;
+        for (const auto & [action, server] : active) {
+            for (const auto & endpoint : node_->get_publishers_info_by_topic("/" + action + "/_action/status")) {
+                if (endpoint.endpoint_gid() == server) return action;
+            }
         }
         return "";
     }
@@ -1074,6 +1110,8 @@ private:
             margin = execution_margin_;
             aborted_controller_.clear();
             watched_controllers_ = controllersOf(plan);
+            execution_started_ = node_->now();
+            execution_ended_.reset();
             goals_before_execution_.clear();
             for (const auto & [controller, goals] : controller_goals_) {
                 (void)controller;
@@ -1083,10 +1121,18 @@ private:
         auto promise = std::make_shared<std::promise<int>>();
         const std::shared_future<int> future = promise->get_future().share();
         auto plan_copy = std::make_shared<MoveGroupInterface::Plan>(plan);
+        // The follower has to hear of the motion before move_group starts it: a commander
+        // that dies between two beats would otherwise leave nothing that stops an arm-only
+        // plan. So the motion is announced at once, and goes out after the beat had time
+        // to arrive.
         {
             std::lock_guard<std::mutex> lock(motion_->mutex);
             ++motion_->executing;
+            std_msgs::msg::Bool beat;
+            beat.data = true;
+            alive_pub_->publish(beat);
         }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
         std::thread([group, plan_copy, promise, ticket, motion = motion_]() {
             int code = moveit_msgs::msg::MoveItErrorCodes::FAILURE;
             try {
@@ -1108,43 +1154,102 @@ private:
         const rclcpp::Time started = node_->now();
         const auto wall_deadline = std::chrono::steady_clock::now() + std::chrono::duration<double>(10.0 * allowed);
         while (future.wait_for(std::chrono::milliseconds(50)) != std::future_status::ready) {
-            if (canceled()) return halt(group, future, cancelResult());
+            if (canceled()) return halt(group, future, ticket, cancelResult());
             std::string aborted;
+            Uuid aborted_goal{};
             {
                 std::lock_guard<std::mutex> lock(mutex_);
                 aborted = aborted_controller_;
+                aborted_goal = aborted_goal_;
             }
             if (!aborted.empty()) {
-                return halt(group, future, fail("Stopped: " + aborted + " aborted its goal"));
+                return halt(
+                    group, future, ticket, fail("Stopped: " + aborted + " aborted its goal"),
+                    [this, aborted, aborted_goal]() { return abortReason(aborted, aborted_goal); });
             }
             const std::string nav2_action = nav2ActiveAction();
             if (!nav2_action.empty()) {
-                return halt(group, future, fail("Stopped: Nav2 took a goal on " + nav2_action));
+                return halt(group, future, ticket, fail("Stopped: Nav2 took a goal on " + nav2_action));
             }
             if ((node_->now() - started).seconds() > allowed || std::chrono::steady_clock::now() > wall_deadline) {
                 return halt(
-                    group, future, fail("Execution deadline of " + std::to_string(allowed) + " s exceeded: stop sent"));
+                    group, future, ticket,
+                    fail("Execution deadline of " + std::to_string(allowed) + " s exceeded: stop sent"));
             }
+        }
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            execution_ended_ = node_->now();
         }
         const int code = future.get();
         if (canceled()) return cancelResult();
         if (code != moveit_msgs::msg::MoveItErrorCodes::SUCCESS) {
-            return fail("Execution Failed, MoveIt code " + std::to_string(code));
+            std::string status = "Execution Failed, MoveIt code " + std::to_string(code);
+            // A server that aborts also stops move_group (the base follower sends a stop
+            // event first), so execute() can end before the abort reaches the status topic.
+            // The end time has no margin: a controller clock slightly ahead can drop the
+            // reason, which is better than naming another client's later abort.
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+            while (true) {
+                std::string aborted;
+                Uuid aborted_goal{};
+                {
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    aborted = aborted_controller_;
+                    aborted_goal = aborted_goal_;
+                }
+                if (!aborted.empty()) {
+                    status += ": " + aborted + " aborted its goal" + abortReason(aborted, aborted_goal);
+                    break;
+                }
+                if (std::chrono::steady_clock::now() > deadline) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+            return fail(status);
         }
         return Outcome{true, false, "Success"};
+    }
+
+    // The server's own reason for an abort, such as the base follower's collision monitor
+    // stop or stall, in parentheses, or nothing when the server does not answer in time.
+    std::string abortReason(const std::string & controller, const Uuid & goal)
+    {
+        const auto client = result_clients_.find(controller);
+        if (client == result_clients_.end() || !client->second->service_is_ready()) return "";
+        auto request = std::make_shared<GetResultService::Request>();
+        request->goal_id.uuid = goal;
+        auto future = client->second->async_send_request(request);
+        if (future.wait_for(std::chrono::milliseconds(500)) != std::future_status::ready) {
+            client->second->remove_pending_request(future);
+            return "";
+        }
+        // get() hands over the only reference to the response, so it is kept here.
+        const auto response = future.get();
+        const std::string & reason = response->result.error_string;
+        return reason.empty() ? "" : " (" + reason + ")";
     }
 
     // stop() only reaches what the execution manager is already running. A request still on
     // its way to move_group would start after it, so the stop repeats until execute() ends.
     // The caller gets its answer after 10 s at most, and a thread carries on the repeats.
+    // That thread keeps the motion slot, so no later goal can start while it still sends
+    // stops: one of them could otherwise end that goal. The detail, such as an abort reason,
+    // is fetched after the stops, and after the thread has taken them over, so it delays none.
     static Outcome halt(
-        const std::shared_ptr<MoveGroupInterface> & group, const std::shared_future<int> & future, Outcome outcome)
+        const std::shared_ptr<MoveGroupInterface> & group, const std::shared_future<int> & future,
+        const MotionTicket & ticket, Outcome outcome, const std::function<std::string()> & detail = {})
     {
         const auto give_up = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-        if (!stopUntilFinished(group, future, give_up)) {
-            std::thread([group, future]() {
+        const bool finished = stopUntilFinished(group, future, give_up);
+        if (!finished) {
+            std::thread([group, future, ticket]() {
+                // A stop went out just before this thread started.
+                if (future.wait_for(std::chrono::milliseconds(500)) == std::future_status::ready) return;
                 stopUntilFinished(group, future, std::chrono::steady_clock::time_point::max());
             }).detach();
+        }
+        if (detail) outcome.status += detail();
+        if (!finished) {
             outcome.status +=
                 " (move_group has not finished: the stop repeats, and new whole-body and arm goals stay refused, "
                 "until it does)";
@@ -1152,12 +1257,12 @@ private:
         return outcome;
     }
 
-    // Returns whether execute() finished before the given time.
+    // Returns whether execute() finished before the given time. No stop goes out once it has.
     static bool stopUntilFinished(
         const std::shared_ptr<MoveGroupInterface> & group, const std::shared_future<int> & future,
         std::chrono::steady_clock::time_point give_up)
     {
-        do {
+        while (future.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
             if (!rclcpp::ok()) return true;
             try {
                 group->stop();
@@ -1165,7 +1270,8 @@ private:
                 return true;  // The context shut down.
             }
             if (std::chrono::steady_clock::now() > give_up) return false;
-        } while (future.wait_for(std::chrono::milliseconds(500)) != std::future_status::ready);
+            future.wait_for(std::chrono::milliseconds(500));
+        }
         return true;
     }
 
@@ -1180,6 +1286,8 @@ private:
     rclcpp_action::Client<FollowJointTrajectory>::SharedPtr base_server_;
     std::vector<rclcpp::Subscription<action_msgs::msg::GoalStatusArray>::SharedPtr> nav2_status_subs_;
     std::vector<rclcpp::Subscription<action_msgs::msg::GoalStatusArray>::SharedPtr> controller_status_subs_;
+    // Filled in the constructor only, so it is read without the lock.
+    std::map<std::string, rclcpp::Client<GetResultService>::SharedPtr> result_clients_;
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr alive_pub_;
     rclcpp::TimerBase::SharedPtr alive_timer_;
@@ -1197,13 +1305,17 @@ private:
     double acceleration_scaling_{1.0};
     double goal_joint_tolerance_{0.001};
     double execution_margin_{15.0};
-    std::map<std::string, bool> nav2_active_;
+    std::map<std::string, Nav2Status> nav2_status_;
     // The goals each controller's status topic lists, and which of them existed before
     // the current execution: only a new goal on a controller of the plan is its abort.
-    std::map<std::string, std::set<std::array<uint8_t, 16>>> controller_goals_;
-    std::set<std::array<uint8_t, 16>> goals_before_execution_;
+    std::map<std::string, std::set<Uuid>> controller_goals_;
+    std::set<Uuid> goals_before_execution_;
     std::set<std::string> watched_controllers_;
+    rclcpp::Time execution_started_{0, 0, RCL_ROS_TIME};
+    // Set once move_group has returned. Empty while the execution runs.
+    std::optional<rclcpp::Time> execution_ended_;
     std::string aborted_controller_;
+    Uuid aborted_goal_{};
     std::map<std::string, double> joint_positions_;
     std::map<std::string, StoredPlan> stored_;
 

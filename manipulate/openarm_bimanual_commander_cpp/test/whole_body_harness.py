@@ -34,6 +34,8 @@ FORWARD_PITCH = math.pi / 2.0
 BASE_CONTROLLER = 'base_controller'
 LEFT_ARM = 'left_joint_trajectory_controller'
 RIGHT_ARM = 'right_joint_trajectory_controller'
+# What the stub world gives as the reason of an abort, followed by the controller name.
+ABORT_REASON = 'stub world aborted '
 # The controllers each arm group has to reach. The lift only moves if the named state
 # differs in lift height, so it is not required here.
 ARM_GROUPS = {

@@ -377,8 +377,20 @@ class TestWholeBodyFollower(unittest.TestCase):
         self.assert_aborted_with_stop(handle, 'tracking error', 5.5 + PROMPT)
 
     def test_a_slowed_base_is_not_stalled(self):
-        # A slowdown polygon at ratio 0.5. The base lags but moves.
+        # At half speed the base lags by more than stall_error, but it moves.
         self.world.set(command_scale=0.5)
         handle = self.start(2.0)
         outcome = self.world.wait(handle.get_result_async(), 8.0)
         self.assertEqual(outcome.status, GoalStatus.STATUS_SUCCEEDED, outcome.result.error_string)
+
+    def test_keeps_up_under_the_shipped_slowdown(self):
+        # PolygonSlow scales commands by 0.8 in the Nav2 parameters. 0.17 m/s is the plan's
+        # fastest base speed, 0.12 m/s on both axes.
+        self.world.set(command_scale=0.8)
+        speed = math.hypot(SPEED, SPEED)
+        duration = 6.0
+        handle = self.send(line_goal(START, duration, speed))
+        self.assertTrue(handle.accepted)
+        outcome = self.world.wait(handle.get_result_async(), duration + 5.0)
+        self.assertEqual(outcome.status, GoalStatus.STATUS_SUCCEEDED, outcome.result.error_string)
+        self.assertAlmostEqual(self.world.get_pose()[0], START[0] + speed * duration, delta=0.03)

@@ -21,6 +21,9 @@ from std_srvs.srv import SetBool
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import whole_body_harness as harness  # noqa: E402
 
+# The QoS of an action status topic.
+LATCHED = QoSProfile(
+    depth=10, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
 
 @pytest.mark.launch_test
 def generate_test_description():
@@ -113,11 +116,8 @@ class TestWholeBodyOption(unittest.TestCase):
                     self.assertGreater(goals[0]['base_end'][2], 0.0, 'The goal did not cross the seam')
 
     def test_refused_while_nav2_has_a_goal(self):
-        latched = QoSProfile(
-            depth=10, reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL)
         publisher = self.client.node.create_publisher(
-            GoalStatusArray, '/navigate_to_pose/_action/status', latched)
+            GoalStatusArray, '/navigate_to_pose/_action/status', LATCHED)
         active = GoalStatusArray(status_list=[GoalStatus(status=GoalStatus.STATUS_EXECUTING)])
         # The commander's status subscription can take a moment to match.
         status = ''
@@ -134,14 +134,9 @@ class TestWholeBodyOption(unittest.TestCase):
         self.client.node.destroy_publisher(publisher)
         self.assertIn('Nav2 has an active goal', status)
 
-    def test_status_left_by_a_dead_nav2_server_does_not_refuse(self):
-        # A server that dies during a goal never reports its end, so its last status
-        # stays EXECUTING in every subscriber.
-        latched = QoSProfile(
-            depth=10, reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL)
-        topic = '/navigate_through_poses/_action/status'
-        publisher = self.client.node.create_publisher(GoalStatusArray, topic, latched)
+    def refuse_with_a_nav2_server_that_dies(self, topic):
+        """Return the refusal a Nav2 server with a running goal causes, after it died."""
+        publisher = self.client.node.create_publisher(GoalStatusArray, topic, LATCHED)
         active = GoalStatusArray(status_list=[GoalStatus(status=GoalStatus.STATUS_EXECUTING)])
         status = ''
         for _ in range(10):
@@ -153,6 +148,21 @@ class TestWholeBodyOption(unittest.TestCase):
                 break
             self.client.reset_world()
         self.client.node.destroy_publisher(publisher)
+        return status
+
+    def clear_nav2_status(self, topic):
+        # An EXECUTING status left in the commander would refuse every later test.
+        cleanup = self.client.node.create_publisher(GoalStatusArray, topic, LATCHED)
+        time.sleep(1.0)
+        cleanup.publish(GoalStatusArray())
+        time.sleep(1.0)
+        self.client.node.destroy_publisher(cleanup)
+
+    def test_status_left_by_a_dead_nav2_server_does_not_refuse(self):
+        # A server that dies during a goal never reports its end, so its last status
+        # stays EXECUTING in every subscriber.
+        topic = '/navigate_through_poses/_action/status'
+        status = self.refuse_with_a_nav2_server_that_dies(topic)
         try:
             self.assertIn('Nav2 has an active goal', status)
             # The commander sees the server leave the graph.
@@ -161,12 +171,23 @@ class TestWholeBodyOption(unittest.TestCase):
             result = self.client.pose('whole_body_left', harness.NEAR_TARGET, frame='base_footprint')
             self.assertTrue(result.success, result.status)
         finally:
-            # An EXECUTING status left in the commander would refuse every later test.
-            cleanup = self.client.node.create_publisher(GoalStatusArray, topic, latched)
-            time.sleep(1.0)
-            cleanup.publish(GoalStatusArray())
-            time.sleep(1.0)
-            self.client.node.destroy_publisher(cleanup)
+            self.clear_nav2_status(topic)
+
+    def test_status_left_before_a_nav2_restart_does_not_refuse(self):
+        # A restarted server publishes no status before its first goal, so the old one's
+        # EXECUTING is all a subscriber has, while the topic has a publisher again.
+        topic = '/follow_path/_action/status'
+        status = self.refuse_with_a_nav2_server_that_dies(topic)
+        restarted = self.client.node.create_publisher(GoalStatusArray, topic, LATCHED)
+        try:
+            self.assertIn('Nav2 has an active goal', status)
+            time.sleep(2.0)
+            self.client.reset_world()
+            result = self.client.pose('whole_body_left', harness.NEAR_TARGET, frame='base_footprint')
+            self.assertTrue(result.success, result.status)
+        finally:
+            self.client.node.destroy_publisher(restarted)
+            self.clear_nav2_status(topic)
 
     def test_start_repair_only_changes_joints_of_the_group(self):
         # In the home pose the right arm's fingers reach the base below a lift position of

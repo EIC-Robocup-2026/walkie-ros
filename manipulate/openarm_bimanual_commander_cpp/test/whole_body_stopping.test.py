@@ -17,8 +17,9 @@ import launch_testing
 import pytest
 import rclpy
 from rclpy.action import ActionClient
+from rclpy.duration import Duration
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import whole_body_harness as harness  # noqa: E402
@@ -39,16 +40,17 @@ def generate_test_description():
 
 class TestWholeBodyStopping(unittest.TestCase):
 
+    # The QoS of an action status topic.
+    LATCHED = QoSProfile(
+        depth=10, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+
     @classmethod
     def setUpClass(cls):
         rclpy.init()
         cls.client = harness.CommanderClient('whole_body_stopping_test')
         cls.client.wait_ready()
-        latched = QoSProfile(
-            depth=10, reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.TRANSIENT_LOCAL)
         cls.nav2_status = cls.client.node.create_publisher(
-            GoalStatusArray, '/navigate_to_pose/_action/status', latched)
+            GoalStatusArray, '/navigate_to_pose/_action/status', cls.LATCHED)
         # The commander's status subscription can take a moment to match.
         time.sleep(2.0)
 
@@ -144,6 +146,20 @@ class TestWholeBodyStopping(unittest.TestCase):
         self.assertIn(harness.BASE_CONTROLLER, outcome.result.status)
         self.assertIn(harness.LEFT_ARM, self.client.canceled())
 
+    def test_the_caller_hears_why_a_controller_aborted(self):
+        # The base follower's reason, a collision monitor stop or a stall, is what tells
+        # the caller whether a retry can help. move_group only logs it.
+        for controller in (harness.BASE_CONTROLLER, harness.LEFT_ARM):
+            with self.subTest(controller=controller):
+                self.client.reset_world()
+                handle = self.start_frozen_far_goal()
+                self.client.command(abort=controller)
+                outcome = self.client.wait(handle.get_result_async(), PROMPT_STOP)
+                self.assertFalse(outcome.result.success)
+                self.assertIn(harness.ABORT_REASON + controller, outcome.result.status)
+                self.client.command(freeze=False)
+                self.client.settle()
+
     def test_an_old_abort_does_not_stop_the_next_goal(self):
         handle = self.start_frozen_far_goal()
         self.client.command(abort=harness.LEFT_ARM)
@@ -216,6 +232,71 @@ class TestWholeBodyStopping(unittest.TestCase):
             self.assertTrue(outcome.result.success, outcome.result.status)
         finally:
             right_arm.destroy()
+
+    def test_a_late_status_of_an_older_goal_does_not_stop_the_motion(self):
+        handle = self.start_frozen_far_goal()
+        # The status of a left arm goal accepted half a minute ago, which this commander never
+        # saw, arriving now.
+        topic = f'/{harness.LEFT_ARM}/follow_joint_trajectory/_action/status'
+        late = self.client.node.create_publisher(GoalStatusArray, topic, self.LATCHED)
+        try:
+            status = GoalStatus(status=GoalStatus.STATUS_ABORTED)
+            status.goal_info.goal_id.uuid = list(os.urandom(16))
+            accepted = self.client.node.get_clock().now() - Duration(seconds=30.0)
+            status.goal_info.stamp = accepted.to_msg()
+            late.publish(GoalStatusArray(status_list=[status]))
+            result = handle.get_result_async()
+            time.sleep(2.0)
+            if result.done():
+                self.fail(f'The motion stopped: {result.result().result.status}')
+            self.client.command(freeze=False)
+            outcome = self.client.wait(result, 60.0)
+            self.assertTrue(outcome.result.success, outcome.result.status)
+        finally:
+            self.client.node.destroy_publisher(late)
+
+    def test_commander_reports_a_motion_before_move_group_runs_it(self):
+        # The follower stops move_group for a commander that dies during a motion, but only
+        # if it heard of the motion first. A goal the arm reaches alone sends the follower no
+        # goal of its own, and in the stub world it ends long before the next periodic beat.
+        lock = threading.Lock()
+        reported = []
+        dispatched = []
+
+        def on_beat(message):
+            if message.data:
+                with lock:
+                    reported.append(time.monotonic())
+
+        def on_event(message):
+            if '"goal"' in message.data:
+                with lock:
+                    dispatched.append(time.monotonic())
+
+        beats = self.client.node.create_subscription(
+            Bool, '/whole_body/commander_alive', on_beat, 10)
+        # Volatile, so the events of earlier tests do not arrive.
+        events = self.client.node.create_subscription(
+            String, '/stub_world/events', on_event,
+            QoSProfile(depth=100, reliability=ReliabilityPolicy.RELIABLE))
+        try:
+            for attempt in range(5):
+                with self.subTest(attempt=attempt):
+                    self.client.reset_world()
+                    with lock:
+                        reported.clear()
+                        dispatched.clear()
+                    result = self.client.pose(
+                        'whole_body_left', harness.NEAR_TARGET, frame='base_footprint')
+                    self.assertTrue(result.success, result.status)
+                    self.assertIn('base fixed', result.status)
+                    with lock:
+                        self.assertTrue(dispatched, 'No goal reached the stub controllers')
+                        self.assertTrue(reported, 'The commander never reported the motion')
+                        self.assertLess(reported[0], dispatched[0])
+        finally:
+            self.client.node.destroy_subscription(beats)
+            self.client.node.destroy_subscription(events)
 
     def test_commander_reports_that_it_is_alive_and_executing(self):
         beats = []

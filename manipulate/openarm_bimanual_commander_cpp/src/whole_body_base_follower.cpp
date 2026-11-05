@@ -126,8 +126,12 @@ public:
     max_angular_speed_ = declare_parameter<double>("max_angular_speed", 0.6);
     start_position_tolerance_ = declare_parameter<double>("start_position_tolerance", 0.05);
     start_yaw_tolerance_ = declare_parameter<double>("start_yaw_tolerance", 0.1);
-    // A collision monitor slowdown at ratio 0.4 lags 12 cm behind at 0.12 m/s, and
-    // that is normal near a table, so the abort threshold sits well above it.
+    // The collision monitor's PolygonSlow (ratio 0.8) leaves 0.2 m/s of max_linear_speed,
+    // above the plan's fastest base speed of 0.17 m/s on a diagonal, so a slowdown alone
+    // keeps the base on the plan. A ratio below about 0.7 makes the base fall behind until
+    // this abort: raise max_linear_speed with it. FootprintApproach slows the base when it
+    // heads for an obstacle within about 0.2 m, so a plan that ends that close to one can
+    // lag into this abort or the stall check.
     abort_position_error_ = declare_parameter<double>("abort_position_error", 0.25);
     abort_yaw_error_ = declare_parameter<double>("abort_yaw_error", 0.35);
     goal_position_tolerance_ = declare_parameter<double>("goal_position_tolerance", 0.02);

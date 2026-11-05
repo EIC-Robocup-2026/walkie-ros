@@ -12,7 +12,8 @@ on /stub_world/command, and each one is answered with an event that carries its 
     {"id": 2, "freeze": true}            hold goals until a cancel or an unfreeze
     {"id": 3, "base": [x, y, yaw]}       move the base at once
     {"id": 4, "base_velocity": 0.2}      drive the base along map x, in m/s
-    {"id": 5, "abort": "lift_controller"}  abort the running goal of that controller
+    {"id": 5, "abort": "lift_controller"}  abort the running goal of that controller,
+                                         with the reason ABORT_REASON + the controller name
     {"id": 6, "joints": {"lift_joint": 0.5}}  set joint positions at once
 """
 import json
@@ -37,6 +38,8 @@ TRAJECTORY_CONTROLLERS = (
     'left_joint_trajectory_controller', 'right_joint_trajectory_controller', 'lift_controller')
 GRIPPER_CONTROLLERS = ('left_gripper_controller', 'right_gripper_controller')
 BASE_CONTROLLER = 'base_controller'
+# The error_string of an aborted goal is this plus the controller name.
+ABORT_REASON = 'stub world aborted '
 INITIAL_STATE_NAME = 'home'
 INITIAL_STATE_GROUP = 'both_arms_lift'
 
@@ -207,7 +210,10 @@ class StubWorld(Node):
                     self.aborting.discard(controller)
                     self.emit(aborted=controller)
                     handle.abort()
-                    return action_type.Result()
+                    result = action_type.Result()
+                    if hasattr(result, 'error_string'):
+                        result.error_string = ABORT_REASON + controller
+                    return result
                 if not self.frozen:
                     self.joints.update(joints)
                     if base is not None:
