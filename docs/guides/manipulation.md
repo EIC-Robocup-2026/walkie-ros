@@ -431,6 +431,8 @@ pixi run ros2 run openarm_bimanual_commander_cpp whole_body_base_follower --ros-
 - Restart the commander along with `move_group`. A motion holds the commander's
   motion slot until `move_group` finishes it, so after a crash of `move_group` new
   whole-body and arm goals stay refused.
+- A hung `move_group` does not stop the arm and the lift: every stop, the commander's
+  and the follower's, goes through it. The follower still stops the base.
 
 ### Why a goal is refused
 
@@ -445,7 +447,7 @@ way, and stops every controller it was using.
 | `Octomap collision checking is off: call toggle_octomap_collision first` | Turn the octomap back on. A base moving without it could hit what the camera sees. |
 | `Collision checking is off: call toggle_all_collision_checking first` | Turn collision checking back on |
 | `No base server on /base_controller/follow_joint_trajectory: is the base follower running?` | Start `whole_body_base_follower`. Arm groups keep working without it. |
-| `Nav2 has an active goal on ...: the base is in use` | Wait for the Nav2 goal or cancel it. The status of a Nav2 server that has left the graph does not count. |
+| `Nav2 has an active goal on ...: the base is in use` | Wait for the Nav2 goal or cancel it. A status counts only while the server that published it is in the graph, so neither a dead nor a restarted Nav2 server refuses goals. |
 | `The base is moving (...)` | Wait until the base is at rest: below 0.03 m/s and 0.05 rad/s |
 | `The node's clock is not advancing: is the simulation running?` | The node's clock did not move for 5 s of wall time. Check that the simulation is running and not paused. |
 | `Refused: another motion is in progress` | A whole-body goal runs alone. Wait for the running arm goal. |
@@ -455,7 +457,8 @@ way, and stops every controller it was using.
 | `Planning Failed for N sampled base pose(s), last MoveIt code ...` | IK found base poses, but no path to them. Code `-10` means the start state is in collision, and `-2` that the planner found no path in time. |
 | `Execution deadline of N s exceeded: stop sent` | A controller did not finish in 1.5 times the planned duration plus `whole_body_execution_margin`. Check the follower's log. |
 | `Base moved ... since the plan: plan again` | The base moved by more than 0.05 m or 0.05 rad while planning ran, or, with `(plan still stored)`, since a `plan_only` plan was stored. Send the goal again. |
-| `Stopped: <controller> aborted its goal` | One controller of the plan aborted a goal sent during this motion, so the others were stopped. Check that controller's log. The follower's reasons are [below](#why-the-follower-stops). |
+| `Stopped: <controller> aborted its goal (<reason>)` | One controller of the plan aborted a goal it accepted during this motion, so the others were stopped. The reason is the controller's own, fetched from its action server; it is missing when the server does not answer within 0.5 s. The follower's reasons are [below](#why-the-follower-stops). Another client's goal on a controller of the plan counts too, because it preempts the plan's goal. |
+| `Execution Failed, MoveIt code N: <controller> aborted its goal (<reason>)` | The same abort, when `move_group` ended the motion before the commander saw it. The follower sends `move_group` a stop before it aborts, so its stops usually end this way. Without the part after the code, `move_group` failed on its own: check its log. |
 | `Stopped: Nav2 took a goal on <action>` | Nav2 got a goal while the motion ran. Wait for it, or cancel it. |
 | Any of the stops above, ending in `(move_group has not finished: the stop repeats, and new whole-body and arm goals stay refused, until it does)` | `move_group` did not end the motion within 10 s of the stop. The commander keeps sending a stop every 500 ms. Check that the robot stopped, then restart `move_group` and the commander. |
 
@@ -469,14 +472,20 @@ way, and stops every controller it was using.
 - the collision monitor reports a stop,
 - the base is more than `stall_error` (0.05 m) or `stall_yaw_error` (0.1 rad) behind
   the plan and covered less than a tenth of that in the last `stall_time` (0.5 s): the
-  status says `not moving`,
+  reason says `not moving under its commands`,
 - the base is more than `abort_position_error` (0.25 m) or `abort_yaw_error` (0.35 rad)
   behind the plan,
 - the transform is older than `max_transform_age` (0.5 s), or
 - the base does not settle within `goal_settle_time` (3 s) of the end.
 
-The follower's log names the reason. The slowdown polygon of the collision monitor
-does not end a goal: its speed limit matches the plan's base limit of 0.12 m/s.
+The reason is in the follower's log and in the commander's status (see the table
+above). The collision monitor's `PolygonSlow` does not end
+a goal: it scales commands by 0.8, which leaves 0.2 m/s of the follower's
+`max_linear_speed`, above the plan's fastest base speed of 0.17 m/s on a diagonal.
+Below a ratio of about 0.7 the base falls behind until the tracking abort, so raise
+`max_linear_speed` with a lower ratio. `FootprintApproach` slows the base when it heads
+for an obstacle within about 0.2 m, so a plan that ends that close to one can stop with
+`not moving` or a tracking error.
 
 When the commander's heartbeat stops during a motion that sent the follower no goal, the
 follower publishes one `stop` on `/trajectory_execution_event`, so `move_group` does not
@@ -499,8 +508,8 @@ take effect on the next goal. `base_mode` is read once, at startup.
 
 A goal the arm reaches alone uses the arm groups' `max_velocity_scaling_factor`
 and `max_acceleration_scaling_factor`. The base limits are `virtual_joint/*` in
-`config/joint_limits.yaml`: 0.12 m/s and 0.2 m/s², 0.3 rad/s and 0.4 rad/s². They
-match the `PolygonSlow` speed of the collision monitor.
+`config/joint_limits.yaml`: 0.12 m/s and 0.2 m/s² per axis, 0.3 rad/s and 0.4 rad/s².
+0.12 m/s is also Nav2's speed inside `PolygonSlow`.
 
 ??? info "How a whole-body goal runs"
     1. The commander takes a motion slot and runs the gate behind the
@@ -519,13 +528,15 @@ match the `PolygonSlow` speed of the collision monitor.
        travel for a 1.02 m displacement.
     6. It runs the gate's Nav2 check again and compares the base with where it was at
        step 3, because planning takes seconds and the first check is old by then.
-    7. `move_group` runs the plan on `base_controller` and on the arm and lift
+    7. It reports the motion on its heartbeat at once and sends the plan 50 ms later, so
+       the base follower knows of the motion before `move_group` starts it.
+    8. `move_group` runs the plan on `base_controller` and on the arm and lift
        controllers together. The commander watches for a canceled goal, an aborted
        controller goal, a Nav2 goal, and the deadline. On any of them it sends a stop
        every 500 ms until `move_group` ends the motion.
 
     `move_group` waits for the results of its controllers one at a time, in name order.
-    Without the watch in step 7, an arm that aborts while the base is still running goes
+    Without the watch in step 8, an arm that aborts while the base is still running goes
     unnoticed until the base finishes.
 
     The sampled poses come in two tiers of 40. The first keeps to where IK finds usable
@@ -547,9 +558,9 @@ match the `PolygonSlow` speed of the collision monitor.
     It publishes to `/cmd_vel_smoothed`, the input of Nav2's collision monitor, so
     whole-body base motion passes the same stop and slowdown polygons as Nav2. Its
     reasons to stop are listed under [Why the follower stops](#why-the-follower-stops).
-    Every one of them publishes zero commands and, unless the reason was a `stop` event
-    itself, one `stop` on `/trajectory_execution_event`, which also halts the arm and the
-    lift. The follower ignores the events it publishes itself, and sends at most one per
+    Every one of them publishes zero commands. Except for a cancel, which comes from
+    `move_group` itself, and a `stop` event, each also publishes one `stop` on
+    `/trajectory_execution_event`, which halts the arm and the lift. The follower ignores the events it publishes itself, and sends at most one per
     heartbeat period: an event carries no time, so a late one would end the next motion.
 
     The collision monitor reports its state only when the active polygon changes, and it
@@ -569,7 +580,7 @@ match the `PolygonSlow` speed of the collision monitor.
     | `goal_position_tolerance`, `goal_yaw_tolerance` | `0.02`, `0.03` | Tolerance at the end of the plan |
     | `cmd_topic` | `/cmd_vel_smoothed` | Output |
     | `monitor_state_topic` | `/collision_monitor_state` | Collision monitor state. `nav_mujoco_omnibot.launch.py` turns it on; the real-robot Nav2 parameters do not set `state_topic` yet. |
-    | `commander_topic` | `/whole_body/commander_alive` | Commander heartbeat, `std_msgs/Bool` at 5 Hz of wall time. `data` is true while one of the commander's motions executes. |
+    | `commander_topic` | `/whole_body/commander_alive` | Commander heartbeat, `std_msgs/Bool` at 5 Hz of wall time, plus one beat as a whole-body goal starts executing. `data` is true while a whole-body goal executes, including one the arm reaches alone. Arm-group goals leave it false. |
     | `commander_timeout` | `2.0` | Wall seconds without a heartbeat before the follower stops. At 0.12 m/s the base can travel about 24 cm in that time. |
     | `stall_time` | `0.5` | Window of the stall check, in seconds between `map` to `base_footprint` stamps. A transform that stops updating is reported as stale, not as a stalled base. |
     | `stall_error`, `stall_yaw_error` | `0.05`, `0.1` | Lag behind the plan above which a base that covered less than a tenth of it in one window is not moving |
