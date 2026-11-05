@@ -23,9 +23,9 @@ pulling. For day-to-day use, read
 - **Watch out:** arm moves take about twice as long, because this branch also takes the
   speed scaling from `feat/commander-speed-scaling`. Whole-body goals have not run on the
   real robot, so keep `base_mode:=fixed` there.
-- **Result:** the MuJoCo demo passed all ten steps in the last run here and in five runs of
-  two independent checks, and the launch tests pass ([Verification](#verification)). A
-  collision monitor stop missed its 0.5 s target in three of five runs, by up to 0.09 s of
+- **Result:** the MuJoCo demo passed all ten steps in the last run here and in six runs of
+  three independent checks, and the launch tests pass ([Verification](#verification)). A
+  collision monitor stop missed its 0.5 s target in four of seven runs, by up to 0.09 s of
   simulation time, on the lift or the arm. The plan's larger measurements have not been run
   ([Still open](#still-open)).
 
@@ -226,6 +226,18 @@ was 0.30 to 0.40.
 | Collision monitor stop that a restarted follower never heard | The stall check ended the goal 1.57 s after it started (`the base is not moving under its commands`). Arm quiet after 1.78 s, lift after 2.02 s. |
 | `bt_navigator` killed during a Nav2 goal | Whole-body goals were refused with `Nav2 has an active goal on follow_path` for the 25 s observed, because `controller_server` kept following the path, and the base kept driving. The dead `navigate_to_pose` server no longer refused anything. |
 
+A third independent check in MuJoCo, of the fixes from the third review, the second check,
+and the fourth review at `773716c`, used the stricter "quiet" of the second check. Times
+are simulation time from the event, then wall time. The real-time factor was 0.52 to 0.77.
+
+| Check | Result |
+| --- | --- |
+| Demo, one fresh run with `--cycles 2` | Passed every step. `near_body` reported `base fixed` with no base command. Largest tip error 14.1 mm. |
+| Real collision monitor stop, two runs | Base 0.19 and 0.31 s, lift 0.49 and 0.53 s, arm 0.43 and 0.50 s, so the lift missed the 0.5 s target by 26 ms in one run. Both statuses read `Execution Failed, MoveIt code -7: base_controller aborted its goal (collision monitor stop on polygon VelocityPolygonStop)`. |
+| `move_group` frozen (`SIGSTOP`), then the goal canceled | Stops every 499 to 516 ms, 499 and 502 ms across the 10 s handoff. The caller got `Canceled (move_group has not finished: ...)` after 10.1 s, the base was quiet after 0.23 s, and the first goal after resuming succeeded. A cancel also sends four stops within 3 ms: the commander's cancel handler, which predates this change, stops each arm interface. |
+| Collision monitor stop that a restarted follower never heard | The stall check ended the goal 1.58 s after it started. The status read `Execution Failed, MoveIt code -7: base_controller aborted its goal (the base is not moving under its commands (0.104818 m, -0.070184 rad behind): a collision monitor stop or a dead command path)`. |
+| `bt_navigator` and `controller_server` killed during a Nav2 goal | No whole-body goal was refused for a Nav2 reason. The first four were refused with `The base is moving` while the base coasted to rest. The fifth started 2.4 s after the kill and succeeded. |
+
 The last demo run, with `--cycles 2`:
 
 | Step | Group | Status | Base travel / displacement | Turn | Tip error |
@@ -268,15 +280,13 @@ These items from the plan have not been run:
 - The comparison with Nav2 followed by an arm goal, over 30 runs. This is the question the
   experiment was meant to answer, so the whole-body option has not yet been shown to beat it.
 - A `move_group` restart path. Today, restart the commander along with `move_group`.
-- A MuJoCo run of the fixes from the third review and the second MuJoCo check. They are
-  tested against stubs only.
 
 Known limits:
 
-- A collision monitor stop missed its 0.5 s target in three of five runs over two checks.
+- A collision monitor stop missed its 0.5 s target in four of seven runs over three checks.
   The base met it every time. The lift came to rest after up to 0.54 s and the arm after up
   to 0.59 s of simulation time. The stop event leaves about 40 ms sooner since the first
-  check, and the second check still saw the arm at 0.55 and 0.56 s.
+  check, and the later checks still saw the arm at up to 0.56 s and the lift at 0.53 s.
 - When `move_group` itself freezes, nothing stops the arm and the lift: the commander's and
   the follower's stops both go through `move_group`. The follower still stops the base. A
   direct cancel to the arm and lift controllers would close this, and is not built.
