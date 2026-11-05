@@ -62,6 +62,12 @@ D415 camera look simpler in the viewer and in simulated camera images.
     - The script keeps its own copy of the full URDF and reads the Gazebo sensors and the
       ros2_control block from that copy.
     - A mesh outside `walkie_description` is an error.
+    - Two mesh files with the same file name and scale are an error, for example
+      `visual/part.stl` and `collision/part.stl`. The importer names a mesh after its file
+      name without directory and extension, and would load the first file for both. Give
+      one file another name. Until description `06a2568` renamed one of them, the
+      wrist camera bracket collision geoms loaded `visual/wristcam_bracket.stl`. See
+      [2.6 Tests](06-tests.md#g-mesh-geoms-load-the-urdf-mesh-files).
     - The `<compiler>` element sets the mesh directory, and turns off path stripping, visual
       discarding and static-body fusing for the import.
 

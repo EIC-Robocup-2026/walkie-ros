@@ -342,6 +342,8 @@ the pixi environment.
     | `test_floor_and_wheel_pairs` | The floor is a plane in the FLOOR class. Each wheel capsule touches the floor only through its `<pair>`, with low axle friction. |
     | `test_collision_classes_by_bitmask` | Base and body geoms ignore furniture, objects, and the floor. Arm and gripper geoms collide with furniture, objects, and the robot. |
     | `test_collision_classes_in_contact` | Adds boxes to the scene and steps it. Furniture inside the base makes no contact. Furniture and objects at the hands make contact. A free object rests on the floor. |
+    | `test_mesh_geoms_use_urdf_files` | Every visual and collision mesh geom of the robot loads the mesh file that the URDF names for it |
+    | `test_mesh_name_clash_is_an_error` | The generator stops when two mesh files share a file name and a scale, because MuJoCo would load only one of them |
 
 ??? info "Accepted speed error in the drive test"
     The drive test has a known, accepted error. The controller uses
