@@ -398,14 +398,14 @@ git submodule foreach --recursive git lfs pull
     finger travel axis, like `visual/hand.dae`. The simplified `hand.stl`
     was exported rotated by 90 degrees about z until description `da46ecd`.
 
-    Give a collision mesh a file name that differs from every other mesh
-    file loaded at the same scale, for example with a `_collision` suffix
-    (`HeadCameraMount_collision.stl`, `wristcam_bracket_collision.stl`).
-    MuJoCo's URDF importer names meshes by file name without directory and
-    extension, and loads only one of two files with the same name and scale.
-    Until description `06a2568`, the wrist camera bracket collision geoms
-    loaded `visual/wristcam_bracket.stl` for this reason. `build_mjcf.py`
-    now stops with an error on such a clash.
+    Give each mesh file its own file name, for example a collision mesh with
+    a `_collision` suffix (`HeadCameraMount_collision.stl`,
+    `wristcam_bracket_collision.stl`). MuJoCo's URDF importer names meshes
+    by file name without directory and extension, and loads only one of two
+    files with the same name and scale. Until description `06a2568`, the
+    wrist camera bracket collision geoms loaded `visual/wristcam_bracket.stl`
+    for this reason. `build_mjcf.py` now stops with an error when a mesh geom
+    does not load the file the URDF names for it.
 
     Both changes came with the merge of description `main` (description
     `f6649ee`).
