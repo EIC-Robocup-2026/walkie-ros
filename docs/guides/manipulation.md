@@ -445,7 +445,7 @@ way, and stops every controller it was using.
 | `Octomap collision checking is off: call toggle_octomap_collision first` | Turn the octomap back on. A base moving without it could hit what the camera sees. |
 | `Collision checking is off: call toggle_all_collision_checking first` | Turn collision checking back on |
 | `No base server on /base_controller/follow_joint_trajectory: is the base follower running?` | Start `whole_body_base_follower`. Arm groups keep working without it. |
-| `Nav2 has an active goal on ...: the base is in use` | Wait for the Nav2 goal or cancel it |
+| `Nav2 has an active goal on ...: the base is in use` | Wait for the Nav2 goal or cancel it. The status of a Nav2 server that has left the graph does not count. |
 | `The base is moving (...)` | Wait until the base is at rest: below 0.03 m/s and 0.05 rad/s |
 | `The node's clock is not advancing: is the simulation running?` | The node's clock did not move for 5 s of wall time. Check that the simulation is running and not paused. |
 | `Refused: another motion is in progress` | A whole-body goal runs alone. Wait for the running arm goal. |
@@ -455,9 +455,9 @@ way, and stops every controller it was using.
 | `Planning Failed for N sampled base pose(s), last MoveIt code ...` | IK found base poses, but no path to them. Code `-10` means the start state is in collision, and `-2` that the planner found no path in time. |
 | `Execution deadline of N s exceeded: stop sent` | A controller did not finish in 1.5 times the planned duration plus `whole_body_execution_margin`. Check the follower's log. |
 | `Base moved ... since the plan: plan again` | The base moved by more than 0.05 m or 0.05 rad while planning ran, or, with `(plan still stored)`, since a `plan_only` plan was stored. Send the goal again. |
-| `Stopped: <controller> aborted its goal` | One controller failed, so the others were stopped. Check that controller's log. The follower's reasons are [below](#why-the-follower-stops). |
+| `Stopped: <controller> aborted its goal` | One controller of the plan aborted a goal sent during this motion, so the others were stopped. Check that controller's log. The follower's reasons are [below](#why-the-follower-stops). |
 | `Stopped: Nav2 took a goal on <action>` | Nav2 got a goal while the motion ran. Wait for it, or cancel it. |
-| Any of the stops above, ending in `(move_group has not finished: new whole-body and arm goals stay refused until it does)` | `move_group` did not end the motion within 10 s of the stop. Check that the robot stopped, then restart `move_group` and the commander. |
+| Any of the stops above, ending in `(move_group has not finished: the stop repeats, and new whole-body and arm goals stay refused, until it does)` | `move_group` did not end the motion within 10 s of the stop. The commander keeps sending a stop every 500 ms. Check that the robot stopped, then restart `move_group` and the commander. |
 
 ### Why the follower stops
 
@@ -467,6 +467,9 @@ way, and stops every controller it was using.
 - a `stop` arrives on `/trajectory_execution_event`,
 - the commander's heartbeat stops,
 - the collision monitor reports a stop,
+- the base is more than `stall_error` (0.05 m) or `stall_yaw_error` (0.1 rad) behind
+  the plan and covered less than a tenth of that in the last `stall_time` (0.5 s): the
+  status says `not moving`,
 - the base is more than `abort_position_error` (0.25 m) or `abort_yaw_error` (0.35 rad)
   behind the plan,
 - the transform is older than `max_transform_age` (0.5 s), or
@@ -474,6 +477,10 @@ way, and stops every controller it was using.
 
 The follower's log names the reason. The slowdown polygon of the collision monitor
 does not end a goal: its speed limit matches the plan's base limit of 0.12 m/s.
+
+When the commander's heartbeat stops during a motion that sent the follower no goal, the
+follower publishes one `stop` on `/trajectory_execution_event`, so `move_group` does not
+finish the arm motion of a commander that has died.
 
 ### Whole-body parameters
 
@@ -540,14 +547,19 @@ match the `PolygonSlow` speed of the collision monitor.
     It publishes to `/cmd_vel_smoothed`, the input of Nav2's collision monitor, so
     whole-body base motion passes the same stop and slowdown polygons as Nav2. Its
     reasons to stop are listed under [Why the follower stops](#why-the-follower-stops).
-    Every one of them publishes zero commands and `stop` on
-    `/trajectory_execution_event`, which also halts the arm and the lift.
+    Every one of them publishes zero commands and, unless the reason was a `stop` event
+    itself, one `stop` on `/trajectory_execution_event`, which also halts the arm and the
+    lift. The follower ignores the events it publishes itself, and sends at most one per
+    heartbeat period: an event carries no time, so a late one would end the next motion.
 
     The collision monitor reports its state only when the active polygon changes, and it
     only looks when a command arrives. So a stop on record can be stale, with nothing to
     correct it while no commands flow. A goal that arrives during a stop therefore
     publishes one zero command and waits up to 500 ms for the state to change. If the
-    stop is still active, the follower rejects the goal.
+    stop is still active, the follower rejects the goal. The other way round, a follower
+    that starts during a stop never hears of it. The stall check covers that case: a base
+    that lags and does not move under the commands ends the goal within about two
+    `stall_time` windows.
 
     | Parameter | Default | Meaning |
     | --- | --- | --- |
@@ -557,8 +569,10 @@ match the `PolygonSlow` speed of the collision monitor.
     | `goal_position_tolerance`, `goal_yaw_tolerance` | `0.02`, `0.03` | Tolerance at the end of the plan |
     | `cmd_topic` | `/cmd_vel_smoothed` | Output |
     | `monitor_state_topic` | `/collision_monitor_state` | Collision monitor state. `nav_mujoco_omnibot.launch.py` turns it on; the real-robot Nav2 parameters do not set `state_topic` yet. |
-    | `commander_topic` | `/whole_body/commander_alive` | Commander heartbeat, 5 Hz of wall time |
+    | `commander_topic` | `/whole_body/commander_alive` | Commander heartbeat, `std_msgs/Bool` at 5 Hz of wall time. `data` is true while one of the commander's motions executes. |
     | `commander_timeout` | `2.0` | Wall seconds without a heartbeat before the follower stops. At 0.12 m/s the base can travel about 24 cm in that time. |
+    | `stall_time` | `0.5` | Window of the stall check, in seconds between `map` to `base_footprint` stamps. A transform that stops updating is reported as stale, not as a stalled base. |
+    | `stall_error`, `stall_yaw_error` | `0.05`, `0.1` | Lag behind the plan above which a base that covered less than a tenth of it in one window is not moving |
 
 ??? info "The heading seam"
     OMPL returns the planar joint's heading normalized to [-π, π]. Time parameterization
@@ -598,16 +612,19 @@ match the `PolygonSlow` speed of the collision monitor.
 
     - **Voxels inside the robot.** A stale voxel behind the robot's own surface gets no
       ray through it. If the current state touches the octomap, the commander clears the
-      whole octree, waits 1 s, and logs a warning. MoveIt cannot edit part of an octree, so
-      whatever is out of view at that moment is forgotten and plans as free.
-    - **A joint just past its limit.** A position controller can stop there. A joint up to
-      0.02 past its limit starts from the limit. A joint farther out is left for MoveIt to
-      report.
+      whole octree, waits 1 s of the node's clock (10 s of wall time at most), and logs a
+      warning. MoveIt cannot edit part of an octree, so whatever is out of view at that
+      moment is forgotten and plans as free.
+    - **A joint just past its limit.** A position controller can stop there. A joint of the
+      planned group up to 0.02 past its limit starts from the limit. A joint farther out,
+      or one the group does not move, is left for MoveIt to report.
     - **Self-contact.** The MuJoCo lift settled 2.65 mm below its command, which was enough
-      to put the idle arm's fingers on the base. A plan then starts from the lift 2, 5, 10,
-      or 20 mm higher, whichever is free, and goals must stay valid 10 mm below where they
-      stop the lift. `allowed_start_tolerance` in `config/move_group.yaml` accepts these
-      raises.
+      to put the idle arm's fingers on the base. For a group that moves the lift, a plan
+      then starts from the lift 2, 5, 10, or 20 mm higher, whichever is free, and goals
+      must stay valid 10 mm below where they stop the lift. `allowed_start_tolerance` in
+      `config/move_group.yaml` accepts these raises. A group without the lift, such as
+      `left_arm`, plans from the real lift: a raised start would describe a robot that is
+      not there, and nothing would close the difference.
 
 ## How the parts fit together
 

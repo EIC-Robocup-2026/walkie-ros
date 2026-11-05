@@ -379,7 +379,7 @@ package.
 Folder: `manipulate/openarm_bimanual_commander_cpp/test/`. They start the real
 `move_group` and the real commander against `whole_body_stub_world`, which stands in
 for the controllers and TF, so they need no simulator. They need a Zenoh router.
-Together they take about 12 minutes, which CI spends too.
+Together they take about 13 minutes, which CI spends too.
 
 ```bash
 pixi run ros2 run rmw_zenoh_cpp rmw_zenohd    # in another terminal
@@ -393,12 +393,12 @@ because the tests share the graph with it. When a test fails, its details are in
 
 | File | Time | Checks |
 | --- | --- | --- |
-| `whole_body_option.test.py` | About 2 min 15 s | On a `whole_body` bring-up: arm groups never command the base, far goals move it near the straight line, near goals keep it still, the heading seam, every refusal, single-flight, cancel, and the execution deadline |
+| `whole_body_option.test.py` | About 2 min 40 s | On a `whole_body` bring-up: arm groups never command the base, far goals move it near the straight line, near goals keep it still, the heading seam, every refusal, a Nav2 status left by a dead server, start repairs limited to the planned group, single-flight, cancel, and the execution deadline |
 | `whole_body_gate.test.py` | About 4 min 40 s | Five bring-ups with `move_group` and the commander in `fixed`, `map`, and `whole_body`, matching and mismatched: which goals each one refuses, and that arm groups still work |
 | `whole_body_plan_only.test.py` | About 10 s | A stored plan runs only while the base is where it was planned from |
 | `whole_body_clock.test.py` | About 25 s | The commander on simulation time: a clock at 0.1 of real time passes the gate, a stopped clock is refused |
-| `whole_body_stopping.test.py` | About 4 min | Every way a motion stops: a cancel at any moment, the deadline, an aborted controller, and Nav2 taking a goal. Each leaves no controller running. Also a base that moves during planning, the commander's heartbeat, and that an old abort does not stop the next goal. |
-| `whole_body_follower.test.py` | About 25 s | The real follower against a fake base, with no `move_group`: tracking in `map`, the heartbeat, collision monitor stops and slowdowns, the stop event, a stale transform, a far start, and a base that does not follow |
+| `whole_body_stopping.test.py` | About 4 min 10 s | Every way a motion stops: a cancel at any moment, the deadline, an aborted controller, and Nav2 taking a goal. Each leaves no controller running. Also a base that moves during planning, the commander's heartbeat and its executing flag, that an old abort does not stop the next goal, and that an abort on a controller outside the plan does not stop it. |
+| `whole_body_follower.test.py` | About 40 s | The real follower against a fake base, with no `move_group`: tracking in `map`, the heartbeat, one stop for a commander that dies during a motion, collision monitor stops and slowdowns, the stop event without an echo, a stale transform, a far start, a base that does not move, and a slow base that falls behind or keeps up |
 
 !!! note "The exit codes of these tests are not asserted"
     `move_group` and the commander abort with signal 6 during shutdown, in a panic inside

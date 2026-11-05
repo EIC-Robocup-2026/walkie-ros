@@ -23,9 +23,10 @@ pulling. For day-to-day use, read
 - **Watch out:** arm moves take about twice as long, because this branch also takes the
   speed scaling from `feat/commander-speed-scaling`. Whole-body goals have not run on the
   real robot, so keep `base_mode:=fixed` there.
-- **Result:** the MuJoCo demo passed all ten steps in its last run, and the launch tests
-  pass ([Verification](#verification)). The plan's larger measurements have not been run
-  ([Still open](#still-open)).
+- **Result:** the MuJoCo demo passed all ten steps in the last run here and in three runs of
+  an independent check, and the launch tests pass ([Verification](#verification)). A
+  collision monitor stop missed its 0.5 s target once, by up to 0.09 s. The plan's larger
+  measurements have not been run ([Still open](#still-open)).
 
 ## After pulling this change
 
@@ -111,9 +112,29 @@ that MoveIt loads is byte-identical to the one before this change.
     The follower also ends a goal directly on a `stop` event, which covers a hung
     `move_group`.
 
+??? info "What the second review found"
+    A second independent review, of the version with the fixes above, found nine more
+    problems. Each fix except the ones marked "by construction" has a test that failed on
+    the code before it.
+
+    | Finding | Fix |
+    | --- | --- |
+    | The start repairs raised the lift and clamped joints for every group. A `left_arm` goal then planned from a lift that was not there, and nothing closed the difference. | Repairs touch only the joints of the planned group. The lift is raised only for groups that move it. |
+    | The heartbeat only covered a running base goal. A whole-body motion that keeps the base still ran to its end after the commander died. | The heartbeat is a `std_msgs/Bool` that says whether a motion executes. When it stops during one, the follower sends one `stop`. |
+    | `halt` gave up after 10 s and sent no more stops, so a request still on its way to `move_group` could start afterwards | A thread keeps sending a stop every 500 ms until `move_group` finishes, and the status says so |
+    | A follower that started during a collision monitor stop never heard of it: the monitor reports changes only | A stall check: a base that lags the plan and does not move under the commands ends the goal |
+    | Clearing the octree waited 1 s of wall time. At a low real-time factor the octomap had not refilled. | The wait is 1 s of the node's clock, with a 10 s wall-time cap |
+    | The motion ticket's deleter captured the commander object, which an execute thread can outlive. By construction, no test. | The motion slot lives in a shared state that the tickets and threads hold |
+    | Any aborted goal on any controller stopped the motion, including another client's goal on a controller the plan does not use, and old aborts still listed in a status | Only an abort of a goal that is new since the execution started, on a controller of the plan, stops it |
+    | The follower re-sent every `stop` it heard and heard its own. An event carries no time, so a late one could end the next motion. | It ignores its own events, does not re-send an incoming one, and sends at most one per heartbeat period |
+    | A Nav2 server that died during a goal left an `EXECUTING` status, which refused every later whole-body goal | A status counts only while its server is still in the graph |
+
+    The follower now sends the `stop` event right after its first zero command instead of
+    after all five, so the arm and the lift get it about 40 ms sooner.
+
 ## CI
 
-`openarm_bimanual_commander_cpp` joins the tested packages. Its launch tests add about 12
+`openarm_bimanual_commander_cpp` joins the tested packages. Its launch tests add about 13
 minutes to the **Test** step, and they use the router that CI already starts. These tests
 have not run in CI yet, because the branch has not been pushed. They are timing-sensitive
 in places, so a slower runner may show problems that this laptop did not.
@@ -126,11 +147,28 @@ and 0.30, depending on what else the laptop ran.
 
 | Check | Result |
 | --- | --- |
-| Whole-body launch tests | Option 13 of 13, gate 10 of 10 with 2 skipped by design, plan-only 1 of 1, clock 2 of 2, stopping 11 of 11, follower 13 of 13 |
-| `openarm_bimanual_moveit_config` tests | 34 of 34 |
+| Whole-body launch tests | Option 15 of 15, gate 10 of 10 with 2 skipped by design, plan-only 1 of 1, clock 2 of 2, stopping 12 of 12, follower 16 of 16 |
+| `openarm_bimanual_moveit_config` tests | 32 of 32: 26 contract tests and 6 floor-gate tests |
 | `fixed` regression | `snapshot_robot_model.py` output byte-identical between the old and the new commit, before the stop fixes, which touch only whole-body paths |
-| Red tests | The stop tests failed on the code before the stop fixes: follower 6 of 13, stopping 7 of 11. The clock regression test failed before its fix. |
+| Red tests | The stop tests failed on the code before the stop fixes: follower 6 of 13, stopping 7 of 11. The clock regression test failed before its fix. The tests of the second review's fixes failed on the code before them: option 2 of 15, stopping 2 of 12. The follower file failed 14 of 16 there, because the old follower expects the old heartbeat type. |
 | `pixi run -e docs docs-build` | Builds without warnings |
+
+An independent check in MuJoCo, of the version before the second review's fixes, gave the
+following. "Quiet" means the base below 0.01 m/s and 0.02 rad/s, the lift below 0.001 m/s,
+and every left arm joint below 0.01 rad/s, for 0.5 s. Times are wall time from the event
+and include settling.
+
+| Check | Result |
+| --- | --- |
+| Demo, three fresh runs | 3 of 3 passed every step. `near_body` reported `base fixed` with no base command each time. Largest tip error 14.1 to 14.8 mm. |
+| 30 min soak with the viewer and RViz | Seven whole-body goals succeeded. No process restarted. `move_group` grew by 49 MiB. |
+| Cancel during a far goal | Base, lift, and arm quiet after 0.48, 0.70, and 0.85 s |
+| Commander killed during a far goal | The follower aborted on the heartbeat. Base, lift, and arm quiet after 2.25, 2.52, and 2.61 s. A restarted commander ran a new goal without a `move_group` restart. |
+| Follower killed or frozen | Arm-group goals succeeded in all four cases, with no base command |
+| Nav2 goal during a motion | Stopped 0.10 s after the Nav2 goal was sent. A whole-body goal during a Nav2 goal was refused within 0.10 s. |
+| Real collision monitor stop, two runs | Base 0.27 and 0.61 s, lift 0.72 and 0.87 s, arm 0.63 and 0.95 s of wall time. The simulation ran at about 0.62 of real time, so in simulation time the second run is about 0.38, 0.54, and 0.59 s. |
+| `fixed` bring-up | `left_arm_lift` succeeded and `whole_body_left` was refused with `Whole-body mode unavailable` |
+| The standalone commands in the guide | The documented goal succeeded, with a router already running |
 
 The last demo run, with `--cycles 2`:
 
@@ -173,12 +211,15 @@ These items from the plan have not been run:
 - A test of `right_joint2_fixed` on `whole_body_right`.
 - The comparison with Nav2 followed by an arm goal, over 30 runs. This is the question the
   experiment was meant to answer, so the whole-body option has not yet been shown to beat it.
-- A measurement of how fast a collision monitor stop halts arm, lift, and base. The target is
-  0.5 s.
-- Arm goals with the follower frozen or killed, in MuJoCo.
 - A `move_group` restart path. Today, restart the commander along with `move_group`.
+- A MuJoCo run of the second review's fixes. They are tested against stubs only.
 
 Known limits:
+
+- A collision monitor stop missed its 0.5 s target in one of two runs: the lift and the arm
+  came to rest after about 0.54 and 0.59 s of simulation time. The base met it. The stop event
+  now leaves about 40 ms sooner, which was not measured again.
+- Clearing the octree to repair a voxel inside the robot forgets everything out of view.
 
 - In one run, `near_body` moved the base by 3 cm instead of reporting `base fixed`. The log
   showed no arm-only attempt, and 8 attempts against stubs did not reproduce it. The first
