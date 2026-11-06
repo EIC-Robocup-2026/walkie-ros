@@ -16,13 +16,15 @@ clear message, and remove the old test that did not test this robot.
   register tests with a CMake glob; pin pytest below 9.
 - **Result:** 109 tests in three files. Two [known issues](#known-issues) remain. Update
   2026-10-16: 112, with three tests for the head 3D lidar ([2.8](08-3d-lidar.md)).
+  Update 2026-11-05: 120, with eight tests for mesh file names
+  ([(g)](#g-mesh-geoms-load-the-urdf-mesh-files)).
 
 ## Which tests were added { #overview }
 
 | File | Package | Build first | Tests |
 | --- | --- | --- | --- |
 | `description/test/test_description.py` | `walkie_description` | Yes | 76 |
-| `description/test/test_mjcf.py` | `walkie_description` | No | 26 (23 before the head 3D lidar) |
+| `description/test/test_mjcf.py` | `walkie_description` | No | 34 (26 before the mesh file name tests, 23 before the head 3D lidar) |
 | `manipulate/openarm_bimanual_moveit_config/test/test_srdf_urdf_contract.py` | `openarm_bimanual_moveit_config` | Yes | 10 |
 
 The counts are what `pytest --collect-only` reports for each file. `test_pep257.py` in
@@ -275,6 +277,30 @@ props. [2.3 Collisions](03-collisions.md) explains the classes.
     | `test_floor_and_wheel_pairs` | `floor` is a plane in the FLOOR class; each wheel contact is a capsule with `contype` = `conaffinity` = 0; each has a pair with the floor, `condim` 3, and axle friction below 0.1 times the rolling friction |
     | `test_collision_classes_by_bitmask` | BASE and BODY geoms collide with nothing in the world (FURN, OBJ, FLOOR); ARM and GRIP geoms collide with FURN, OBJ and all robot classes; every colliding robot geom is in exactly one class |
     | `test_collision_classes_in_contact` | Adds props to the scene: a FURN box inside the base is ignored; a FURN box at the left hand and an OBJ box at the right hand do touch; an OBJ box rests on the floor |
+
+### (g) Mesh geoms load the URDF mesh files { #g-mesh-geoms-load-the-urdf-mesh-files }
+
+Added 2026-11-05. MuJoCo's URDF importer names each mesh after its file name, without
+directory and extension, and silently reuses a mesh that has the same name and scale.
+Until description `06a2568` renamed the collision file to
+`collision/wristcam_bracket_collision.stl`, the collision geoms of
+`openarm_*_wristcam_bracket` loaded `visual/wristcam_bracket.stl` instead of
+`collision/wristcam_bracket.stl`, and no test noticed.
+
+Since description `82116a1`, the generator checks this itself after the import
+(`import_urdf` in `build_mjcf.py`); [2.1](01-model-generation.md#step-3-import-with-mjspec-and-set-the-options)
+explains the two ways the importer merges mesh files.
+
+??? info "What the mesh file tests check"
+    | Test | What it checks |
+    | --- | --- |
+    | `test_mesh_geoms_use_urdf_files` | For every robot link, the mesh files of its visual geoms (group 2) and collision geoms (group 3) in the compiled scene equal the files that the generator's prepared URDF names for that link |
+    | `test_merged_mesh_files_are_an_error[...]` | `import_urdf` raises `ValueError` for one link with these collision meshes: `a/part.stl` and `b/part.stl` at the same scale (`same-name-and-scale`); the same with the scale written as `0.001` and `1e-3` (`same-scale-written-differently`); `a/part.stl` and `b/part.stl` at scales 1 and 2 plus `c/part1.stl` at scale 2 (`name-of-an-indexed-mesh`) or 1 (`name-of-an-indexed-mesh-other-scale`) |
+    | `test_distinct_mesh_files_import[...]` | `import_urdf` accepts the same file twice (`same-file-twice`), the same file name at two scales (`same-name-other-scale`), and `a/part.stl` next to `a/./part.stl` (`equivalent-paths`) |
+
+    The check compares the URDF after the visual fallback, so it also covers the collision
+    meshes that replace unloadable visuals. The synthetic tests need no mesh files: the
+    import does not read them.
 
 ## The SRDF/URDF contract test
 
