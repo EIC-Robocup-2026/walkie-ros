@@ -130,7 +130,9 @@ without ROS 2. Press ++f1++ for the full list of shortcuts.
 
     Always run the generator through pixi. Another MuJoCo version writes a different
     `walkie.xml`, and a MuJoCo without the head 3D lidar extension
-    (`ros-jazzy-mujoco-3d-lidar`) cannot write it at all.
+    (`ros-jazzy-mujoco-3d-lidar`) cannot write it at all. MuJoCo 3.15 cannot load a
+    `walkie.xml` written by MuJoCo 3.16, so a 3.16 model in the submodule makes the
+    MuJoCo tests fail.
 
 3. Look at the result with `pixi run mjcf-view`, then run
    `pixi run python -m pytest description/test/test_mjcf.py`.
@@ -142,6 +144,14 @@ without ROS 2. Press ++f1++ for the full list of shortcuts.
     0.1.0, and with it `mujoco_ros2_control`, is built against. The MjSpec serializer
     differs between versions: MuJoCo 3.10 writes a different `walkie.xml` than the
     checked-in 3.15 output.
+
+    Description `4531bcf` regenerated `walkie.xml` with MuJoCo 3.16 for the move to
+    RoboStack build set `_27` (walkie-ros PR #63), which waits for a test on the robot.
+    Description `4959e92` reverted it on description `main`, so walkie-ros can follow
+    description `main` on MuJoCo 3.15. The change that moves the `mujoco` pin to 3.16 must
+    re-apply the 3.16 model by reverting `4959e92` in the description repository; merging
+    the old `feat/mujoco-3.16` branch again changes nothing, because its commit is already
+    in the history of `main`.
 
 ### Change a MuJoCo-only value { #mujoco-only-values }
 
