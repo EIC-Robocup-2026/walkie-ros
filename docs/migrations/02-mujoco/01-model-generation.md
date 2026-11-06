@@ -81,6 +81,13 @@ D415 camera look simpler in the viewer and in simulated camera images.
     | `openarm_*_hand`, `openarm_*_left_finger`, `openarm_*_right_finger` | `meshes/openarm/ee/openarm_hand/visual/*.dae` | COLLADA |
     | `bottom_link` (D415 camera) | `urdf/walkie/depth_camera/d415/visual/d415.stl` | 425,160 faces, above the limit |
 
+    For these links the MuJoCo viewer shows the collision mesh, while RViz shows the visual
+    mesh unless its collision display is on. A collision mesh in the wrong frame is therefore
+    easy to miss in RViz and obvious in MuJoCo. The simplified
+    `meshes/openarm/ee/openarm_hand/collision/hand.stl` was rotated by 90 degrees about z, so
+    the gripper rail looked turned in the viewer. Description `da46ecd` fixed the mesh; the
+    generated `walkie.xml` did not change, because it references the mesh by path.
+
 ## Step 3: Import with MjSpec and set the options
 
 The script imports the prepared URDF with `mujoco.MjSpec.from_string()` (`MjSpec` is
@@ -92,6 +99,30 @@ model `walkie`. The key settings:
   0.002 s step.
 - Elliptic friction cones follow Coulomb friction more closely, which matters for the
   direction-dependent wheel friction.
+
+Right after the import, the script checks that every mesh geom loads the mesh file and scale
+that the URDF names for it, and stops with an error that lists the files otherwise. The
+importer names a mesh after its file name, so two mesh files with the same file name can
+load as one. Give each mesh file its own file name, for example with a `_collision` suffix.
+
+??? info "How the importer merges mesh files, and the wrist camera bracket"
+    The importer names a mesh after its file name without directory and extension. It reuses
+    the mesh of that name and scale, and gives the same name at another scale an index
+    (`part`, `part1`, ...). Two cases follow:
+
+    - `visual/part.stl` and `collision/part.stl` at the same scale load as one mesh,
+      without a warning. Until description `06a2568` renamed the collision file to
+      `wristcam_bracket_collision.stl`, the collision geoms of `openarm_*_wristcam_bracket`
+      loaded `visual/wristcam_bracket.stl` this way.
+    - A file named like an indexed mesh, for example `c/part1.stl` next to `a/part.stl` and
+      `b/part.stl` at two scales, repeats the mesh name `part1`. MuJoCo reports this only as
+      `repeated name 'part1' in mesh`, and the geom of `c/part1.stl` refers to
+      `b/part.stl`.
+
+    The check compares, per link and per visual or collision kind, the files and scales in
+    the prepared URDF with what the imported geoms load. Paths are normalized first, so
+    `a/./part.stl` and `a/part.stl` count as one file. See
+    [2.6 Tests](06-tests.md#g-mesh-geoms-load-the-urdf-mesh-files).
 
 ??? info "All compiler and solver settings, with reasons"
     | Setting | Value | Reason |

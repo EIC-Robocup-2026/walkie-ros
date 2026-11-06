@@ -392,7 +392,20 @@ git submodule foreach --recursive git lfs pull
     The collision meshes of the arm links, the hands, the wrist camera
     brackets, and the head mount (`HeadCameraMount_collision.stl`) are
     low-poly meshes of fewer than 100 triangles each. The ZED camera links
-    have no collision geometry.
+    have no collision geometry. Each collision mesh is in the frame of the
+    visual mesh of its link, because both use the same `<origin>`. For
+    example, the gripper rail of `collision/hand.stl` runs along y, the
+    finger travel axis, like `visual/hand.dae`. The simplified `hand.stl`
+    was exported rotated by 90 degrees about z until description `da46ecd`.
+
+    Give each mesh file its own file name, for example a collision mesh with
+    a `_collision` suffix (`HeadCameraMount_collision.stl`,
+    `wristcam_bracket_collision.stl`). MuJoCo's URDF importer names meshes
+    by file name without directory and extension, and loads only one of two
+    files with the same name and scale. Until description `06a2568`, the
+    wrist camera bracket collision geoms loaded `visual/wristcam_bracket.stl`
+    for this reason. `build_mjcf.py` now stops with an error when a mesh geom
+    does not load the file the URDF names for it.
 
     Both changes came with the merge of description `main` (description
     `f6649ee`).
