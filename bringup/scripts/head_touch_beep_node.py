@@ -1,7 +1,9 @@
-#!/usr/bin/python3
-# NOTE: absolute interpreter on purpose (same reason as zed_watchdog.py):
-# real_omnibot.launch.py runs under an environment where `python3` on PATH may
-# be a venv without rclpy; the system 3.12 interpreter inherits ROS's
+#!/bin/sh
+"exec" "${CONDA_PREFIX:-/usr}/bin/python3" "$0" "$@"
+# NOTE: the interpreter follows the environment on purpose (same reason as
+# zed_watchdog.py): under pixi, rclpy is built for the Python in $CONDA_PREFIX.
+# Without pixi, real_omnibot.launch.py runs under an environment where `python3`
+# on PATH may be a venv without rclpy; the system interpreter inherits ROS's
 # PYTHONPATH and works.
 """
 Head-touch R2D2 beeper.

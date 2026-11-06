@@ -54,6 +54,9 @@ cover/
 *.mo
 *.pot
 
+# MuJoCo writes its warnings to this file in the working directory
+MUJOCO_LOG.TXT
+
 # Django stuff:
 *.log
 local_settings.py

@@ -9,6 +9,12 @@ You need a workspace built with `pixi run build`
 the team `ROS_DOMAIN_ID`, and `pixi run` selects Zenoh. On a new robot
 computer, do the one-time steps below first.
 
+!!! warning "Build set `_27` has not been tested on real hardware"
+    The pixi environment moved to RoboStack build set `_27` without a test on
+    the robot. The real launch files only parse, and the hardware plugins only
+    compile and load. Under pixi, the perception venv cannot be created. See
+    [7. Move to RoboStack Build Set _27](../migrations/07-robostack-build-27.md#still-open).
+
 ## Safety notes
 
 !!! warning "Before you power the robot"
@@ -170,7 +176,7 @@ pixi run build-pkg zed_interfaces zed_description zed_components zed_wrapper
    ```bash
    pixi run ros2 launch robot_bringup real_omnibot.launch.py use_zed:=true
    ```
-   The camera will be supervised by `bringup/scripts/zed_watchdog.py`, which monitors the stream and automatically recovers from USB or frame-stall faults.
+   The camera will be supervised by `bringup/scripts/zed_watchdog.py`, which monitors the stream and automatically recovers from USB or frame-stall faults; see [ZED watchdog](#zed-watchdog).
 
 ## Create the lift Python environment (once) { #python-environment }
 
@@ -183,24 +189,31 @@ environment, so they live in a uv virtual environment at `bringup/.venv`.
 
     ```bash
     cd bringup
-    pixi run uv venv --python python3.12 --system-site-packages
-    pixi run uv sync
+    pixi run uv venv --python python --system-site-packages
+    pixi run uv sync --python python
     ```
+
+To replace a venv from an older Python, add `--clear` to the `uv venv` command.
+The launch file only looks in the folder of the Python that runs it. A bare
+`uv sync` can replace the venv with one on another Python and without access to
+`rclpy`, so keep `--python python`.
 
 Run uv through `pixi run`, so the venv uses the pixi Python that also runs the
 lift node ([why](pixi.md#python-virtual-environments-next-to-pixi)). You do
 not activate the venv: `lift_homing.launch.py` adds it to the node's
 `PYTHONPATH`. This works by default, because `pixi run build` uses
-`--symlink-install`. If you build without it, set the path yourself:
+`--symlink-install`. If you build without it, set the path yourself, from the
+repository root:
 
 ```bash
-export ROBOT_BRINGUP_VENV_SITE=$PWD/bringup/.venv/lib/python3.12/site-packages
+export ROBOT_BRINGUP_VENV_SITE="$(pixi run bringup/.venv/bin/python -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"
 ```
 
 ??? info "How the launch file finds the venv, and what `uv sync` installs"
-    `lift_homing.launch.py` adds `bringup/.venv/lib/python3.12/site-packages`
-    to the node's `PYTHONPATH`. It finds the source folder by following the
-    symlink that `--symlink-install` creates for the launch file.
+    `lift_homing.launch.py` adds `bringup/.venv/lib/python<version>/site-packages`
+    to the node's `PYTHONPATH`. `<version>` comes from the interpreter that runs
+    the launch file. It finds the source folder by following the symlink that
+    `--symlink-install` creates for the launch file.
 
     `uv sync` installs the packages locked in `bringup/uv.lock`: the team fork
     of TMotorCANControl, python-can, numpy, pyserial, and pyyaml.
@@ -428,7 +441,7 @@ pixi run ros2 launch robot_bringup real_omnibot.launch.py use_zed:=false use_rvi
 ??? info "Other arguments: ZED watchdog, head beep, CAN interfaces, Unitree frames"
     | Argument | Default | Meaning |
     | --- | --- | --- |
-    | `use_zed_watchdog` | `true` | Run the ZED under `zed_watchdog.py` instead of launching it directly |
+    | `use_zed_watchdog` | `true` | Run the ZED under `zed_watchdog.py` instead of launching it directly ([ZED watchdog](#zed-watchdog)). |
     | `use_head_beep` | `true` | Start the head touch beep node |
     | `left_can_interface` | `can1` | CAN interface of the left arm |
     | `right_can_interface` | `can0` | CAN interface of the right arm |
@@ -447,7 +460,7 @@ pixi run ros2 launch robot_bringup real_omnibot.launch.py use_zed:=false use_rvi
     | `twist_mux`, output to `/omni_wheel_drive_controller/cmd_vel` | `twist_mux` | always |
     | Dual 2D lidar and merger, output `/scan` | `bringup/launch/dual_lidar_hokuyo_lakibeam.launch.py` | always |
     | Unitree driver and self filter, output `/unilidar/cloud/filtered` | `unitree_lidar_ros2`, `robot_self_filter` | `use_unitree_lidar` |
-    | RealSense `bottom` camera and self filter | `realsense2_camera`, `robot_self_filter` | always |
+    | RealSense `bottom` camera and self filter | Not started: commented out in the launch file | never |
     | ZED `zed_head` camera, directly or under the watchdog | `zed_wrapper`, `robot_bringup` | `use_zed` |
     | ZED self filter, `cloud_to_map`, `ob_pose_service_cpp` | `robot_self_filter`, `walkie_perception` | `use_zed` |
     | Relay `lift/joint_states` to `/joint_states` | `topic_tools` | always |
@@ -468,11 +481,10 @@ pixi run ros2 launch robot_bringup real_omnibot.launch.py use_zed:=false use_rvi
 
 | Package | Used for | Effect under pixi |
 | --- | --- | --- |
-| `zed_wrapper` | ZED camera | Fetched via `pixi run setup-real`; requires ZED SDK 5.5 and CUDA 13.2 (see [Set up the ZED camera](#zed-setup)). Pass `use_zed:=false` if working without CUDA. |
-| `realsense2_camera` | Bottom camera | Always started. Without it, the launch stops with `package not found`. |
-| `topic_tools` | Lift joint state relay | Always started. Without it, the launch stops with `package not found`. |
+| `zed_wrapper` | ZED camera | Fetched via `pixi run setup-real`; requires ZED SDK 5.5 and CUDA 13.2 (see [Set up the ZED camera](#zed-setup)). Without it, the watchdog logs `Package 'zed_wrapper' not found` and relaunches, and `use_zed_watchdog:=false` stops the launch with `package not found`. Pass `use_zed:=false` if working without CUDA. |
+| `realsense2_camera` | Bottom camera | None today: the launch file has its node commented out. |
 
-The physical Docker image installs all three (see [Docker Images](docker.md)).
+The physical Docker image installs both (see [Docker Images](docker.md)).
 For the fix under pixi, see
 [real_omnibot.launch.py stops with package not found](../troubleshooting.md#real_omnibotlaunchpy-stops-with-package-not-found).
 
@@ -579,7 +591,7 @@ Run the [bringup steps](#bringup-order) by hand instead.
 | Back 2D lidar | Lakibeam | Ethernet, `10.0.0.102` | `lakibeam1` |
 | 3D lidar | Unitree 4D L2 | Ethernet (UDP), `10.0.0.103` | `unitree_lidar_ros2` |
 | Head camera | ZED 2i, camera name `zed_head` | USB | `zed_wrapper`, supervised by `zed_watchdog.py` |
-| Bottom camera | RealSense D415, camera name `bottom` | USB | `realsense2_camera` |
+| Bottom camera | RealSense D415, camera name `bottom` | USB | `realsense2_camera`, not started by `real_omnibot.launch.py` |
 | Wrist cameras | USB cameras | `/dev/left_wrist_cam`, `/dev/right_wrist_cam` | Device names only. No launch file uses them yet. |
 
 The lidar configuration expects the robot computer at `10.0.0.201` on the
@@ -622,8 +634,9 @@ lidar network. The Lakibeam `hostip` in
 | `lift/joint_states` publishes the software trajectory, not a measured position. | If the motor stalls, the published position still reaches the goal. | Check the lift on the robot. No node publishes the measured position. |
 | The lift action reports success after its 60 s wait even if the lift did not arrive. | MoveIt treats a stalled lift move as done. | Do not treat success as proof that the lift arrived. |
 | `use_arm` in `description/robots/gz_walkie.urdf.xacro` is declared but not used. | `use_arm:=false` only skips the arm controllers. The OpenArm CAN plugin still loads. | Without the arms, also pass `use_fake_arm_hardware:=true`. |
-| `pixi.toml` does not include `realsense2_camera` or `topic_tools`. | `real_omnibot.launch.py` stops with `package not found` under pixi. | See [Troubleshooting](../troubleshooting.md#real_omnibotlaunchpy-stops-with-package-not-found). |
-| [`bringup/scripts/readme.md`](https://github.com/EIC-Robocup-2026/walkie-ros/blob/main/bringup/scripts/readme.md) is out of date. | Its setup steps and topic do not match the code. Its example `[0.0, 1.0]` is rejected, because the bottom is 8 cm. | Follow [Run and command the lift](#lift-node) on this page. |
+| `pixi.toml` does not include `zed_wrapper`. | Under pixi there is no head camera until `pixi run setup-real` and a build. The watchdog keeps relaunching, and `use_zed_watchdog:=false` stops the launch with `package not found`. | See [Troubleshooting](../troubleshooting.md#real_omnibotlaunchpy-stops-with-package-not-found). |
+| Build set `_27` has not been tested on real hardware. | The launch files parse and the plugins load, but no motor, servo, camera, or lidar has run on it. | Test each subsystem on the robot before you rely on it ([entry 7](../migrations/07-robostack-build-27.md#still-open)). |
+| [`bringup/scripts/readme.md`](https://github.com/EIC-Robocup-2026/walkie-ros/blob/main/bringup/scripts/readme.md) is out of date. | Its topic does not match the code. Its example `[0.0, 1.0]` is rejected, because the bottom is 8 cm. | Follow [Run and command the lift](#lift-node) on this page. |
 | `scripts/setup_device/` still has the older single-device setup scripts. | They and `setup_device.sh` overwrite or uninstall each other's files. | Use only `setup_all_device.sh`. |
 | `scripts/tmux_walkie.sh` and `.tmuxp.yaml` are out of date. | The pane commands run outside pixi and without the Zenoh settings. | Run the commands from [Start the robot](#bringup-order) by hand. |
 | `scripts/bringup/real_slam_nav.sh` launches a file that does not exist. | The script fails. | Use `localization_Nav2_real.launch.py`. See [Navigation](navigation.md). |
@@ -635,10 +648,10 @@ lidar network. The Lakibeam `hostip` in
     `can2` up again at 1 Mbit/s. It takes `can2` down when the node exits.
 
 ??? info "What is out of date in the old scripts and the lift readme"
-    - `bringup/scripts/readme.md` uses `/home/ryu` paths, `/opt/ros/jazzy`,
-      the old input topic `/forward_position_controller/commands`, and the
-      node defaults instead of the launch defaults. It treats 0 cm as the
-      bottom and does not mention the action.
+    - `bringup/scripts/readme.md` uses the old input topic
+      `/forward_position_controller/commands`, and the node defaults instead of
+      the launch defaults. It treats 0 cm as the bottom and does not mention
+      the action.
     - The older single-device scripts are `setup_can2_udev.sh`,
       `setup_dynamixel_udev.sh`, and `setup_openarm_can_udev.sh`.
       `setup_can2_udev.sh` writes `70-can2.link` and `can2-up.service`, the

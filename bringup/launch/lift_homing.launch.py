@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import sys
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -12,8 +13,11 @@ from launch_ros.actions import Node
 # (install/share/.../lift_homing.launch.py -> src/.../bringup/launch/lift_homing.launch.py)
 # so _pkg_dir correctly points to the bringup/ source directory where .venv lives.
 # Without --symlink-install, set ROBOT_BRINGUP_VENV_SITE to the site-packages path.
+# The launch file runs under the interpreter that provides rclpy, and the venv is
+# created from that interpreter, so its version names the site-packages folder.
 _pkg_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-_venv_site = os.path.join(_pkg_dir, '.venv', 'lib', 'python3.12', 'site-packages')
+_python_dir = f'python{sys.version_info.major}.{sys.version_info.minor}'
+_venv_site = os.path.join(_pkg_dir, '.venv', 'lib', _python_dir, 'site-packages')
 _venv_site = os.environ.get('ROBOT_BRINGUP_VENV_SITE', _venv_site)
 _existing_pythonpath = os.environ.get('PYTHONPATH', '')
 _pythonpath = os.pathsep.join(

@@ -1,9 +1,11 @@
-#!/usr/bin/python3
-# NOTE: absolute interpreter on purpose. This node is launched from
-# real_omnibot.launch.py, which runs under the walkie-commander environment
-# where `python3` on PATH is a 3.11 venv -- but ROS 2 Jazzy's rclpy is built for
-# the system 3.12. `#!/usr/bin/env python3` would pick the venv and fail to load
-# rclpy's C extension. The system interpreter inherits ROS's PYTHONPATH and works.
+#!/bin/sh
+"exec" "${CONDA_PREFIX:-/usr}/bin/python3" "$0" "$@"
+# NOTE: the interpreter follows the environment on purpose. Under pixi, rclpy is
+# built for the Python in $CONDA_PREFIX. Without pixi, this node is launched from
+# real_omnibot.launch.py under the walkie-commander environment, where `python3`
+# on PATH is a 3.11 venv -- but apt Jazzy's rclpy is built for the system Python.
+# `#!/usr/bin/env python3` would pick the venv and fail to load rclpy's C
+# extension. The system interpreter inherits ROS's PYTHONPATH and works.
 """
 ZED head-camera watchdog / supervisor.
 

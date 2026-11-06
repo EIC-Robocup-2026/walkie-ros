@@ -28,6 +28,9 @@ install(PROGRAMS
 # find_package(<dependency> REQUIRED)
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_lift_homing_launch test/test_lift_homing_launch.py)
+  ament_add_pytest_test(test_script_interpreter test/test_script_interpreter.py)
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
   # comment the line when a copyright and license is added to all source files

@@ -18,6 +18,10 @@ output, but parts of it are out of date. This page follows the code. See
   its own Python venv and a GPU for `grasp_server` (`yolo_node` uses CUDA by
   default). Nodes: `yolo_node`, `obb3d`, `grasp_server`, `test_grasp_viz`.
 
+!!! warning "The grasp pipeline does not run under pixi on build set `_27`"
+    Its venv cannot be created on Python 3.14. See
+    [Set up the grasp pipeline](#set-up-the-grasp-pipeline).
+
 ??? info "How the two pipelines work"
     The classic pipeline projects the center of each 2D bounding box into 3D
     using the depth image and returns positions in the `map` frame. The grasp
@@ -147,11 +151,30 @@ on `/zed_head/zed_node/point_cloud/cloud_registered/filtered_map`.
 
 ## Set up the grasp pipeline
 
+!!! warning "The venv cannot be created under pixi on build set `_27`"
+    `perception/uv.lock` pins numpy 1.26.4 and open3d 0.19.0, which have no
+    wheels for Python 3.14. `pixi run ./perception/setup_env.sh` stops at its
+    lock check and creates nothing:
+
+    ```text
+    ERROR: 'uv sync --locked --dry-run' failed in perception/ on Python 3.14.10 (.../.pixi/envs/default/bin/python3):
+    ```
+
+    A venv built earlier from Python 3.12 fails under pixi too:
+    `import rclpy` stops with `No module named 'rclpy._rclpy_pybind11'`. So
+    `yolo_node`, `obb3d`, `grasp_server`, and `test_grasp_viz` do not run under
+    pixi until the pins change. See
+    [7. Move to RoboStack Build Set _27](../migrations/07-robostack-build-27.md#still-open).
+    The classic pipeline does not use the venv.
+
+    The system ROS 2 and Docker setups below use Ubuntu's Python 3.12. They were
+    not run after the move.
+
 The grasp nodes run in a separate Python venv at `~/perception-venv`, created
 by `perception/setup_env.sh`. You need:
 
-- `uv` on `PATH` and the system Python `/usr/bin/python3.12` (Ubuntu 24.04).
-  Neither comes from pixi.
+- `uv` on `PATH`, which does not come from pixi, and a `python3` that can import
+  `rclpy`: pixi's, or the system one with `/opt/ros/jazzy` sourced.
 - An NVIDIA GPU with CUDA for `grasp_server`. Without one, it stops at
   startup with `CUDA not available — GPU required`. `yolo_node` runs without
   a GPU with `-p device:=cpu`. `obb3d` and the classic nodes need no GPU.
@@ -162,16 +185,19 @@ by `perception/setup_env.sh`. You need:
       extra adds GraspNet helpers, and GraspNet's CUDA extensions are
       compiled against that exact PyTorch build.
     - `perception/pyproject.toml` pins `numpy>=1.26,<2.0`. The pixi
-      environment ships numpy 2.5.3, so both cannot share one environment.
+      environment ships numpy 2.5.4, so both cannot share one environment.
     - The CUDA wheels are large, and simulation, navigation, and manipulation
       work does not need them. Keeping them out of `pixi.toml` keeps the
       shared environment small.
 
 ### Create the venv { #what-a-pixi-user-must-do }
 
-`setup_env.sh` stops unless the system Python can `import rclpy`, so run it
-in a way that gives it a ROS 2 installation. Drop `--grasp` if you only need
-`yolo_node` and `obb3d`.
+`setup_env.sh` builds the venv from the `python3` on `PATH`. It stops unless that
+Python can `import rclpy` and `perception/uv.lock` has installable packages for
+it. When one of these checks fails, it creates and removes nothing. Once they
+pass, it recreates the venv first, so a later failure, such as a lost network
+connection, leaves a partial venv. Run the script again to replace it. Drop
+`--grasp` if you only need `yolo_node` and `obb3d`.
 
 === "pixi only"
 
@@ -179,8 +205,9 @@ in a way that gives it a ROS 2 installation. Drop `--grasp` if you only need
     pixi run ./perception/setup_env.sh --grasp
     ```
 
-    Inside `pixi run`, `PYTHONPATH` points at the pixi packages, so the
-    system Python can import pixi's `rclpy` and the check passes.
+    Inside `pixi run`, `python3` is pixi's Python, so the venv is built from it.
+    On build set `_27`, the script stops at the lock check (see the warning
+    above).
 
 === "System ROS 2 Jazzy"
 
@@ -202,9 +229,16 @@ in a way that gives it a ROS 2 installation. Drop `--grasp` if you only need
     Under `pixi run`, the venv imports pixi's numpy 2.x and pixi's OpenCV 5.0.
     See [Known issues](#known-issues).
 
-To use a venv at another path, set `PERCEPTION_VENV` to its Python
-executable (`export PERCEPTION_VENV=/path/to/venv/bin/python3`), not to the
-venv directory.
+To create the venv at another path, set `PERCEPTION_VENV_DIR` to that directory
+before you run `setup_env.sh`. The script deletes what is in an existing venv, so
+it refuses a target that is not a missing path, an empty directory, or a venv. The
+nodes find the venv through a different variable, `PERCEPTION_VENV`, which is the
+path of its Python executable, not of the directory. The script prints the line
+to use when the location is not the default:
+
+```bash
+export PERCEPTION_VENV=/path/to/venv/bin/python3
+```
 
 ??? info "What setup_env.sh does, step by step"
     ```bash
@@ -214,9 +248,9 @@ venv directory.
 
     | Step | Action |
     | --- | --- |
-    | 1 | Creates `~/perception-venv` from `/usr/bin/python3.12` with `--system-site-packages`, and adds `COLCON_IGNORE` to it. Recreates the venv if it exists |
-    | 2 | Checks that `import rclpy` works inside the venv, and stops if it does not |
-    | 3 | Installs the locked dependencies from `perception/uv.lock` with `uv sync` (`--extra grasp` with `--grasp`) |
+    | 1 | Checks that the target is a missing path, an empty directory, or a venv, that the `python3` on `PATH` can `import rclpy`, that `uv` is on `PATH`, and that `perception/uv.lock` has installable packages for that Python (`uv sync --locked --dry-run`). Stops if a check fails, and leaves an existing venv untouched |
+    | 2 | Creates `~/perception-venv`, or `$PERCEPTION_VENV_DIR`, from that `python3` with `--system-site-packages`, and adds `COLCON_IGNORE` to it. Recreates the venv if it exists |
+    | 3 | Installs the locked dependencies from `perception/uv.lock` with `uv sync --python <venv>/bin/python3 --no-build-package numpy` (`--extra grasp` with `--grasp`). `--python` keeps uv on that venv even if a `.python-version` file asks for another version |
     | 4 | With `--grasp`: clones `graspnetAPI` to `~/graspnetAPI` and installs it, registers `~/graspnet-baseline` in the venv (`graspnet_baseline.pth`) if it exists, and re-installs already-built CUDA extensions |
 
     The script does not build the package. Build it with
@@ -440,7 +474,8 @@ pixi run ros2 service call /grasp/standby std_srvs/srv/SetBool "{data: false}"
 | The `ob_pose_service_cpp` code defaults use the old `/zed` namespace | Started without parameters, the node waits for topics that nothing publishes | Pass `depth_topic` and `info_topic`, as in [Get 3D positions from 2D detections](#classic-pipeline) |
 | No node in the repository publishes `/yolo/detections_2d`, the input of `ob_pose` | `ob_pose` never publishes poses | Remap its input to `/yolo/tracked_detections_2d`, or publish detections on `/yolo/detections_2d` |
 | The default `model_path` of `yolo_node` points to `models/yolo11l-seg.pt` in the installed share directory, but the build installs no `models/` directory | The default model file is not there after a build | Pass `-p model_path:=/path/to/yolo11l-seg.pt` |
-| Inside `pixi run`, `PYTHONPATH` lists pixi's `site-packages`, and `PYTHONPATH` entries come before the venv's own packages | The venv interpreter imports pixi's numpy 2.5.3 instead of the pinned numpy 1.x, and pixi's `cv2` (`py-opencv` 5.0.0) instead of the pinned `opencv-python` 4.11.0.86. See [OpenCV under pixi](#opencv-under-pixi). | If a node fails with a numpy or binary compatibility error, run the grasp pipeline in the physical Docker image |
+| `perception/uv.lock` has no Python 3.14 wheels for numpy 1.26.4 and open3d 0.19.0 | The venv cannot be created under pixi on build set `_27` | See [Set up the grasp pipeline](#set-up-the-grasp-pipeline). Newer pins also need `lap` for `model.track()` and a fix for `z.ptp()` in `test_grasp_viz.py` ([entry 7](../migrations/07-robostack-build-27.md#other-issues-found)). |
+| Inside `pixi run`, `PYTHONPATH` lists pixi's `site-packages`, and `PYTHONPATH` entries come before the venv's own packages | The venv interpreter imports pixi's numpy 2.5.4 instead of the pinned numpy 1.x, and pixi's `cv2` (`py-opencv` 5.0.0) instead of the pinned `opencv-python` 4.11.0.86. See [OpenCV under pixi](#opencv-under-pixi). | If a node fails with a numpy or binary compatibility error, run the grasp pipeline in the physical Docker image |
 | The final message of `setup_env.sh` tells you to build `grasp_interfaces` in `~/Walkie_Project` | No `grasp_interfaces` package exists; the service definitions are in `walkie_perception` | `pixi run build-pkg walkie_perception` |
 | Parts of the perception README are out of date | The README and the code disagree | Follow the code, see the table below |
 
@@ -466,7 +501,7 @@ code to the perception nodes, make sure it works on OpenCV 4 and OpenCV 5.
 | Source | OpenCV |
 | --- | --- |
 | `perception/uv.lock`, for the venv | `opencv-python` and `opencv-python-headless` 4.11.0.86 |
-| The pixi environment | `py-opencv` 5.0.0. The pixi `cv_bridge` is built against it. Under `pixi run`, `import cv2` in the venv loads this one, because `PYTHONPATH` comes first (see [Known issues](#known-issues)). |
+| The pixi environment | `py-opencv` 5.0.0, a headless build on `_27`, so `cv2.imshow` cannot open a window. The pixi `cv_bridge` is built against it. Under `pixi run`, `import cv2` in the venv loads this one, because `PYTHONPATH` comes first (see [Known issues](#known-issues)). |
 | apt Jazzy and the [Docker images](docker.md) | Ubuntu's OpenCV 4.6, for their ROS packages such as `cv_bridge` |
 
 ??? info "OpenCV calls in the perception nodes, and the OpenCV 5 trial"
@@ -488,7 +523,9 @@ code to the perception nodes, make sure it works on OpenCV 4 and OpenCV 5.
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | A grasp node fails at once with `not found` for `python3` | `~/perception-venv` does not exist | Run `setup_env.sh`, or set `PERCEPTION_VENV` to the venv's Python executable |
-| `setup_env.sh` stops with `rclpy not found` | The system Python cannot see a ROS 2 installation | Source `/opt/ros/jazzy/setup.bash`, or run the script with `pixi run` |
+| `setup_env.sh` stops with `cannot import rclpy` | The `python3` on `PATH` cannot see a ROS 2 installation | Source `/opt/ros/jazzy/setup.bash`, or run the script with `pixi run` |
+| `setup_env.sh` stops with `the dependencies in perception/uv.lock cannot be installed on Python X` | The lock has no installable package for that Python | Use an environment with a supported Python, or update the pins in `perception/pyproject.toml` and run `uv lock` |
+| A grasp node fails under pixi with `No module named 'rclpy._rclpy_pybind11'` | The venv was built from Python 3.12, and the pixi environment is on Python 3.14 | See [Set up the grasp pipeline](#set-up-the-grasp-pipeline) |
 | `grasp_server` exits with `CUDA not available` | No usable NVIDIA GPU or driver | Run it on the GPU machine |
 | `grasp_server` fails on `from models.graspnet import GraspNet` | `~/graspnet-baseline` is missing or the extensions are not built | Follow [Build the GraspNet CUDA extensions](#graspnet-cuda-extensions) |
 | Grasp requests fail after a `/grasp/standby false` | The model is unloaded | Call `/grasp/standby` with `true` |

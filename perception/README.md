@@ -24,7 +24,7 @@ ROS 2 perception package for Walkie. Two pipelines share the same ZED RGB-D came
 
 ### Step 1 — Python environment
 
-The grasp pipeline nodes need heavy ML libraries (PyTorch, Ultralytics, Open3D). These are installed into a dedicated venv at `~/perception-venv`, completely isolated from system Python and all other ROS packages. Classic pipeline nodes use only system packages — no venv needed.
+The grasp pipeline nodes need heavy ML libraries (PyTorch, Ultralytics, Open3D). These are installed into a dedicated venv at `~/perception-venv`, separate from the Python environment that runs the other ROS packages. Classic pipeline nodes need no venv.
 
 ```bash
 cd <workspace>/src/walkie-ros/perception
@@ -33,7 +33,9 @@ cd <workspace>/src/walkie-ros/perception
 ./setup_env.sh --grasp    # full: + grasp_from_mask + test_grasp_viz  (recommended)
 ```
 
-The script creates `~/perception-venv` with system Python 3.12 + ROS library access, installs all deps from `uv.lock`, and (with `--grasp`) clones and installs `graspnetAPI`. Other nodes in the same launch file are unaffected — each node is a separate OS process and perception nodes select the venv via their shebang automatically.
+The script creates `~/perception-venv` (or `$PERCEPTION_VENV_DIR`) from the active environment's Python, with access to its ROS libraries, installs all deps from `uv.lock`, and (with `--grasp`) clones and installs `graspnetAPI`. Other nodes in the same launch file are unaffected — each node is a separate OS process and perception nodes select the venv via their shebang automatically.
+
+**Under pixi on RoboStack build set `_27` (Python 3.14), the script stops at its lock check and creates nothing**, because `uv.lock` has no Python 3.14 wheels for numpy 1.26.4 and open3d 0.19.0. The venv-based nodes do not run there until the pins change. See `docs/guides/perception.md` and `docs/migrations/07-robostack-build-27.md`.
 
 ### Step 2 — GraspNet CUDA extensions (grasp pipeline only)
 

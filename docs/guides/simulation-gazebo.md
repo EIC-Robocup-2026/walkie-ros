@@ -414,8 +414,9 @@ scene is not in this repository.
       searches the system folder and can load the system build of
       `libgz_ros2_control-system.so`. The fix, removing the override, is not
       in the repository yet. With the value that pixi sets, Gazebo with
-      `gz_ros2_control` worked headless on build set `_25`, started by a test
-      script rather than these launch files.
+      `gz_ros2_control` worked headless on build sets `_25` and `_27`, started
+      by a test script or a copy of the launch file without the override. With
+      the launch file as shipped, the same crash happens on both build sets.
     - **Dual lidar.** With `dual_lidar:=True`, the `front_lidar` and
       `back_lidar` entries in `gz_bridge.yaml` are commented out, and no laser
       merger runs in simulation.

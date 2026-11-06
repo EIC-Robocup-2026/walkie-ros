@@ -1098,7 +1098,7 @@ empty MuJoCo world, and the loopback and hero configurations.
 | `nav_mujoco_omnibot.launch.py` has no AMCL | The pose drifts with the odometry. A goal sent while the robot is already at it by odometry aborts with error 103 (`Resulting plan has 0 poses in it`). | None |
 | `nav2_bringup`'s `bringup_launch.py` runs all Nav2 servers on one thread when composed (its default) | Bringup can hang at `Waiting for service smoother_server/get_state...` | `use_composition:=False`. `localization_Nav2_sim.launch.py` and `nav_mujoco_omnibot.launch.py` set it. ([details](#nav2-composition-deadlock)) |
 | `slam_cartographer.launch.py` needs `cartographer_ros`, which `pixi.toml` does not install | The launch fails | Use SLAM Toolbox |
-| `octomap_3d_mapping.launch.py` needs `octomap_server` and `topic_tools`, which are not in `pixi.toml` | The launch fails with "package not found" under pixi | Add both packages to the environment |
+| `octomap_3d_mapping.launch.py` needs `octomap_server`, which is not in `pixi.toml` | The launch fails with "package not found" under pixi | Add `ros-jazzy-octomap-server` to the environment |
 | `scripts/bringup/real_slam_nav.sh` is broken | The Nav2 tab fails | Use the launch files in [Localization and mapping on the real robot](#localization-and-mapping-on-the-real-robot) |
 | `navigation/README.md` describes an older setup | Its commands fail | Use this page |
 | The fixture of the Nav2 test `test_action_follow_path_action` never sets `cancel_timeout` | The test can hang until CTest stops it. `bt_navigator` is not affected. | Skip the test: `pixi run test --packages-select nav2_behavior_tree --ctest-args -E test_action_follow_path_action` |

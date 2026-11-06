@@ -105,4 +105,5 @@ nav:
       - 4. Move to RoboStack Build Set _25: migrations/04-robostack-build-25.md
       - 5. Repair Nav2 After the navigation2 Bump: migrations/05-nav2-repair.md
       - 6. Select Zenoh in Every Pixi Command: migrations/06-zenoh-in-pixi.md
+      - 7. Move to RoboStack Build Set _27: migrations/07-robostack-build-27.md
   - Troubleshooting: troubleshooting.md

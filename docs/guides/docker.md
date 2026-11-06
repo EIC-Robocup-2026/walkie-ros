@@ -272,7 +272,7 @@ docker pull ghcr.io/eic-robocup-2026/walkie-ros/walkie-simulation:main
 | `Dockerfile.physical` adds `source /home/ros2_ws/install/setup.bash` to `/root/.bashrc`, but the workspace is at `/ros2_ws` | New shells lack the workspace packages | `source /ros2_ws/install/setup.bash` |
 | `Dockerfile.physical` builds librealsense from source and also installs it from apt | The two copies can clash | If they clash, remove one. The Dockerfile comment suggests dropping the source build. |
 | `compose.physical.yml` mounts `./models/checkpoint-rs.tar`, which the repository does not contain | No GraspNet checkpoint in the container | Put it at `docker/models/checkpoint-rs.tar`, or change the left side of the mount |
-| The container's `uv sync` writes the host's `bringup/.venv` | Host and container share one lift venv | If the lift node then fails on the host, create the venv again ([Real Robot](real-robot.md#python-environment)) |
+| The container's `uv sync` writes the host's `bringup/.venv` | Host and container share one lift venv. Since [build set `_27`](../migrations/07-robostack-build-27.md), the host uses Python 3.14 and the container Ubuntu's Python 3.12, so one venv cannot serve both. The Docker images were not run after that move. | If the lift node then fails on the host, create the venv again with `--clear` ([Real Robot](real-robot.md#python-environment)) |
 | No compose file starts a Zenoh router | Container nodes cannot find each other until a router runs | [Zenoh router](#zenoh-router) |
 | [`docker/readme.md`](https://github.com/EIC-Robocup-2026/walkie-ros/blob/main/docker/readme.md) is out of date | Its instructions do not match the current files | Follow this page |
 

@@ -143,23 +143,27 @@ from the pixi environment. Or test on a computer without a system ROS.
 
 ### real_omnibot.launch.py stops with package not found
 
-`pixi run ros2 launch robot_bringup real_omnibot.launch.py` stops with
-`Caught exception in launch` and a message such as
-`package 'realsense2_camera' not found`.
+`pixi run ros2 launch robot_bringup real_omnibot.launch.py use_zed_watchdog:=false`
+stops with `Caught exception in launch` and
+`package 'zed_wrapper' not found`.
 
-Run the full bringup in the physical Docker image. It has `zed_wrapper`,
-`realsense2_camera`, and `topic_tools`, and `pixi.toml` has none of them.
-Under pixi, `use_zed:=false` skips the ZED camera, but the launch still needs
-the other two packages.
+With the default `use_zed_watchdog:=true` the launch keeps running, but the
+watchdog logs the same error and relaunches, so there is no head camera.
+
+Fetch the wrapper with `pixi run setup-real` and build it
+([Set up the ZED camera](guides/real-robot.md#zed-setup)), or pass
+`use_zed:=false` to run without the ZED. The physical Docker image already has
+`zed_wrapper`.
 
 ??? info "Which packages the launch needs, and their status in pixi"
-    The launch file starts `zed_wrapper` (with the default `use_zed:=true`),
-    `realsense2_camera`, and a `topic_tools` relay. See
+    `zed_wrapper` is the only package named by the launch and its lidar and
+    self filter includes that pixi does not provide. See
     [Packages that pixi does not provide](guides/real-robot.md#packages-that-pixi-does-not-provide).
 
-    `ros-jazzy-realsense2-camera` and `ros-jazzy-topic-tools` exist on
-    `robostack-jazzy` for the locked RoboStack build, but nobody has added
-    them to `pixi.toml` or tried them on the robot.
+    The launch does not need `realsense2_camera`: its node and self filter are
+    commented out in `real_omnibot.launch.py`. `ros-jazzy-realsense2-camera`
+    exists on `robostack-jazzy` for the locked RoboStack build, but nobody has
+    added it to `pixi.toml` or tried it on the robot.
 
 ### The lift node cannot import TMotorCANControl
 
@@ -171,24 +175,30 @@ The lift homing node exits with
 
     ```bash
     cd bringup
-    pixi run uv venv --python python3.12 --system-site-packages
-    pixi run uv sync
+    pixi run uv venv --python python --system-site-packages
+    pixi run uv sync --python python
     ```
+
+    If `bringup/.venv` exists but comes from an older Python, for example from
+    before [the move to build set `_27`](migrations/07-robostack-build-27.md),
+    add `--clear` to the `uv venv` command to replace it.
 
 2. Build with `pixi run build` or `pixi run build-pkg robot_bringup`.
 
 If you build without `--symlink-install`, set `ROBOT_BRINGUP_VENV_SITE` to the
-venv's `site-packages` folder:
+venv's `site-packages` folder, from the repository root:
 
 ```bash
-export ROBOT_BRINGUP_VENV_SITE=$PWD/bringup/.venv/lib/python3.12/site-packages
+export ROBOT_BRINGUP_VENV_SITE="$(pixi run bringup/.venv/bin/python -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"
 ```
 
 ??? info "Why the node cannot find the library"
     TMotorCANControl is not in the pixi environment. It lives in the uv venv
     at `bringup/.venv`, which `lift_homing.launch.py` adds to the node's
-    `PYTHONPATH`. The venv does not exist yet, or the launch file cannot find
-    it, because the package was built without `--symlink-install`.
+    `PYTHONPATH`. It uses the `lib/pythonX.Y` folder of the Python that runs the
+    launch file. The venv does not exist yet, it comes from another Python, or
+    the launch file cannot find it, because the package was built without
+    `--symlink-install`.
 
 ### Lock file not up-to-date with the workspace
 

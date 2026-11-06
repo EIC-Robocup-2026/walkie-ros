@@ -23,40 +23,37 @@ because commanding the motor positive drives the lift downward.
 
 The node depends on `TMotorCANControl` and `python-can`, declared in
 `bringup/pyproject.toml` and pinned in `bringup/uv.lock`. The venv must inherit
-the system `site-packages` so `rclpy` / `sensor_msgs` / `std_msgs` from
-`/opt/ros/jazzy` remain importable.
+the `site-packages` of the pixi Python so `rclpy` / `sensor_msgs` / `std_msgs`
+remain importable. Run uv through `pixi run`, from the `bringup/` directory:
 
 ```bash
-cd ~/walkie_ws/walkie-ros/bringup
-uv sync --system-site-packages
+cd bringup
+pixi run uv venv --python python --system-site-packages
+pixi run uv sync --python python
 ```
 
-Activate the venv (must be sourced in every shell that runs the node):
+To replace a venv from an older Python, add `--clear` to the `uv venv` command.
+A bare `uv sync` can replace the venv with one on another Python and without
+access to `rclpy`, so keep `--python python`.
+The venv is not activated: `lift_homing.launch.py` adds its `site-packages` to the
+node's `PYTHONPATH`.
+
+Then build the package from the repository root:
 
 ```bash
-source /home/ryu/walkie_ws/walkie-ros/bringup/.venv/bin/activate
-```
-
-Then build the workspace and source it:
-
-```bash
-cd ~/walkie_ws
-colcon build --packages-select robot_bringup --symlink-install
-source install/setup.bash
+pixi run build-pkg robot_bringup
 ```
 
 ## Run
 
 ```bash
-source /home/ryu/walkie_ws/walkie-ros/bringup/.venv/bin/activate
-source /home/ryu/walkie_ws/install/setup.bash
-ros2 launch robot_bringup lift_homing.launch.py
+pixi run ros2 launch robot_bringup lift_homing.launch.py
 ```
 
 Override params on the CLI, e.g.:
 
 ```bash
-ros2 launch robot_bringup lift_homing.launch.py \
+pixi run ros2 launch robot_bringup lift_homing.launch.py \
   hardware_max_cm_s:=2.5 \
   lift_m_per_rad:=-0.00012406
 ```

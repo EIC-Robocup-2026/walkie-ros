@@ -96,7 +96,10 @@ git submodule foreach --recursive git lfs pull
     pixi run clean && pixi run build
     ```
 
-    See [What needs a rebuild](guides/pixi.md#what-needs-a-rebuild).
+    If the Python version changed too, recreate `bringup/.venv`. See
+    [What needs a rebuild](guides/pixi.md#what-needs-a-rebuild) and the steps of
+    the latest move,
+    [After pulling this change](migrations/07-robostack-build-27.md#after-pulling-this-change).
 
 ## 4. Install the environment
 

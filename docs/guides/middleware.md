@@ -66,13 +66,19 @@ export ROS_DOMAIN_ID=23
 ??? info "Why rmw_zenoh_cpp 0.2.11 or newer"
     0.2.10 has a lost-wakeup bug: an executor can stall until another event
     arrives, and a process without timers can stall indefinitely. 0.2.11
-    fixes it. Both versions use zenoh-c 1.9.0. The message type hashes are
-    the same in RoboStack build sets `_21` and `_25` and in apt Jazzy.
+    fixes it. Both versions use zenoh-c 1.9.0 in build set `_25`. Build set
+    `_27` keeps `rmw_zenoh_cpp` 0.2.11 on zenoh-c 1.10.1 (`libzenohc`). The
+    message type hashes are the same in RoboStack build sets `_21`, `_25`, and
+    `_27`, and in apt Jazzy.
 
-    With 0.2.11, a local `rmw_zenohd` starts and relays messages.
-    Communication across machines, through the team router or with computers
-    on apt Jazzy, has not been tested with it yet. See
-    [4. Move to RoboStack Build Set _25](../migrations/04-robostack-build-25.md).
+    With 0.2.11, a local `rmw_zenohd` starts and relays messages. On one
+    computer, nodes on `_25` and `_27` exchange topics, services, and actions in
+    both directions, also through two linked routers. Communication across
+    machines, through the team router or with computers on apt Jazzy, has not
+    been tested with it yet. See
+    [4. Move to RoboStack Build Set _25](../migrations/04-robostack-build-25.md)
+    and
+    [7. Move to RoboStack Build Set _27](../migrations/07-robostack-build-27.md#verification).
 
 ## Start the router
 
