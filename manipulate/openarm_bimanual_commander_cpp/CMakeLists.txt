@@ -24,6 +24,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
+find_package(octomap REQUIRED)
 
 add_executable(benchmark_collision src/benchmark_collision.cpp)
 ament_target_dependencies(benchmark_collision
@@ -31,6 +32,17 @@ ament_target_dependencies(benchmark_collision
   moveit_core
   moveit_ros_planning
 )
+
+# Collision, IK and planning timings near the whole-body demo's table, in one
+# process. Started by run_planning_benchmark.launch.py in openarm_bimanual_moveit_config.
+add_executable(benchmark_planning src/benchmark_planning.cpp)
+ament_target_dependencies(benchmark_planning
+  rclcpp
+  moveit_core
+  moveit_ros_planning
+)
+target_include_directories(benchmark_planning PRIVATE ${OCTOMAP_INCLUDE_DIRS})
+target_link_libraries(benchmark_planning ${OCTOMAP_LIBRARIES})
 
 add_executable(commander src/commander_template.cpp)
 ament_target_dependencies(commander
@@ -109,7 +121,7 @@ ament_target_dependencies(save_named_constraint
   tf2_geometry_msgs
 )
 
-install(TARGETS commander whole_body_base_follower pick_and_place_isaac pick_and_place_isaac2 save_named_constraint benchmark_collision
+install(TARGETS commander whole_body_base_follower pick_and_place_isaac pick_and_place_isaac2 save_named_constraint benchmark_collision benchmark_planning
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch

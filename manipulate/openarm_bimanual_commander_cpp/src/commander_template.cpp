@@ -117,12 +117,16 @@ public:
         }
 
         // OMPL planner selection. The arm groups list RRTConnect/RRT/RRTstar/
-        // BKPIECE/BITstar/TRRT in ompl_planning.yaml. RRTConnect (the default
-        // here) early-exits as soon
-        // as it finds a path, so it plans fast. RRTstar is asymptotically optimal
-        // (shorter, smoother paths) but never early-exits — it burns the FULL
-        // planning-time budget every call, so it needs a larger arm_planning_time
-        // to converge. Both are ROS params so you can switch/retune live.
+        // BKPIECE/BITstar/TRRT in ompl_planning.yaml. A single RRTConnect search
+        // stops at its first path, but the arm groups below ask for 10000
+        // attempts: MoveIt runs them in rounds of parallel searches until the
+        // planning time runs out, and OMPL merges their paths into shorter ones
+        // as it goes. So in practice an arm plan uses the full arm_planning_time.
+        // A pose goal also has to find its IK goal state within that time, which
+        // can take seconds with the idle arm in home: in the planning benchmark
+        // (run_planning_benchmark.launch.py in openarm_bimanual_moveit_config) one
+        // such goal planned 8 of 12 times in 1.5 s and 12 of 12 in 5 s. RRTstar never
+        // stops early either. Both are ROS params, so you can switch/retune live.
         std::string planner_id = node_->declare_parameter<std::string>("planner_id", "RRTConnect");
         double arm_planning_time = node_->declare_parameter<double>("arm_planning_time", 5.0);
         plan_only_ = node_->declare_parameter<bool>("plan_only", false);
