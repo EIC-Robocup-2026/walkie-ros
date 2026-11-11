@@ -218,7 +218,7 @@ Most parameters take effect live. The node reads `plan_only` and
 | Parameter | Default | Meaning |
 | --- | --- | --- |
 | `planner_id` | `RRTConnect` | OMPL planner for the arm groups |
-| `arm_planning_time` | `5.0` | Planning time per request, in seconds |
+| `arm_planning_time` | `5.0` | Planning time per request, in seconds. Arm plans use all of it in practice, see [Planning time and attempts](#planning-time-and-attempts) |
 | `max_velocity_scaling_factor` | `0.5` from `config/joint_limits.yaml` | Velocity scaling for the arm groups, in (0, 1]. Applies to the next plan |
 | `max_acceleration_scaling_factor` | `0.3` from `config/joint_limits.yaml` | Acceleration scaling for the arm groups, in (0, 1]. Applies to the next plan |
 | `plan_only` | `false` | Plan without executing. The plan is stored per group |
@@ -372,14 +372,20 @@ planned base path.
     | `near_body` | `whole_body_left` | Target the arm reaches alone: the status says `base fixed` |
     | `far_body` | `whole_body_left` | The target of `far_arm`: base, lift, and arm move together |
     | `home_<n>`, `far_<n>` | `whole_body_left` | Only with `--cycles N`: `N` round trips to a target near the start and back |
+    | `tuck_right` | `right_arm` on `/go_to_home` | The idle arm goes to `standby`, see [Clear the idle arm](#clear-the-idle-arm). The base stays |
+    | `deep_body` | `whole_body_left` | A target 0.10 m short of the table's far edge, which needs the column close to the table |
     | `seam_turn` | `whole_body_left` | Hand along -x, which turns the body to a heading near +π |
     | `seam_cross` | `whole_body_left` | A hand direction that makes the base turn through ±π the short way |
+    | `home_right` | `right_arm_lift` on `/go_to_home` | The idle arm goes back to `home`, away from the table, and the lift rises to its home position. The base stays |
 
     A whole-body step also fails on a tip error above `--tip-tolerance` (0.03 m),
     a turn more than π above the heading change, or a base path above 1.5 times the
     displacement plus 0.3 m. `--report <file>` writes the report to a file, because
     `rmw_zenoh_cpp` also logs to stdout. `--skip-near` skips `near_arm` and
     `near_body`, and `--settle` sets how long the octomap fills before the first goal.
+    The report gives `table_clearance_m`, the gap between the base front and the table
+    edge up to `tuck_right`, and `deep_column_gap_m`, the gap between the column and
+    the table edge during `deep_body`. Both ignore the base heading.
 
     The simulation runs slower than real time: a real-time factor of about 0.5
     headless, and 0.16 to 0.30 with the viewer and RViz, depending on what else the
@@ -398,6 +404,77 @@ planned base path.
     tolerances, so it reaches a little further. A target in that gap succeeds on
     `left_arm_lift` without moving the base, and moves the base by a few centimeters
     on `whole_body_left`. If the base must not move, use an arm group.
+
+### Clear the idle arm
+
+A whole-body goal never moves the other arm. In its `home` pose that arm hangs in
+front of the base at table height, so before a goal near a table or shelf, send it
+to `standby`:
+
+```bash
+pixi run ros2 action send_goal /go_to_home my_robot_interfaces/action/GoToHome \
+  "{group_name: right_arm, pose_name: standby}"
+```
+
+Use `group_name: left_arm` before a `whole_body_right` goal. Send `pose_name: home`
+to bring the arm back once the base is clear of the furniture: from `standby` back
+to `home`, the arm sweeps down in front of the base. Use the arm's lift group for
+that, see the warning below.
+
+!!! warning "`home` needs the lift at 0.50 m or higher"
+    Below that, the fingers of an arm in `home` reach into the base, and the
+    commander answers `Failed to plan path to 'home'`. A whole-body goal can leave
+    the lift there. Send `group_name: right_arm_lift` (or `left_arm_lift`) with
+    `pose_name: home` instead: it raises the lift to 0.744 m in the same motion,
+    and the other arm rises with it.
+
+??? info "How far the idle arm keeps the robot from a table"
+    With the lift at its home position (0.744 m), measured in `base_footprint`:
+
+    | Idle arm pose | Lowest point | Furthest forward | Lowest free lift position |
+    | --- | --- | --- | --- |
+    | `home` | 0.61 m | 0.22 m | about 0.50 m, then its fingers touch the base |
+    | `standby` | 1.00 m | 0.26 m | 0.11 m |
+
+    In `home` the arm reaches below a table top of about 0.75 m, so the robot
+    cannot drive the base under the table. The column then stays about 0.2 m
+    from the table edge, and targets deep on the table are out of reach. In
+    `standby` the arm clears the table top. The base, 0.36 m high, fits under it,
+    and the column can come up to the edge. In the planning benchmark (see
+    [Measure planning speed](#measure-planning-speed)), in the box scene with the
+    base facing the table and the column 0.08 m from its edge, IK reached none of
+    18 targets with the gripper's lowest point 3 cm above the table with the idle
+    arm at `home`, and 13 with it at `standby`, allowing up to 16 IK calls per
+    target. A whole-body goal samples other base poses, some of which turn the
+    hanging arm aside. From a start 1 m before the table, on the octomap, 13 of 18 targets on the
+    far half of the table planned with the idle arm at `home` and 15 with `standby`,
+    and the `standby` goals planned faster (median 0.8 s instead of 1.1 s, failed
+    goals included).
+
+    When the idle arm blocks every sampled base pose, the refusal names it, see
+    [Why a goal is refused](#why-a-goal-is-refused).
+
+### Targets close to a surface
+
+The target is the pose of the hand frame (`openarm_left_hand` or
+`openarm_right_hand`), not the fingertips. The gripper reaches below the hand frame by
+an amount that depends on the hand orientation. A target lower than the surface
+height plus that amount puts the gripper into the surface, and IK reports every
+solution in collision.
+
+| Hand orientation (roll, pitch, yaw) | Lowest part | Reaches below the hand frame |
+| --- | --- | --- |
+| Forward, wrist camera bracket below: (0, π/2, 0) | Wrist camera bracket | 0.111 m |
+| Forward, bracket on top: (0, -π/2, π) | Hand body | 0.030 m |
+| Down: (0, π, 0) | Fingertips | 0.095 m, plus 0.01 m finger padding |
+
+Add a margin on top. The octomap places a table top up to about 0.04 m above its
+real height: the voxel size is 0.03 m, and in MuJoCo `base_footprint` sits 6 mm
+below the floor. A whole-body goal must also stay clear with the lift 0.01 m below
+its goal, because the lift settles a few millimetres short. Plan for about 0.05 m in
+all over the real surface for a whole-body goal. The demo's forward-pointing targets
+use 0.2 m above the box top, and its deep target under the table top leaves about
+0.10 m.
 
 ### Choose the base model
 
@@ -453,7 +530,7 @@ way, and stops every controller it was using.
 | `Refused: another motion is in progress` | A whole-body goal runs alone. Wait for the running arm goal. |
 | `Refused: a whole-body motion is in progress` | The same, seen from an arm goal |
 | `Cartesian paths are not supported on ...: use ...` | Set `cartesian_path: false`, or send the arm group the status names |
-| `No base pose found to reach the target (...)` | No sampled base pose gave a usable IK solution. The numbers say how many samples had one and how many sat on a joint limit. |
+| `No base pose found to reach the target (...)` | No sampled base pose gave a usable IK solution. The numbers say how many samples had one and how many sat on a joint limit; the rest were in collision. If the status goes on with `The idle arm (...) collided or lacked clearance in N IK solution(s)`, the other arm was in the way: send it to `standby` with `/go_to_home` and send the goal again, see [Clear the idle arm](#clear-the-idle-arm). |
 | `Planning Failed for N sampled base pose(s), last MoveIt code ...` | IK found base poses, but no path to them. Code `-10` means the start state is in collision, and `-2` that the planner found no path in time. |
 | `Execution deadline of N s exceeded: stop sent` | A controller did not finish in 1.5 times the planned duration plus `whole_body_execution_margin`. Check the follower's log. |
 | `Base moved ... since the plan: plan again` | The base moved by more than 0.05 m or 0.05 rad while planning ran, or, with `(plan still stored)`, since a `plan_only` plan was stored. Send the goal again. |
@@ -901,12 +978,15 @@ pairs, and the octomap. Simplifying the `link3_symp.stl` collision mesh gives
 the largest gain.
 
 ??? info "Where each planning-cost setting lives"
-    - **Planning time:** commander parameter `arm_planning_time`, 5.0 s. Upper
-      bound on the time spent per request. Can be changed live.
+    - **Planning time:** commander parameter `arm_planning_time`, 5.0 s. With
+      10000 attempts arm plans use all of it in practice, see
+      [Planning time and attempts](#planning-time-and-attempts). Can be changed
+      live. Whole-body goals use `whole_body_planning_time` instead.
     - **Planning attempts:** `setNumPlanningAttempts` in
       `manipulate/openarm_bimanual_commander_cpp/src/commander_template.cpp`,
-      10000 for arm groups and 100 for grippers. Hard-coded. More attempts mean more planning work per
-      request.
+      10000 for arm groups and 100 for grippers. Hard-coded. With more attempts
+      than parallel planning threads, MoveIt keeps starting new rounds of searches
+      until the planning time runs out.
     - **Collision mesh size:** `description/meshes/openarm/arm/v10/collision/`.
       `link3_symp.stl` has 72,160 triangles, `link4` 22,798, and `link5`
       15,028. The other links have fewer than 1,000. Every collision check
@@ -922,6 +1002,134 @@ the largest gain.
       `moveit_demo`, 0.008 m for `moveit_only`) and
       `/toggle_octomap_collision`. A finer octomap has more voxels to check.
 
+## Measure planning speed
+
+`run_planning_benchmark.launch.py` loads the whole-body robot model, the IK plugins,
+and the OMPL pipeline in one process. It plans against the table scene of the
+whole-body demo, as boxes or as an octomap, and pads the finger links by 0.01 m as
+the commander does. It needs no simulator, router, or `move_group`. A full run of the
+four default scenes takes about 30 minutes, 7 to 8 minutes per scene:
+
+```bash
+pixi run ros2 launch openarm_bimanual_moveit_config run_planning_benchmark.launch.py \
+  output_json:=/tmp/planning_benchmark.json
+```
+
+Shorter runs:
+
+```bash
+# Arm plans with 1, 4 and 10000 attempts
+pixi run ros2 launch openarm_bimanual_moveit_config run_planning_benchmark.launch.py \
+  quick:=true scenes:=boxes sections:=ik,attempts attempt_goals:=12
+# Whole-body goals near the far edge of the table
+pixi run ros2 launch openarm_bimanual_moveit_config run_planning_benchmark.launch.py \
+  scenes:=octomap:0.03 sections:=whole_body target_xs:=1.90,2.05,2.15
+# Pose goals with three planning times
+pixi run ros2 launch openarm_bimanual_moveit_config run_planning_benchmark.launch.py \
+  quick:=true scenes:=empty sections:=ik,pose_plan pose_times:=1.5,3,5 pose_repeats:=6
+```
+
+The `arm_plan` and `attempts` sections take their goals from the `ik` section and
+refuse to start without it. Without `ik`, the `pose_plan` section plans only the
+launch tests' near target. Under
+`rmw_zenoh_cpp` the process aborts at exit (code -6) after it has written the JSON
+file; the results are complete.
+
+??? info "Sections and arguments"
+    | Section | Measures |
+    | --- | --- |
+    | `geometry` | Extents of the arms for each idle-arm pose, the lowest free lift position, and how far the gripper reaches below the hand frame |
+    | `collision` | Time of one full collision check |
+    | `ik` | IK from base poses at set gaps in front of the table, with the colliding links of every failure |
+    | `arm_plan` | Arm plans to the IK solutions |
+    | `attempts` | Arm plans with each count in `attempt_counts`, to `attempt_goals` goals whose start is collision free |
+    | `pose_plan` | Arm plans to pose goals, as the commander sends them, for each planning time in `pose_times`: the launch tests' near target and `pose_goals` hand poses from the `ik` section, `pose_repeats` times each |
+    | `whole_body` | The steps of a whole-body goal, as the commander runs them, from a start 1 m before the table, for each idle-arm pose |
+
+    | Argument | Default | Meaning |
+    | --- | --- | --- |
+    | `output_json` | `planning_benchmark.json` | Result file, relative to the working directory |
+    | `scenes` | `empty,boxes,octomap:0.03,octomap:0.02` | `octomap:<resolution>` fills an octomap from the box faces |
+    | `sections` | all seven | Comma-separated |
+    | `planning_time` | `5.0` | Planning time per plan, in seconds |
+    | `ik_calls`, `plan_trials` | `16`, `3` | IK calls per target in the `ik` section, and single-attempt plans per IK solution in the `arm_plan` section |
+    | `attempt_counts`, `attempt_goals` | `1,4,10000`, `4` | For the `attempts` section |
+    | `pose_times`, `pose_goals`, `pose_repeats` | `1.5,5`, `6`, `4` | For the `pose_plan` section |
+    | `target_xs` | empty | Target x positions in `map`; the table spans 1.55 to 2.25 m |
+    | `quick` | `false` | Fewer targets and base poses |
+    | `ik_solve_type`, `ik_timeout` | from `kinematics.yaml` | TRAC-IK overrides |
+    | `finger_padding` | `0.01` | Collision padding of the four finger links in m, the commander's `finger_padding` default |
+    | `segment_fraction` | from `ompl_planning.yaml` | `longest_valid_segment_fraction` of every group |
+    | `totg_path_tolerance` | MoveIt's 0.1 | Corner blend tolerance of the time parameterization |
+    | `wb_reseeds` | `0` | Second whole-body pass that retries failed IK calls with random seeds |
+
+### Planning time and attempts
+
+Every arm plan uses the full `arm_planning_time`, 5 s by default. The commander asks
+for 10000 attempts, far more than MoveIt runs in parallel, so MoveIt keeps starting
+rounds of RRTConnect searches until the time runs out, and OMPL merges the paths
+found into shorter ones along the way. A plan fails when no search finds a path in
+time, when the request or its start state is invalid, or when MoveIt's final check
+rejects the path (see below).
+
+Do not lower `arm_planning_time` to speed up arm goals. A pose goal has to find its
+IK goal state within the same time, and with the idle arm in `home` that can take
+seconds: the launch tests' near target, from a free start with no obstacles, planned
+8 of 12 times in 1.5 s, 11 of 12 in 3 s, and 12 of 12 in 5 s. At 1.5 s the commander's
+launch tests failed 2 of 8 tries at that target with `Planning Failed`. With the idle
+arm in `standby`, every pose goal planned at 1.5 s. The likely cause: MoveIt samples
+goal states by IK from random seeds, and many of those solutions put the lift below
+0.50 m, where an arm in `home` touches the base (see
+[Clear the idle arm](#clear-the-idle-arm)).
+
+??? info "Benchmark results"
+    Joint goals: 12 `left_arm_lift` goals 3 cm above the table, planned from base
+    poses in front of it, to an IK solution found beforehand, so these plans skip
+    the IK goal sampling of a pose goal. The 4-attempt rows repeat each goal three
+    times. The motion is the duration of the timed trajectory at full speed
+    (velocity and acceleration scaling 1.0). The commander's defaults, 0.5 and 0.3,
+    make the real motions longer. "Failed validation" counts plans that MoveIt
+    rejected after planning, explained below.
+
+    | Setting | Plan time, boxes / octomap | Motion, boxes / octomap | Failed validation |
+    | --- | --- | --- | --- |
+    | 10000 attempts, 5 s (default) | 5.1 / 5.2 s | 7.0 / 9.5 s | 1 of 24 |
+    | 10000 attempts, 1.5 s | 1.6 / 1.7 s | 6.7 / 9.8 s | 1 of 24 |
+    | 4 attempts | 0.14 / 0.31 s | 9.0 / 10.0 s | 9 of 72 |
+    | 4 attempts, `longest_valid_segment_fraction` 0.0005 | 1.0 / 1.8 s | 9.1 / 11.8 s | 0 of 72 |
+
+    Pose goals with 10000 attempts (`pose_plan` section, empty scene), two runs of
+    six tries each. The near target is `NEAR_ARM_TARGET` of
+    `test/whole_body_harness.py`, with the base at the origin. The table targets are
+    four hand poses over the table from the `ik` section, planned without the table.
+    The empty scene has no world objects, and MoveIt applies link padding only
+    against world objects, so the first run, without the finger padding, counts
+    here too. On the octomap scene of the padded run, the near target with the idle
+    arm in `home` planned 5 of 6 times at 1.5 s and 6 of 6 at 3 s and 5 s, and with
+    `standby` 6 of 6 at every planning time. These counts show that 1.5 s fails, not
+    how often.
+
+    | Goal | 1.5 s | 3 s | 5 s |
+    | --- | --- | --- | --- |
+    | Near target, idle arm in `home` | 8 of 12 | 11 of 12 | 12 of 12 |
+    | Near target, idle arm in `standby` | 12 of 12 | 12 of 12 | 12 of 12 |
+    | Four table targets, idle arm in `home` or `standby` | 48 of 48 | 48 of 48 | 48 of 48 |
+
+    The joint-goal plans counted under "Failed validation" failed MoveIt's final
+    check of the timed trajectory (`ValidateSolution`) with `INVALID_MOTION_PLAN`.
+    The pose-goal failures above are different: no IK goal state turned up in time.
+    The likely cause of the validation failures: OMPL checks
+    a motion for collisions only at points spaced by
+    `longest_valid_segment_fraction` (0.003) of the joint space's largest extent,
+    so a path pulled tight around the table edge can dip the fingers into the
+    table between two checks. A fraction of 0.0005 removed these failures, but made
+    arm plans with 1 or 4 attempts 6 to 9 times slower, and whole-body goals 3 to 4
+    times slower (median 1.9 to 2.9 s instead of 0.5 to 0.9 s). Lowering the time
+    parameterization's corner blend tolerance (`path_tolerance`) did not remove them
+    in a run without the finger padding. MoveIt warns that this tolerance is not
+    supported for a group that mixes revolute joints with the prismatic lift.
+    Whole-body goals sample another base pose after such a failure.
+
 ## Known issues
 
 | Issue | Effect | Workaround |
@@ -929,7 +1137,8 @@ the largest gain.
 | `moveit_demo.launch.py` does not start the MuJoCo simulator (`mujoco_ros2_control`) | With `hardware_type:=mujoco`, `moveit_demo.launch.py` starts no `ros2_control_node`. The spawners have no timeout and wait forever | Use `whole_body_demo.launch.py` in `robot_bringup`, or start `mujoco_omnibot.launch.py` ([MuJoCo Simulation: Run with ROS 2](simulation-mujoco.md#run-with-ros-2)) and then `moveit_only.launch.py hardware_type:=mujoco` |
 | MoveIt in MuJoCo is tested only with `base_mode:=whole_body` | `hardware_type:=mujoco` with `base_mode:=fixed` starts no octomap, and nobody has run it | Use `base_mode:=whole_body` in MuJoCo |
 | Whole-body goals have not run on the real robot | The follower, the octomap in `map`, and the repairs are tested only against MuJoCo and a stub. The real lift has its own driver, and the real-robot Nav2 parameters set no `state_topic`, so the follower would not see a collision monitor stop | Keep `base_mode:=fixed` on the real robot |
-| The idle arm limits the lift during a whole-body goal | In the home pose the right arm's fingers reach the base at a lift position of about 0.495 m. The planner rejects lower lift positions, so targets that need them fail. | Move the idle arm first |
+| The idle arm limits a whole-body goal | A whole-body goal never moves the other arm. In the home pose that arm hangs down to 0.61 m in front of the base: it keeps the column about 0.2 m from a table edge, and its fingers reach the base at a lift position of about 0.495 m. Targets deep on a table, or that need a lower lift, fail. | Send the idle arm to `standby` first, see [Clear the idle arm](#clear-the-idle-arm) |
+| A second collision box on the column blocks approaches from the right | Besides the column box, `base_link` in `base.urdf.xacro` has a box at x -0.10 to -0.04 m, y -0.23 to 0 m, z 0.33 to 1.37 m in `base_footprint`. It sticks out 0.13 m past the column's right side, and no hardware part matching it is known. A whole-body goal that turns the right side of the robot toward a table keeps the column up to 0.13 m further away | Ask whoever added it to the description before removing it |
 | The description has no `isaac` ros2_control block | With `hardware_type:=isaac` the URDF has no hardware, so no controller starts | None in this repository |
 | `moveit_demo_with_commander.launch.py` passes xacro arguments the description does not declare, and has no `right_joint2_fixed` | With `hardware_type:=real_robot` both arms stay mock, and `right_joint2_fixed` cannot be set | Use `moveit_demo.launch.py` plus `commander.launch.py` |
 | `commander.launch.py` defaults to `use_sim_time:=false` | In Gazebo and MuJoCo, `move_group` and the controllers use simulation time but the commander does not, so it can fail to get the current robot state | Pass `use_sim_time:=true` |

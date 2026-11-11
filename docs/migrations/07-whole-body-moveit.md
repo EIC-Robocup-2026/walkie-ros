@@ -21,8 +21,10 @@ pulling. For day-to-day use, read
 - **After pulling:** `pixi install`, update the submodules, and build
   ([After pulling this change](#after-pulling-this-change)).
 - **Watch out:** arm moves take about twice as long, because this branch also takes the
-  speed scaling from `feat/commander-speed-scaling`. Whole-body goals have not run on the
-  real robot, so keep `base_mode:=fixed` there.
+  speed scaling from `feat/commander-speed-scaling`. A whole-body goal does not move the
+  other arm, so send that arm to `standby` first (added 2026-11-11, see
+  [Planning near the table](#planning-near-the-table)). Whole-body goals have not run on
+  the real robot, so keep `base_mode:=fixed` there.
 - **Result:** the MuJoCo demo passed all ten steps in the last run here and in six runs of
   three independent checks, and the launch tests pass ([Verification](#verification)). A
   collision monitor stop missed its 0.5 s target in four of seven runs, by up to 0.09 s of
@@ -67,10 +69,11 @@ that MoveIt loads is byte-identical to the one before this change.
 | `manipulate/openarm_bimanual_moveit_config/launch/moveit_only.launch.py` | `base_mode`, the octomap in `map`, the floor gate, the jump guard, the wait for `map`, and `depth_image_proc` under MuJoCo. `fixed` keeps its values. |
 | `manipulate/openarm_bimanual_moveit_config/scripts/` | New: `cloud_floor_gate.py`, `octomap_jump_guard.py`, `wait_for_graph.py` |
 | `manipulate/openarm_bimanual_moveit_config/config/` | Base limits in `joint_limits.yaml`, `base_controller` in `moveit_controllers.yaml`, OMPL entries, and `moveit_map.rviz` |
-| `manipulate/openarm_bimanual_commander_cpp/src/whole_body_option.hpp` | The class behind the new group names: the gate, the base sampling, the repairs, and the stops |
+| `manipulate/openarm_bimanual_commander_cpp/src/whole_body_option.hpp` | The class behind the new group names: the gate, the base sampling, the repairs, and the stops. Its refusal names the idle arm when it collided or lacked clearance in an IK solution. |
 | `manipulate/openarm_bimanual_commander_cpp/src/whole_body_base_follower.cpp` | The action server of `base_controller`. It closes the loop on `map` to `base_footprint` and publishes to `/cmd_vel_smoothed`. |
 | `manipulate/openarm_bimanual_commander_cpp/src/unwrap_planar_heading.cpp` | A planning response adapter that keeps the base from turning the long way across ±π |
-| `manipulate/openarm_bimanual_commander_cpp/src/whole_body_demo.py` | The demo client |
+| `manipulate/openarm_bimanual_commander_cpp/src/whole_body_demo.py` | The demo client. It tucks the right arm to `standby` before a target over the table, and sends `right_arm_lift` home at the end. It refuses to run when the commander has `plan_only` set. |
+| `manipulate/openarm_bimanual_commander_cpp/src/benchmark_planning.cpp`, `manipulate/openarm_bimanual_moveit_config/launch/run_planning_benchmark.launch.py` | A planning benchmark against the demo's table scene, see [Measure planning speed](../guides/manipulation.md#measure-planning-speed) |
 | `manipulate/openarm_bimanual_commander_cpp/test/` | Six launch files and a stub world, see [Tests](../guides/testing.md#whole-body-launch-tests) |
 | `bringup/launch/whole_body_demo.launch.py` | Starts the demo. `bringup/scripts/ground_truth_map_odom.py` feeds `map` to `odom` from MuJoCo's ground truth. |
 | `bringup/launch/nav_mujoco_omnibot.launch.py` | Sets `state_topic` on the collision monitor, so the follower can see a stop |
@@ -174,6 +177,50 @@ that MoveIt loads is byte-identical to the one before this change.
     sources that a message's publisher GID and the graph's endpoint GID are the same bytes,
     which the Nav2 restart fix relies on.
 
+## Planning near the table
+
+Added on 2026-11-11, after plans failed more often close to the table. A new benchmark,
+`run_planning_benchmark.launch.py`, measured why and how fast planning is
+([Measure planning speed](../guides/manipulation.md#measure-planning-speed)). No collision
+mesh was wrong. Most failures came from the idle arm and from targets placed too low:
+
+- **The idle arm:** a whole-body goal for one arm leaves the other where it is. In `home`
+  that arm hangs to 0.61 m, below the table top at 0.74 m, so the column cannot come closer
+  than about 0.2 m to the table edge. Callers now send it to `standby` first, and the
+  refusal names it ([Clear the idle arm](../guides/manipulation.md#clear-the-idle-arm)).
+- **Low targets:** a target is for the hand frame, not the fingertips. The guide now lists
+  the lowest hand height over a surface for each gripper orientation, and the margin a
+  whole-body goal needs on top
+  ([Targets close to a surface](../guides/manipulation.md#targets-close-to-a-surface)).
+- **The idle arm after a low target:** `home` puts an arm's fingers into the base below a
+  lift position of 0.50 m, so send the idle arm home with its lift group
+  (`right_arm_lift` or `left_arm_lift`), which raises the lift too.
+- **Arm planning time:** stays at 5 s, and arm plans use all of it. A pose goal also has
+  to find its IK goal state within that time. At 1.5 s, one goal with the idle arm in
+  `home` failed 4 of 12 times in the benchmark and 2 of 8 times in the launch tests
+  ([Planning time and attempts](../guides/manipulation.md#planning-time-and-attempts)).
+
+??? info "Causes found, and what was done"
+    | Cause | Effect | Done |
+    | --- | --- | --- |
+    | The idle arm in `home` reaches 0.61 m high and 0.22 m in front of the column | In the box scene, facing the table 0.08 m away, IK reached none of 18 targets with the gripper 3 cm over the table, against 13 of 18 with the idle arm in `standby` (up to 16 IK calls per target). From 1 m before the table on the octomap, whole-body goals over the far half of the table succeeded 13 of 18 times, against 15 of 18. | The refusal counts the IK solutions the idle arm was in collision with and names the arm. The demo tucks the right arm before a target over the table. |
+    | Targets are for the hand frame | Pointing forward, the wrist camera bracket reaches 0.111 m below the hand frame. Pointing down, the fingertips reach 0.095 m below it, plus 0.01 m of padding. | Documented, with the lowest hand height for each orientation |
+    | The octomap places the table top up to about 0.04 m high: 0.03 m voxels, and `base_footprint` 6 mm below the floor in MuJoCo | A target a few centimeters over the real top collides with the octomap | Documented margin |
+    | A second collision box on the column, from y -0.23 to 0 m in `base_link`, sticks out 0.13 m to the robot's right | Approaches with the right side to the table stop earlier than the column would | Left as is, see [Still open](#still-open) |
+    | OMPL checks motions at discrete points, 0.003 of the joint space's extent apart | About 4% of plans with 10000 attempts (2 of 56) and about 10% of plans with 1 or 4 attempts at that spacing (16 of 156) failed `ValidateSolution` with `INVALID_MOTION_PLAN`, most likely because the path grazes the table between two checks | Not changed, see the choices below |
+    | A whole-body goal must also be valid with the lift 0.01 m lower, because the lift settles short | With the octomap reading the table high, the demo's first deep target, its bracket 0.05 m over the real top, failed 9 of 9 times with `No base pose found` | Documented: about 0.05 m in all over a surface. The demo target went up to 0.10 m over the top. |
+    | In `home`, an arm's fingers reach into the base below a lift position of 0.50 m | After a low target the idle arm cannot go back to `home`: `Failed to plan path to 'home'`, because MoveIt finds no valid goal state | Documented. The demo sends `right_arm_lift` home, which raises the lift in the same motion. |
+    | The demo's deep target at y 0.30 put the base near a table leg | The collision monitor stopped 3 of 9 deep goals at y 0.30 and 1 of 5 at y 0.10. The one stop examined lasted 20 ms, a single scan, and the follower aborts the goal on any stop | The demo target moved to the table's centre line, y 0. See [Still open](#still-open). |
+
+??? info "The choices, and what was rejected"
+    | Question | Chosen | Rejected, and why |
+    | --- | --- | --- |
+    | Who moves the idle arm | The caller, with `/go_to_home` | The commander tucking it on its own. It would move an arm the caller did not name. |
+    | Which link a target is for | The hand frame, as before | A fingertip frame. Every existing caller's targets would shift. |
+    | Arm planning time and attempts | 10000 attempts in 5 s, as before | 1.5 s: joint goals planned in 1.6 to 1.7 s with motions about as long as at 5 s, but a pose goal with the idle arm in `home` failed 4 of 12 times in the benchmark and 2 of 8 times in the launch tests, because no IK goal state turned up in time. 4 attempts: 0.14 to 0.31 s per plan, but motions 0.5 to 2.0 s longer and about 12% of plans failing validation. 4 attempts with `longest_valid_segment_fraction` 0.0005: no validation failures, but 1.0 to 1.8 s per plan, longer motions, and whole-body goals 3 to 4 times slower. |
+    | TRAC-IK solve type | `Distance`, as before | `Speed`. Whole-body goals took 0.5 to 0.8 s instead of 0.5 to 0.9 s, hardly faster, and its solutions are not the nearest to the current arm pose, so motions are larger and less repeatable. |
+    | The side box on the column | Unchanged | Removing it. Nobody here knows what it stands for. |
+
 ## CI
 
 `openarm_bimanual_commander_cpp` joins the tested packages. Its launch tests add about 13
@@ -264,6 +311,20 @@ The last demo run, with `--cycles 2`:
   refusal, a demo target that did not make the base cross ±π, and `near_body` (see
   [Still open](#still-open)). This is one clean run, not a success rate.
 
+### Planning near the table { #verification-near-the-table }
+
+Checked on 2026-11-11 on the same laptop, in MuJoCo with `rmw_zenoh_cpp`, headless and
+without RViz, for the changes in [Planning near the table](#planning-near-the-table).
+
+| Check | Result |
+| --- | --- |
+| Arm plans in the benchmark | See [Planning time and attempts](../guides/manipulation.md#planning-time-and-attempts). The benchmark numbers on this page and in the guide are from runs with the commander's 0.01 m finger padding; the first runs had none and were redone. Two exceptions: the empty-scene pose goals pool a run with and one without padding (MoveIt applies link padding only against world objects, and that scene has none), and the `path_tolerance` comparison ran without padding. |
+| Whole-body goals in the benchmark, from 1 m before the table | 18 of 18 targets per idle-arm pose, on the boxes and on the octomap with 0.03 m voxels. Median 0.5 to 0.9 s per goal, slowest 1.2 s, IK and planning together. Targets over the far half of the table: see the causes table above. |
+| Commander launch tests | 67 tests, 2 skipped, none failed, with `arm_planning_time` 5 s. With 1.5 s, `test_near_goal_after_an_arm_goal_keeps_the_base_still` failed 2 of 8 tries with `Planning Failed`. |
+| Demo, three fresh runs with `--cycles 1` | Runs 1 and 3 passed every step. Run 2 passed every step up to `home_right`, which then sent `right_arm` home and failed with the lift at 0.492 m. The demo now sends `right_arm_lift`, and run 3 passed with it. |
+| `deep_body` in the three runs | Base travel 0.37, 0.49 and 0.42 m. The column came within 0.100, 0.061 and 0.137 m of the table edge. Tip error 11.3, 11.2 and 9.0 mm. |
+| Collision monitor in the three runs | No stop. The slowdown polygon turned on 5, 3 and 4 times. |
+
 ## Commits
 
 To be listed once the branch lands.
@@ -309,9 +370,22 @@ Known limits:
 - The real-robot Nav2 parameters set no `state_topic`, so the follower would not see a
   collision monitor stop there. The real lift has its own driver, which does not accept a
   cancel.
-- The demo's `table_clearance_m` ignores the base heading, so it is only a rough number. It was
-  0.14 m in the last run and -0.02 m in the run before it. No contact was seen, but the box pose
-  is not recorded.
+- The demo's `table_clearance_m` and `deep_column_gap_m` ignore the base heading, so they are
+  only rough numbers. `table_clearance_m` was 0.14 m in one run and -0.02 m in the run before
+  it. No contact was seen, but the box pose is not recorded.
+- About 4% of arm plans near the table with the commander's 10000 attempts (2 of 56 in the
+  benchmark) fail with `INVALID_MOTION_PLAN`, most likely because OMPL's motion checks miss a
+  graze that the final check finds. Denser checks (`longest_valid_segment_fraction` 0.0005)
+  removed it, but made each search 6 to 9 times slower and whole-body goals 3 to 4 times
+  slower. A retry in the commander on that error code would be cheaper, and is not built.
+- Close to the table legs, the collision monitor stopped short base moves of whole-body
+  goals: 4 of 14 deep goals at y 0.10 to 0.30 m. The one stop examined lasted a single scan
+  (20 ms), and the follower aborts the goal on any stop. MuJoCo disables the monitor's
+  point cloud source, so these stops come from `/scan`. Which band of
+  `VelocityPolygonStop` fired was not recorded.
+- A second collision box on the column, at y -0.23 to 0 m in `base_link`, sticks out 0.13 m to
+  the robot's right. Ask whoever added it to `base.urdf.xacro` what it stands for before
+  removing it.
 - `manipulate/README.md` still lists old group names. It was out of date before this change.
 - Migration Log number 7 is also claimed by draft PR #63. Whichever lands second takes the next
   number.
