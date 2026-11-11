@@ -227,9 +227,11 @@ public:
             },
             callback_group_);
 
-        const std::vector<std::array<std::string, 4>> specs = {
-            {"whole_body_left", "left_arm_lift", "openarm_left_hand", "openarm_left_link1"},
-            {"whole_body_right", "right_arm_lift", "openarm_right_hand", "openarm_right_link1"}};
+        const std::vector<std::array<std::string, 6>> specs = {
+            {"whole_body_left", "left_arm_lift", "openarm_left_hand", "openarm_left_link1", "right_arm",
+             "openarm_right_joint1"},
+            {"whole_body_right", "right_arm_lift", "openarm_right_hand", "openarm_right_link1", "left_arm",
+             "openarm_left_joint1"}};
         for (const auto & spec : specs) {
             if (!model->hasJointModelGroup(spec[0])) continue;
             const auto & variables = model->getJointModelGroup(spec[0])->getVariableNames();
@@ -245,6 +247,13 @@ public:
             // its current height arrives soonest.
             entry.seed = entry.arm->getNamedTargetValues("home");
             entry.seed.erase("lift_joint");
+            // The other arm hangs in front of the base in its home pose, at table height, and
+            // a whole-body goal does not move it. Its contacts are counted apart, so that a
+            // failure can say when tucking it would help.
+            entry.idle_arm = spec[4];
+            if (const auto * joint = model->getJointModel(spec[5])) {
+                for (const auto * link : joint->getDescendantLinkModels()) entry.idle_links.insert(link->getName());
+            }
             entries_[spec[0]] = entry;
         }
         applyPlanningParameters();
@@ -429,6 +438,8 @@ private:
         std::string tip;
         std::string shoulder;
         std::map<std::string, double> seed;  // IK seed for goals with a sampled base
+        std::string idle_arm;                // the other arm's group, which this goal never moves
+        std::set<std::string> idle_links;    // links that move with the other arm's joints
     };
 
     struct StoredPlan
@@ -885,35 +896,54 @@ private:
 
     // No group name, so this checks the whole robot: compute_ik only checks the links of
     // its group, and the idle arm can reach the base when the lift is low.
-    bool stateValid(const moveit_msgs::msg::RobotState & state)
+    // If given, contacts receives the names of the bodies in contact (links, scene objects,
+    // or "<octomap>") when the state is invalid.
+    bool stateValid(const moveit_msgs::msg::RobotState & state, std::set<std::string> * contacts = nullptr)
     {
         auto request = std::make_shared<moveit_msgs::srv::GetStateValidity::Request>();
         request->robot_state = state;
         auto future = state_validity_->async_send_request(request);
         if (future.wait_for(std::chrono::seconds(2)) != std::future_status::ready) return false;
-        return future.get()->valid;
+        const auto response = future.get();
+        if (contacts) {
+            for (const auto & contact : response->contacts) {
+                contacts->insert(contact.contact_body_1);
+                contacts->insert(contact.contact_body_2);
+            }
+        }
+        return response->valid;
     }
 
-    bool stateValidAtBase(const BasePose & base, const std::map<std::string, double> & joints)
+    bool stateValidAtBase(
+        const BasePose & base, const std::map<std::string, double> & joints,
+        std::set<std::string> * contacts = nullptr)
     {
         auto state = baseState(base);
         for (const auto & [name, value] : joints) {
             state.joint_state.name.push_back(name);
             state.joint_state.position.push_back(value);
         }
-        return stateValid(state);
+        return stateValid(state, contacts);
     }
 
     // The lift settles below its command (about 3 mm in MuJoCo), so a goal also has to be
     // valid somewhat below where it asks the lift to stop.
-    bool goalHasClearance(const BasePose & base, std::map<std::string, double> joints)
+    bool goalHasClearance(
+        const BasePose & base, std::map<std::string, double> joints, std::set<std::string> * contacts = nullptr)
     {
-        if (!stateValidAtBase(base, joints)) return false;
+        if (!stateValidAtBase(base, joints, contacts)) return false;
         const auto lift = joints.find("lift_joint");
         if (lift == joints.end()) return true;
         const double margin = 0.01;
         lift->second = std::max(lift->second - margin, model_->getVariableBounds("lift_joint").min_position_);
-        return stateValidAtBase(base, joints);
+        return stateValidAtBase(base, joints, contacts);
+    }
+
+    static bool touchesIdleArm(const Entry & entry, const std::set<std::string> & contacts)
+    {
+        return std::any_of(contacts.begin(), contacts.end(), [&](const std::string & body) {
+            return entry.idle_links.count(body) > 0;
+        });
     }
 
     // Base poses that put the arm's shoulder behind the hand, nearest to the current base
@@ -985,6 +1015,7 @@ private:
         }
         int with_ik = 0;
         int on_limit = 0;
+        int idle_arm_contact = 0;
         int solved = 0;
         int last_code = 0;
         std::string last_spin;
@@ -1002,7 +1033,12 @@ private:
                 ++on_limit;
                 continue;
             }
-            if (!goalHasClearance(sample, joints)) continue;
+            // compute_ik only checks the links of its group, so the idle arm shows up here.
+            std::set<std::string> contacts;
+            if (!goalHasClearance(sample, joints, &contacts)) {
+                if (touchesIdleArm(entry, contacts)) ++idle_arm_contact;
+                continue;
+            }
             ++solved;
 
             joints["virtual_joint/x"] = sample[0];
@@ -1052,9 +1088,15 @@ private:
             if (solved >= max_plan_attempts) break;
         }
         if (solved == 0) {
+            std::string idle_note;
+            if (idle_arm_contact > 0) {
+                idle_note = " The idle arm (" + entry.idle_arm + ") collided or lacked clearance in " +
+                            std::to_string(idle_arm_contact) +
+                            " IK solution(s): move it out of the way first, for example to standby with go_to_home.";
+            }
             return fail("No base pose found to reach the target (" + std::to_string(samples.size()) + " samples: " +
                         std::to_string(with_ik) + " with an IK solution, " + std::to_string(on_limit) +
-                        " of those on a joint limit, the rest in collision or too close to it)");
+                        " of those on a joint limit, the rest in collision or too close to it)." + idle_note);
         }
         return fail("Planning Failed for " + std::to_string(solved) + " sampled base pose(s), last MoveIt code " +
                     std::to_string(last_code) + "." + last_spin);
