@@ -9,13 +9,19 @@ MuJoCo's ground truth:
   near_arm    left_arm_lift to a reachable target. The arm moves and the base stays.
   near_body   whole_body_left to a target the arm reaches on its own. The base stays.
   far_body    whole_body_left to the first target. Base, lift and arm move together.
+  tuck_right  go_to_home sends right_arm to standby, out of the way of the table. A
+              whole-body goal of the left arm never moves the right arm. The base stays.
+  deep_body   whole_body_left to a target near the far edge of the table, which needs the
+              column close to the table.
   seam_turn   whole_body_left with the hand pointing along -x, which turns the body to a
               heading near +pi.
   seam_cross  whole_body_left to a hand direction whose body headings all lie past the
               seam. The base has to turn through +-pi the short way.
+  home_right  go_to_home sends right_arm_lift back to home, away from the table, which
+              also raises the lift. The base stays.
 
 With --cycles N, whole_body_left drives back to a target near the start and out to the
-first target again, N times, between far_body and seam_turn.
+first target again, N times, between far_body and tuck_right.
 
 Prints one JSON report and exits non-zero if any step misses its expectation. rmw_zenoh
 logs to stdout, so use --report to get a file that parses as JSON.
@@ -28,9 +34,10 @@ import threading
 import time
 
 from geometry_msgs.msg import TwistStamped
-from my_robot_interfaces.action import GoToPose
+from my_robot_interfaces.action import GoToHome, GoToPose
 from nav2_msgs.msg import CollisionMonitorState
 from nav_msgs.msg import Odometry
+from rcl_interfaces.srv import GetParameters
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.executors import MultiThreadedExecutor
@@ -57,8 +64,19 @@ SEAM_TURN_HAND_YAW = math.pi
 # arm reached a closer one alone, and then the base stayed and never crossed the seam.
 SEAM_CROSS_TARGET_MAP = (0.7, -1.4, 1.0)
 SEAM_CROSS_HAND_YAW = -2.0
-# Front edge of the base footprint, and the table's near edge in scene_whole_body.xml.
+# 0.10 m short of the table's far edge. With the gripper pointing forward, its wrist camera
+# bracket reaches 0.111 m below the hand frame, so this is about 0.10 m over the table top
+# at 0.74 m. At 0.90 m the octomap's table top (up to 0.04 m high) and the commander's
+# 0.01 m lift margin left no room. On the table's centre line, so the base stays clear of
+# the table legs: at y 0.30 the collision monitor stopped the base near the near left leg.
+# The right arm's home pose hangs below the table top and keeps the column about 0.2 m
+# from the table, too far for this target on the octomap.
+DEEP_TARGET_MAP = (2.15, 0.0, 0.95)
+# Front edge of the base footprint, front face of the column (above the base, so it is the
+# part that meets the table edge once the base is under the table top), and the table's
+# near edge in scene_whole_body.xml.
 BASE_FRONT = 0.30
+COLUMN_FRONT = 0.02
 TABLE_EDGE_X = 1.55
 # A base standing still reads below this much ground truth travel.
 STILL_TRAVEL = 0.01
@@ -71,6 +89,7 @@ class DemoClient(Node):
         super().__init__('whole_body_demo')
         self.set_parameters([Parameter('use_sim_time', Parameter.Type.BOOL, True)])
         self.action = ActionClient(self, GoToPose, '/go_to_pose')
+        self.home_action = ActionClient(self, GoToHome, '/go_to_home')
         self.buffer = Buffer()
         self.listener = TransformListener(self.buffer, self)
         self.truth = None
@@ -81,6 +100,7 @@ class DemoClient(Node):
         self.max_x = -math.inf
         self.base_commands = 0
         self.monitor_events = []
+        self.timed_out = False
         self.create_subscription(Odometry, '/mujoco_ground_truth/odom', self.on_truth, 50)
         self.create_subscription(TwistStamped, '/cmd_vel_smoothed', self.on_command, 50)
         self.create_subscription(
@@ -113,10 +133,22 @@ class DemoClient(Node):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if self.truth is not None and self.action.server_is_ready() and \
+                    self.home_action.server_is_ready() and \
                     self.buffer.can_transform('map', 'base_footprint', Time()):
                 return True
             time.sleep(0.5)
         return False
+
+    def commander_plans_only(self, timeout=10.0):
+        """The commander's plan_only parameter, or None if it could not be read."""
+        client = self.create_client(GetParameters, '/bimanual_commander/get_parameters')
+        if not client.wait_for_service(timeout_sec=timeout):
+            return None
+        response = self.wait_future(
+            client.call_async(GetParameters.Request(names=['plan_only'])), timeout)
+        if response is None or not response.values:
+            return None
+        return response.values[0].bool_value
 
     def tip_in_map(self, link='openarm_left_hand'):
         try:
@@ -141,17 +173,10 @@ class DemoClient(Node):
             roll=0.0, pitch=FORWARD_PITCH, yaw=float(hand_yaw), cartesian_path=False,
             frame_id=frame)
         self.get_logger().info(f'{name}: {group} to {target} in {frame}')
-        future = self.action.send_goal_async(goal)
-        accepted = self.wait_future(future, 10.0)
-        success = False
-        status = 'goal not accepted'
-        if accepted is not None and accepted.accepted:
-            result = self.wait_future(accepted.get_result_async(), timeout)
-            if result is None:
-                status = 'no result within the timeout'
-            else:
-                success = result.result.success
-                status = result.result.status
+        result, status = self.send_goal(self.action, goal, timeout)
+        success = result is not None and result.success
+        if result is not None:
+            status = result.status
         # Let the base settle before reading the travel of this step.
         time.sleep(1.0)
         step = {
@@ -182,6 +207,65 @@ class DemoClient(Node):
             (step['base_commands'] == 0 and step['base_travel_m'] < STILL_TRAVEL))
         self.get_logger().info(json.dumps(step))
         return step
+
+    def run_named_step(self, name, group, pose_name, timeout=300.0):
+        """Send group to an SRDF named state with go_to_home. The base has to stay."""
+        travel_before = self.travel
+        commands_before = self.base_commands
+        started = time.monotonic()
+        self.get_logger().info(f'{name}: {group} to {pose_name}')
+        result, status = self.send_goal(
+            self.home_action, GoToHome.Goal(group_name=group, pose_name=pose_name), timeout)
+        success = result is not None and result.success
+        if result is not None:
+            status = 'reached' if success else 'failed'
+        time.sleep(1.0)
+        step = {
+            'step': name,
+            'group': group,
+            'pose_name': pose_name,
+            'success': success,
+            'status': status,
+            'started_monotonic': round(started, 2),
+            'wall_seconds': round(time.monotonic() - started, 2),
+            'base_travel_m': round(self.travel - travel_before, 4),
+            'base_commands': self.base_commands - commands_before,
+        }
+        step['as_expected'] = success and step['base_commands'] == 0 and \
+            step['base_travel_m'] < STILL_TRAVEL
+        self.get_logger().info(json.dumps(step))
+        return step
+
+    def send_goal(self, client, goal, timeout):
+        """Return (result, None), or (None, why there is no result).
+
+        A goal without a result within the timeout is canceled, so that it does not go on
+        moving the robot during the next step. main() stops the sequence after it.
+        """
+        goal_future = client.send_goal_async(goal)
+        accepted = self.wait_future(goal_future, 10.0)
+        if accepted is None:
+            # A late acceptance would let the goal move the robot during the next step,
+            # so wait for the response and cancel the goal if it was accepted after all.
+            self.timed_out = True
+            late = self.wait_future(goal_future, 30.0)
+            if late is not None and late.accepted:
+                self.wait_future(late.cancel_goal_async(), 10.0)
+                settled = self.wait_future(late.get_result_async(), 60.0) is not None
+                return None, 'goal accepted after the timeout, ' + (
+                    'canceled' if settled else 'still running after the cancel request')
+            return None, 'no goal response within the timeout'
+        if not accepted.accepted:
+            return None, 'goal not accepted'
+        result_future = accepted.get_result_async()
+        response = self.wait_future(result_future, timeout)
+        if response is None:
+            self.timed_out = True
+            self.wait_future(accepted.cancel_goal_async(), 10.0)
+            settled = self.wait_future(result_future, 60.0) is not None
+            return None, 'no result within the timeout, ' + (
+                'canceled' if settled else 'still running after the cancel request')
+        return response.result, None
 
     @staticmethod
     def wait_future(future, timeout):
@@ -222,8 +306,26 @@ def main():
     if not node.wait_until_ready(180.0):
         report['error'] = 'the commander, TF or ground truth did not come up'
         finish(report, 2)
+    # With plan_only the commander reports success without moving anything, and the named
+    # steps only check the result and that the base stayed.
+    report['commander_plan_only'] = node.commander_plans_only()
+    if report['commander_plan_only']:
+        report['error'] = 'the commander has plan_only set, so nothing would move'
+        finish(report, 2)
     time.sleep(args.settle)
     report['start_base'] = list(node.truth)
+
+    def record(step):
+        report['steps'].append(step)
+        # The robot stopped wherever the canceled goal left it, so the later steps would
+        # not start where they expect to.
+        if node.timed_out:
+            report['error'] = f"{step['step']}: {step['status']}; the remaining steps did not run"
+            report['end_base'] = list(node.truth)
+            report['monitor_events'] = node.monitor_events
+            report['passed'] = False
+            finish(report, 1)
+        return step
 
     def body_step(name, target, hand_yaw=0.0):
         step = node.run_step(name, 'whole_body_left', 'map', target,
@@ -238,14 +340,13 @@ def main():
         # Nothing blocks the way in this scene, so a long detour is a planning problem.
         if step['base_travel_m'] > 1.5 * step['base_displacement_m'] + 0.3:
             step['as_expected'] = False
-        report['steps'].append(step)
-        return step
+        return record(step)
 
-    report['steps'].append(node.run_step(
+    record(node.run_step(
         'far_arm', 'left_arm_lift', 'map', FAR_TARGET_MAP,
         expect_success=False, base_may_move=False))
     if not args.skip_near:
-        report['steps'].append(node.run_step(
+        record(node.run_step(
             'near_arm', 'left_arm_lift', 'base_footprint', NEAR_TARGET_BASE,
             expect_success=True, base_may_move=False))
         step = node.run_step(
@@ -253,17 +354,29 @@ def main():
             expect_success=True, base_may_move=False)
         if 'base fixed' not in step['status']:
             step['as_expected'] = False
-        report['steps'].append(step)
+        record(step)
     body_step('far_body', FAR_TARGET_MAP)
     for cycle in range(args.cycles):
         body_step(f'home_{cycle}', HOME_TARGET_MAP)
         body_step(f'far_{cycle}', FAR_TARGET_MAP)
+    # The base front stays outside the table up to here. deep_body may drive it under the
+    # table top, so the column is measured there instead.
+    report['table_clearance_m'] = round(TABLE_EDGE_X - (node.max_x + BASE_FRONT), 4)
+    # A caller clears the idle arm before a goal near furniture: the whole-body goal will
+    # not move it. It stays tucked until the base is away from the table.
+    record(node.run_named_step('tuck_right', 'right_arm', 'standby'))
+    node.max_x = -math.inf
+    body_step('deep_body', DEEP_TARGET_MAP)
+    report['deep_column_gap_m'] = round(TABLE_EDGE_X - (node.max_x + COLUMN_FRONT), 4)
     body_step('seam_turn', SEAM_TURN_TARGET_MAP, SEAM_TURN_HAND_YAW)
     if body_step('seam_cross', SEAM_CROSS_TARGET_MAP, SEAM_CROSS_HAND_YAW)['seam_crossings'] < 1:
         report['steps'][-1]['as_expected'] = False
+    # Below a lift position of 0.50 m the fingers of an arm in home reach into the base, and
+    # IK can leave the lift there (0.492 m after seam_cross in one run). right_arm_lift's
+    # home raises the lift to 0.744 m in the same motion.
+    record(node.run_named_step('home_right', 'right_arm_lift', 'home'))
 
     report['end_base'] = list(node.truth)
-    report['table_clearance_m'] = round(TABLE_EDGE_X - (node.max_x + BASE_FRONT), 4)
     report['monitor_events'] = node.monitor_events
     report['passed'] = all(step['as_expected'] for step in report['steps'])
     finish(report, 0 if report['passed'] else 1)
