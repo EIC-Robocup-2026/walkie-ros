@@ -161,6 +161,7 @@ if(BUILD_TESTING)
   add_ros_test(test/whole_body_clock.test.py TIMEOUT 300)
   add_ros_test(test/whole_body_stopping.test.py TIMEOUT 600)
   add_ros_test(test/whole_body_follower.test.py TIMEOUT 180)
+  add_ros_test(test/arm_ik_first.test.py TIMEOUT 300)
 endif()
 
 ament_package()

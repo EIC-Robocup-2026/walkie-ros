@@ -45,7 +45,10 @@
 #include <set>
 #include <vector>
 #include <algorithm>
+#include <atomic>
+#include <functional>
 
+#include "ik_first_goal.hpp"
 #include "whole_body_option.hpp"
 
 using MoveGroupInterface = moveit::planning_interface::MoveGroupInterface;
@@ -98,8 +101,8 @@ public:
         // the joint limits. The defaults come from joint_limits.yaml
         // (robot_description_planning.default_*_scaling_factor, 0.5 and 0.3),
         // which every commander launch file passes. Both are live parameters:
-        // the parameter callback re-applies them to the groups for plan(), and
-        // retimeWithSpeedScaling() reads them per goal for the TOTG re-timing.
+        // each goal applies them to its group for plan() (applyPlannerSettings),
+        // and retimeWithSpeedScaling() reads them per goal for the TOTG re-timing.
         // The gripper groups are not scaled here.
         const double max_velocity_scaling = declareScalingParameter(
             "max_velocity_scaling_factor",
@@ -122,13 +125,24 @@ public:
         // attempts: MoveIt runs them in rounds of parallel searches until the
         // planning time runs out, and OMPL merges their paths into shorter ones
         // as it goes. So in practice an arm plan uses the full arm_planning_time.
-        // A pose goal also has to find its IK goal state within that time, which
+        // A pose goal that OMPL plans to directly (both-arm groups, and the fallback
+        // of ik_first_enable) also has to find its IK goal state within that time, which
         // can take seconds with the idle arm in home: in the planning benchmark
         // (run_planning_benchmark.launch.py in openarm_bimanual_moveit_config) one
         // such goal planned 8 of 12 times in 1.5 s and 12 of 12 in 5 s. RRTstar never
         // stops early either. Both are ROS params, so you can switch/retune live.
         std::string planner_id = node_->declare_parameter<std::string>("planner_id", "RRTConnect");
         double arm_planning_time = node_->declare_parameter<double>("arm_planning_time", 5.0);
+        // A joint goal needs no IK goal sampling, so named states, joint positions and
+        // pose goals solved IK first (ik_first_enable, see ik_first_goal.hpp) on the arm
+        // groups plan for joint_goal_planning_time instead. A named or joint goal that fails
+        // gets a second plan with arm_planning_time; an IK-first goal falls back to its pose
+        // goal. A value at or above arm_planning_time turns the shorter plan off. Gripper
+        // groups keep their own 1 s. Both parameters are live and read per goal.
+        if (!(node_->declare_parameter<double>("joint_goal_planning_time", 1.0) > 0.0)) {
+            throw std::invalid_argument("joint_goal_planning_time must be positive");
+        }
+        node_->declare_parameter<bool>("ik_first_enable", true);
         plan_only_ = node_->declare_parameter<bool>("plan_only", false);
         node_->declare_parameter<std::string>("execute_plan_group", "");
 
@@ -148,6 +162,12 @@ public:
         right_arm_lift_->setPlanningTime(arm_planning_time);
         both_arms_->setPlanningTime(arm_planning_time);
         both_arms_lift_->setPlanningTime(arm_planning_time);
+
+        for (const auto & grp : {left_arm_, right_arm_, left_gripper_, right_gripper_,
+                                 left_arm_lift_, right_arm_lift_, both_arms_, both_arms_lift_})
+        {
+            planning_mutexes_[grp.get()];
+        }
 
         RCLCPP_INFO(node_->get_logger(),
                     "Arm groups using planner '%s' with %.1f s planning time",
@@ -269,6 +289,7 @@ public:
             node_, callback_group_, tf_buffer_, get_planning_scene_client_,
             left_arm_->getRobotModel(), [this]() { flushPendingGraspRemovals(); });
         planar_base_ = node_->get_parameter("base_mode").as_string() != "fixed";
+        ik_first_ = std::make_unique<IkFirstGoal>(node_, callback_group_, left_arm_->getRobotModel());
 
         // ClearCollisionObjects: detach anything held by the grippers and remove
         // every world collision object from the planning scene. Trigger service
@@ -409,14 +430,15 @@ public:
         node_->declare_parameter<bool>("allow_gripper_vs_octomap", false);
 
         // --- Make planner_id / arm_planning_time / speed scaling retune LIVE ---
-        // gripper_speed and grasp_scene_action are re-read per command, but
-        // planner_id, arm_planning_time and the two scaling factors persist on
-        // each MoveGroupInterface, so instead we re-apply them to the arm groups
-        // whenever they change via
+        // gripper_speed and grasp_scene_action are re-read per command, and so
+        // are planner_id, arm_planning_time, the two scaling factors,
+        // joint_goal_planning_time and ik_first_enable: each goal applies them to
+        // its group under the group's planning lock (lockForPlanning), so
         // `ros2 param set <commander_node> planner_id RRTstar` (or any of the
-        // others). The next plan uses the new value, no restart. The TOTG
-        // re-timing reads the scaling factors per goal (retimeWithSpeedScaling).
-        // A scaling factor outside (0, 1] is rejected and changes nothing.
+        // others) reaches the next plan, no restart. This callback only validates
+        // and logs. It must not touch a MoveGroupInterface: a goal thread may be
+        // configuring or planning on it. A scaling factor outside (0, 1] or a
+        // planning time at or below zero is rejected and changes nothing.
         param_cb_handle_ = node_->add_on_set_parameters_callback(
             [this](const std::vector<rclcpp::Parameter> & params)
                 -> rcl_interfaces::msg::SetParametersResult
@@ -432,6 +454,12 @@ public:
                         result.reason = name + " must be in (0, 1]";
                         return result;
                     }
+                    if ((name == "arm_planning_time" || name == "joint_goal_planning_time") &&
+                        !(p.as_double() > 0.0)) {
+                        result.successful = false;
+                        result.reason = name + " must be positive";
+                        return result;
+                    }
                     if (!whole_body_->validateParameter(p, result.reason)) {
                         result.successful = false;
                         return result;
@@ -443,27 +471,21 @@ public:
                 for (const auto & p : params) {
                     whole_body_->applyParameter(p);
                     if (p.get_name() == "planner_id") {
-                        for (auto & grp : {left_arm_, right_arm_, left_arm_lift_,
-                                           right_arm_lift_, both_arms_, both_arms_lift_})
-                            grp->setPlannerId(p.as_string());
                         RCLCPP_INFO(node_->get_logger(),
                                     "planner_id -> '%s' (live)", p.as_string().c_str());
                     } else if (p.get_name() == "arm_planning_time") {
-                        for (auto & grp : {left_arm_, right_arm_, left_arm_lift_,
-                                           right_arm_lift_, both_arms_, both_arms_lift_})
-                            grp->setPlanningTime(p.as_double());
                         RCLCPP_INFO(node_->get_logger(),
                                     "arm_planning_time -> %.2f s (live)", p.as_double());
+                    } else if (p.get_name() == "joint_goal_planning_time") {
+                        RCLCPP_INFO(node_->get_logger(),
+                                    "joint_goal_planning_time -> %.2f s (live)", p.as_double());
+                    } else if (p.get_name() == "ik_first_enable") {
+                        RCLCPP_INFO(node_->get_logger(),
+                                    "ik_first_enable -> %s (live)", p.as_bool() ? "true" : "false");
                     } else if (p.get_name() == "max_velocity_scaling_factor") {
-                        for (auto & grp : {left_arm_, right_arm_, left_arm_lift_,
-                                           right_arm_lift_, both_arms_, both_arms_lift_})
-                            grp->setMaxVelocityScalingFactor(p.as_double());
                         RCLCPP_INFO(node_->get_logger(),
                                     "max_velocity_scaling_factor -> %.2f (live)", p.as_double());
                     } else if (p.get_name() == "max_acceleration_scaling_factor") {
-                        for (auto & grp : {left_arm_, right_arm_, left_arm_lift_,
-                                           right_arm_lift_, both_arms_, both_arms_lift_})
-                            grp->setMaxAccelerationScalingFactor(p.as_double());
                         RCLCPP_INFO(node_->get_logger(),
                                     "max_acceleration_scaling_factor -> %.2f (live)", p.as_double());
                     } else if (p.get_name().rfind("finger_pad", 0) == 0) {
@@ -1237,6 +1259,45 @@ public:
         return nullptr;
     }
 
+    bool isArmGroup(const MoveGroupInterface & group)
+    {
+        return getArmGroup(group.getName()) != nullptr;
+    }
+
+    // A MoveGroupInterface keeps its target, start state, tolerances and planner settings
+    // between calls and is not thread-safe, and every action goal runs on its own thread,
+    // so two goals on one group would overwrite each other's setup. Each goal therefore
+    // holds its group's lock from its first setter until its plan is done (execution runs
+    // without it), and gets the current planner settings under that lock.
+    //
+    // A goal waits for the lock in 20 ms steps, so a cancel ends the wait within one step
+    // instead of after the other goal's plan. When `canceled` is true before the lock is
+    // taken or right after, the returned lock owns nothing and the caller reports the
+    // cancel without setting up or planning anything.
+    std::unique_lock<std::timed_mutex> lockForPlanning(
+        const std::shared_ptr<MoveGroupInterface> & group, const std::function<bool()> & canceled)
+    {
+        std::unique_lock<std::timed_mutex> lock(planning_mutexes_.at(group.get()), std::defer_lock);
+        while (!canceled() && !lock.try_lock_for(std::chrono::milliseconds(20))) {
+        }
+        if (lock.owns_lock() && canceled()) lock.unlock();
+        if (lock.owns_lock()) applyPlannerSettings(*group);
+        return lock;
+    }
+
+    // The live planner parameters for an arm group. Gripper groups keep the default planner
+    // and their 1 s budget from the constructor.
+    void applyPlannerSettings(MoveGroupInterface & group)
+    {
+        if (!isArmGroup(group)) return;
+        group.setPlannerId(node_->get_parameter("planner_id").as_string());
+        group.setPlanningTime(node_->get_parameter("arm_planning_time").as_double());
+        group.setMaxVelocityScalingFactor(
+            node_->get_parameter("max_velocity_scaling_factor").as_double());
+        group.setMaxAccelerationScalingFactor(
+            node_->get_parameter("max_acceleration_scaling_factor").as_double());
+    }
+
     // Runs the whole-body path and reports its outcome on the action. The goal is
     // always accepted first, so a refusal reaches the client with its reason.
     template <typename ActionT>
@@ -1271,6 +1332,68 @@ public:
         return false;
     }
 
+    // Plans the joint goal already set on the group. An arm group plans for
+    // joint_goal_planning_time when that is shorter than its arm_planning_time; a gripper
+    // group keeps its own time. With `retry`, a goal that fails the shorter plan gets a
+    // second one with the full time, unless `canceled` says the goal was canceled. Call
+    // under lockForPlanning, which set the group's full time for this goal.
+    bool planJointGoal(const std::shared_ptr<MoveGroupInterface> & group, MoveGroupInterface::Plan & plan,
+                       bool retry, const std::function<bool()> & canceled)
+    {
+        const double full_time = group->getPlanningTime();
+        const double joint_time = node_->get_parameter("joint_goal_planning_time").as_double();
+        const bool shorter = isArmGroup(*group) && joint_time < full_time;
+        if (shorter) group->setPlanningTime(joint_time);
+        const bool ok = group->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS;
+        if (shorter) group->setPlanningTime(full_time);
+        if (ok || !retry || !shorter || canceled()) return ok;
+        RCLCPP_INFO(node_->get_logger(),
+                    "[%s] No plan within joint_goal_planning_time %.2f s: planning again with "
+                    "arm_planning_time %.2f s",
+                    group->getName().c_str(), joint_time, full_time);
+        return group->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS;
+    }
+
+    // Plans a pose goal. With ik_first_enable, a single-arm group first turns the pose into
+    // a joint goal (IkFirstGoal) and plans to that, which skips OMPL's IK goal sampling and
+    // so needs only joint_goal_planning_time. The pose goal with arm_planning_time stays as
+    // the fallback when IK or that plan fails. Call under lockForPlanning, with the pose
+    // reference frame of the group already set to `frame`. Returns false without planning
+    // once `canceled` says the goal was canceled.
+    bool planPoseGoal(const std::shared_ptr<MoveGroupInterface> & group, const std::string & frame,
+                      const geometry_msgs::msg::Pose & target, MoveGroupInterface::Plan & plan,
+                      const std::function<bool()> & canceled)
+    {
+        if (node_->get_parameter("ik_first_enable").as_bool() && ik_first_->applies(*group)) {
+            const auto start = std::chrono::steady_clock::now();
+            std::map<std::string, double> joints;
+            std::string why;
+            const bool solved = ik_first_->solve(*group, frame, target, canceled, joints, why);
+            if (canceled()) return false;
+            if (solved) {
+                // The goal is the checked solution itself, so the plan has to end on it,
+                // not anywhere within the 0.02 rad the other goals allow.
+                const double tolerance = group->getGoalJointTolerance();
+                group->setGoalJointTolerance(0.001);
+                const bool ok = group->setJointValueTarget(joints) &&
+                                planJointGoal(group, plan, false, canceled);
+                group->setGoalJointTolerance(tolerance);
+                if (ok) {
+                    RCLCPP_INFO(node_->get_logger(), "[%s] Planned to an IK solution in %.2f s",
+                                group->getName().c_str(),
+                                std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count());
+                    return true;
+                }
+                why = "no plan to the IK solution";
+            }
+            if (canceled()) return false;
+            RCLCPP_INFO(node_->get_logger(), "[%s] IK first: %s: planning to the pose goal",
+                        group->getName().c_str(), why.c_str());
+        }
+        group->setPoseTarget(target);
+        return group->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS;
+    }
+
     // --- Helper: gripper client selection ---
     rclcpp_action::Client<GripperCommand>::SharedPtr getGripperClient(const std::string & group_name)
     {
@@ -1284,6 +1407,7 @@ public:
     {
         if (!group) return false;
 
+        auto planning = lockForPlanning(group, [] { return false; });
         whole_body_->setStartToCurrent(group);
         group->setPoseReferenceFrame("base_footprint");
         group->setGoalTolerance(0.02);
@@ -1300,15 +1424,16 @@ public:
                 if (retimeWithSpeedScaling(rt)) {
                     rt.getRobotTrajectoryMsg(trajectory);
                 }
+                planning.unlock();
                 return (group->execute(trajectory) == moveit::core::MoveItErrorCode::SUCCESS);
             } else {
                 RCLCPP_WARN(node_->get_logger(), "Cartesian path failed (%.1f%%)", fraction * 100.0);
                 return false;
             }
         } else {
-            group->setPoseTarget(target);
             MoveGroupInterface::Plan plan;
-            if (group->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS) {
+            if (planPoseGoal(group, "base_footprint", target, plan, [] { return false; })) {
+                planning.unlock();
                 return (group->execute(plan) == moveit::core::MoveItErrorCode::SUCCESS);
             }
             RCLCPP_ERROR(node_->get_logger(), "Planning failed!");
@@ -1708,6 +1833,12 @@ public:
             goal_handle->abort(result); return;
         }
 
+        const auto canceled = [&goal_handle] { return goal_handle->is_canceling(); };
+        auto planning = lockForPlanning(group, canceled);
+        if (!planning) {
+            result->success = false; result->status = "Canceled";
+            goal_handle->canceled(result); return;
+        }
         whole_body_->setStartToCurrent(group);
         std::string frame = goal->frame_id.empty() ? "base_footprint" : goal->frame_id;
         std::string frame_problem;
@@ -1738,9 +1869,9 @@ public:
                 }
             }
         } else {
-            group->setPoseTarget(target_pose);
-            plan_success = (group->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+            plan_success = planPoseGoal(group, frame, target_pose, plan, canceled);
         }
+        planning.unlock();
 
         if (goal_handle->is_canceling()) {
             result->success = false; result->status = "Canceled";
@@ -1832,6 +1963,12 @@ public:
             goal_handle->abort(result); return;
         }
 
+        const auto canceled = [&goal_handle] { return goal_handle->is_canceling(); };
+        auto planning = lockForPlanning(group, canceled);
+        if (!planning) {
+            result->success = false; result->status = "Canceled";
+            goal_handle->canceled(result); return;
+        }
         whole_body_->setStartToCurrent(group);
         group->setPoseReferenceFrame(target_frame);
         group->setGoalTolerance(0.02);
@@ -1887,10 +2024,10 @@ public:
         if (!plan_success) {
             if (goal->cartesian_path)
                 RCLCPP_WARN(node_->get_logger(), "Cartesian failed. Falling back to PTP.");
-            group->setPoseTarget(target_pose);
-            plan_success = (group->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+            plan_success = planPoseGoal(group, target_frame, target_pose, plan, canceled);
             using_cartesian_result = false;
         }
+        planning.unlock();
 
         if (goal_handle->is_canceling()) {
             result->success = false; result->status = "Canceled";
@@ -1988,6 +2125,12 @@ public:
             goal_handle->abort(result); return;
         }
 
+        const auto canceled = [&goal_handle] { return goal_handle->is_canceling(); };
+        auto planning = lockForPlanning(group, canceled);
+        if (!planning) {
+            result->success = false; result->status = "Canceled";
+            goal_handle->canceled(result); return;
+        }
         whole_body_->setStartToCurrent(group);
         std::string frame = goal->frame_id.empty() ? "base_footprint" : goal->frame_id;
         std::string frame_problem;
@@ -2023,9 +2166,9 @@ public:
                             fraction * 100.0);
             }
         } else {
-            group->setPoseTarget(target_pose);
-            plan_success = (group->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+            plan_success = planPoseGoal(group, frame, target_pose, plan, canceled);
         }
+        planning.unlock();
 
         if (goal_handle->is_canceling()) {
             result->success = false; result->status = "Canceled";
@@ -2205,6 +2348,12 @@ public:
         RCLCPP_INFO(node_->get_logger(), "Executing GoToHome (%s) for %s",
                     pose_name.c_str(), goal->group_name.c_str());
 
+        const auto canceled = [&goal_handle] { return goal_handle->is_canceling(); };
+        auto planning = lockForPlanning(group, canceled);
+        if (!planning) {
+            result->success = false;
+            goal_handle->canceled(result); return;
+        }
         whole_body_->setStartToCurrent(group);
         group->setPoseReferenceFrame("base_footprint");
         group->setGoalTolerance(0.02);
@@ -2230,7 +2379,8 @@ public:
         }
 
         MoveGroupInterface::Plan plan;
-        bool plan_success = (group->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+        bool plan_success = planJointGoal(group, plan, true, canceled);
+        planning.unlock();
 
         if (goal_handle->is_canceling()) {
             result->success = false;
@@ -2315,6 +2465,12 @@ public:
             goal_handle->abort(result); return;
         }
 
+        const auto canceled = [&goal_handle] { return goal_handle->is_canceling(); };
+        auto planning = lockForPlanning(group, canceled);
+        if (!planning) {
+            result->success = false; result->status = "Canceled";
+            goal_handle->canceled(result); return;
+        }
         whole_body_->setStartToCurrent(group);
         group->setGoalTolerance(0.02);
 
@@ -2326,7 +2482,8 @@ public:
         group->setJointValueTarget(goal->joint_positions);
 
         MoveGroupInterface::Plan plan;
-        bool plan_success = (group->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+        bool plan_success = planJointGoal(group, plan, true, canceled);
+        planning.unlock();
 
         if (goal_handle->is_canceling()) {
             result->success = false; result->status = "Canceled";
@@ -2427,6 +2584,12 @@ private:
 
     std::unique_ptr<WholeBodyOption> whole_body_;
     bool planar_base_{false};   // base_mode is map or whole_body
+
+    // One per group above, filled in the constructor and never changed after, so goal
+    // threads look them up without a lock of their own. See lockForPlanning.
+    // Timed, so a goal waiting for one can notice a cancel.
+    std::map<const MoveGroupInterface *, std::timed_mutex> planning_mutexes_;
+    std::unique_ptr<IkFirstGoal> ik_first_;
 
     std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
     std::shared_ptr<tf2_ros::TransformListener> tf_listener_;

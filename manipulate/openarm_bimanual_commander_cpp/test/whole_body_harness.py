@@ -9,10 +9,10 @@ import threading
 import time
 
 from ament_index_python.packages import get_package_share_directory
-from launch.actions import IncludeLaunchDescription, RegisterEventHandler
+from launch.actions import GroupAction, IncludeLaunchDescription, RegisterEventHandler
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch_ros.actions import Node
+from launch_ros.actions import Node, SetRemap
 from moveit_configs_utils import MoveItConfigsBuilder
 from my_robot_interfaces.action import GoToHome, GoToPose
 from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
@@ -49,8 +49,12 @@ ARM_GROUPS = {
 
 
 def bringup(move_group_mode, commander_mode, with_base_server=True, plan_only=False,
-            commander_sim_time=False):
-    """Return the launch actions. Each waits for what the next one needs at startup."""
+            commander_sim_time=False, commander_remappings=()):
+    """Return the launch actions. Each waits for what the next one needs at startup.
+
+    commander_remappings: (from, to) name pairs for the commander alone, for example to
+    put a test's stub between the commander and a move_group service.
+    """
     moveit_config = (
         MoveItConfigsBuilder('openarm', package_name='openarm_bimanual_moveit_config')
         .robot_description(file_path='config/openarm_bimanual.urdf.xacro')
@@ -103,6 +107,10 @@ def bringup(move_group_mode, commander_mode, with_base_server=True, plan_only=Fa
             'use_sim_time': 'true' if commander_sim_time else 'false',
         }.items(),
     )
+    if commander_remappings:
+        # Scoped, so move_group and the stub world keep their names.
+        commander = GroupAction(
+            [SetRemap(src=src, dst=dst) for src, dst in commander_remappings] + [commander])
     return [
         stub_world,
         robot_state_publisher,
@@ -226,19 +234,28 @@ class CommanderClient:
     def pose(self, group, target, frame='map', cartesian=False, timeout=180.0):
         return self.finish(self.send_pose(group, target, frame, cartesian), timeout).result
 
+    def send_named(self, group, state):
+        """Return the future of the goal handle of a named-state goal."""
+        return self.go_to_home.send_goal_async(GoToHome.Goal(group_name=group, pose_name=state))
+
     def named(self, group, state, timeout=180.0):
-        goal = GoToHome.Goal(group_name=group, pose_name=state)
-        handle = self.wait(self.go_to_home.send_goal_async(goal), 30.0)
+        handle = self.wait(self.send_named(group, state), 30.0)
         assert handle.accepted
         return self.wait(handle.get_result_async(), timeout).result
 
     def set_parameter(self, name, value):
+        result = self.try_set_parameter(name, value)
+        assert result.successful, result.reason
+
+    def try_set_parameter(self, name, value):
+        """Return the SetParametersResult instead of asserting that it succeeded."""
         assert self.parameters.wait_for_service(timeout_sec=30.0)
         if isinstance(value, str):
             parameter_value = ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=value)
+        elif isinstance(value, bool):
+            parameter_value = ParameterValue(type=ParameterType.PARAMETER_BOOL, bool_value=value)
         else:
             parameter_value = ParameterValue(
                 type=ParameterType.PARAMETER_DOUBLE, double_value=float(value))
         request = SetParameters.Request(parameters=[Parameter(name=name, value=parameter_value)])
-        response = self.wait(self.parameters.call_async(request), 30.0)
-        assert response.results[0].successful, response.results[0].reason
+        return self.wait(self.parameters.call_async(request), 30.0).results[0]
