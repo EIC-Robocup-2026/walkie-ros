@@ -11,6 +11,8 @@
 //   - OMPL plans of left_arm_lift to joint goals, with 1, 4 and 10000 planning attempts,
 //   - OMPL plans of left_arm_lift to pose goals, as the commander sends them, for several
 //     planning times,
+//   - the same pose goals solved IK first, as the commander's ik_first_enable does: IK,
+//     then a plan to the joint solution, with the pose goal as the fallback,
 //   - whole-body goals, following the steps of WholeBodyOption::moveTo.
 // Launch it with run_planning_benchmark.launch.py in openarm_bimanual_moveit_config.
 
@@ -789,7 +791,7 @@ int run(int argc, char ** argv)
 
   std::string output = "planning_benchmark.json";
   std::string scenes_arg = "empty,boxes,octomap:0.03,octomap:0.02";
-  std::string sections = "geometry,collision,ik,arm_plan,attempts,pose_plan,whole_body";
+  std::string sections = "geometry,collision,ik,arm_plan,attempts,pose_plan,ik_first,whole_body";
   int ik_calls = 16;
   int plan_trials = 3;
   int collision_states = 2000;
@@ -801,6 +803,9 @@ int run(int argc, char ** argv)
   std::string attempt_counts_arg = "1,4,10000";
   std::string target_xs_arg;  // empty: the default target rows
   std::string pose_times_arg = "1.5,5";
+  // Planning times for the joint goal of the ik_first section. Its fallback pose goal
+  // plans for --planning-time, like the commander's arm_planning_time.
+  std::string ik_first_times_arg = "0.5,1,1.5";
   int pose_goal_count = 6;
   int pose_repeats = 4;
   // The commander's finger_padding default (commander_template.cpp).
@@ -822,6 +827,7 @@ int run(int argc, char ** argv)
     else if (arg == "--attempt-counts") attempt_counts_arg = next();
     else if (arg == "--target-xs") target_xs_arg = next();
     else if (arg == "--pose-times") pose_times_arg = next();
+    else if (arg == "--ik-first-times") ik_first_times_arg = next();
     else if (arg == "--pose-goals") pose_goal_count = std::stoi(next());
     else if (arg == "--pose-repeats") pose_repeats = std::stoi(next());
     else if (arg == "--finger-padding") finger_padding = std::stod(next());
@@ -831,26 +837,30 @@ int run(int argc, char ** argv)
   for (const auto & count : split(attempt_counts_arg, ',')) attempt_counts.push_back(std::stoi(count));
   std::vector<double> pose_times;
   for (const auto & t : split(pose_times_arg, ',')) pose_times.push_back(std::stod(t));
+  std::vector<double> ik_first_times;
+  for (const auto & t : split(ik_first_times_arg, ',')) ik_first_times.push_back(std::stod(t));
   const auto section_list = split(sections, ',');
   const auto has = [&](const std::string & s) {
     return std::find(section_list.begin(), section_list.end(), s) != section_list.end();
   };
   for (const auto & s : section_list) {
     static const std::vector<std::string> known = {
-        "geometry", "collision", "ik", "arm_plan", "attempts", "pose_plan", "whole_body"};
+        "geometry", "collision", "ik", "arm_plan", "attempts", "pose_plan", "ik_first", "whole_body"};
     if (std::find(known.begin(), known.end(), s) == known.end()) {
       RCLCPP_FATAL(node->get_logger(), "Unknown section '%s'", s.c_str());
       return 1;
     }
   }
-  // arm_plan and attempts plan to the IK solutions of the ik section, and pose_plan to
-  // their hand poses, so without it they would print nothing, or only the launch-test goal.
+  // arm_plan and attempts plan to the IK solutions of the ik section, and pose_plan and
+  // ik_first to their hand poses, so without it they would print nothing, or only the
+  // launch-test goal.
   if ((has("arm_plan") || has("attempts")) && !has("ik")) {
     RCLCPP_FATAL(node->get_logger(), "The arm_plan and attempts sections need the ik section: add ik to --sections");
     return 1;
   }
-  if (has("pose_plan") && !has("ik")) {
-    RCLCPP_WARN(node->get_logger(), "pose_plan without the ik section plans only the launch tests' near arm target");
+  if ((has("pose_plan") || has("ik_first")) && !has("ik")) {
+    RCLCPP_WARN(
+        node->get_logger(), "pose_plan and ik_first without the ik section plan only the launch tests' near arm target");
   }
 
   robot_model_loader::RobotModelLoader loader(node, robot_model_loader::RobotModelLoader::Options("robot_description"));
@@ -909,6 +919,8 @@ int run(int argc, char ** argv)
          << ",\"segment_fraction_body\":"
          << quote(param("ompl." + body_group + ".longest_valid_segment_fraction"))
          << ",\"planning_time\":" << planning_time << ",\"ik_calls\":" << ik_calls << ",\"quick\":" << quick
+         << ",\"pose_times\":" << quote(pose_times_arg) << ",\"ik_first_times\":" << quote(ik_first_times_arg)
+         << ",\"pose_repeats\":" << pose_repeats
          << ",\"finger_padding\":" << scene->getCollisionEnv()->getLinkPadding("openarm_left_left_finger") << "}";
   std::cout << "config " << config.str() << std::endl;
 
@@ -1157,23 +1169,23 @@ int run(int argc, char ** argv)
       json << "]";
     }
 
-    // Pose goals with the commander's 10000 attempts. A plan fails when no IK goal state
-    // turns up within the planning time, which the joint goals above never need.
-    if (has("pose_plan")) {
-      struct PoseCase
-      {
-        std::string name;
-        moveit::core::RobotState start;
-        Eigen::Isometry3d pose;
-      };
-      std::vector<PoseCase> cases;
+    // Pose goals for pose_plan and ik_first: the launch tests' near target, and the hand
+    // poses of IK solutions found above, from starts that are collision free.
+    struct PoseCase
+    {
+      std::string name;
+      moveit::core::RobotState start;
+      Eigen::Isometry3d pose;
+    };
+    std::vector<PoseCase> pose_cases;
+    if (has("pose_plan") || has("ik_first")) {
       // NEAR_ARM_TARGET of the commander's launch tests (test/whole_body_harness.py), in
       // base_footprint, with the base at the origin, away from the table.
       const Target near_arm{"test_near_arm", 0.45, 0.25, 1.00, 0.0, M_PI / 2.0, 0.0};
       for (const auto & other : other_arms) {
-        cases.push_back({near_arm.name + "/right_" + other, homeState(model, {0.0, 0.0, 0.0}, other), toPose(near_arm)});
+        pose_cases.push_back(
+            {near_arm.name + "/right_" + other, homeState(model, {0.0, 0.0, 0.0}, other), toPose(near_arm)});
       }
-      // The hand poses of IK solutions found above, from starts that are collision free.
       std::vector<const std::pair<std::string, std::pair<moveit::core::RobotState, moveit::core::RobotState>> *> free;
       for (const auto & entry : arm_goals) {
         if (!scene->isStateColliding(entry.second.first)) free.push_back(&entry);
@@ -1181,34 +1193,121 @@ int run(int argc, char ** argv)
       const size_t goals = std::min<size_t>(free.size(), static_cast<size_t>(std::max(pose_goal_count, 0)));
       for (size_t g = 0; g < goals; ++g) {
         const auto & entry = *free[g * free.size() / goals];
-        cases.push_back({entry.first, entry.second.first, entry.second.second.getGlobalLinkTransform(tip)});
+        pose_cases.push_back({entry.first, entry.second.first, entry.second.second.getGlobalLinkTransform(tip)});
       }
+    }
+    const Eigen::Vector2d ws_min(-5.0, -5.0), ws_max(5.0, 5.0);
+
+    // Pose goals with the commander's 10000 attempts. A plan fails when no IK goal state
+    // turns up within the planning time, which the joint goals above never need.
+    if (has("pose_plan")) {
       json << ",\"pose_plan\":[";
       bool first_p = true;
       for (const double seconds : pose_times) {
         int ok = 0, total = 0;
         std::map<int, int> codes;
-        for (const auto & c : cases) {
+        std::vector<double> wall, duration;
+        for (const auto & c : pose_cases) {
           int case_ok = 0;
+          std::vector<double> case_wall, case_duration;
           for (int r = 0; r < pose_repeats; ++r) {
-            const auto out = plan(
-                *pipeline, scene, c.start, poseGoal(model, tip, c.pose), arm_group, seconds, 10000,
-                Eigen::Vector2d(-5.0, -5.0), Eigen::Vector2d(5.0, 5.0));
+            const auto out =
+                plan(*pipeline, scene, c.start, poseGoal(model, tip, c.pose), arm_group, seconds, 10000, ws_min, ws_max);
             ++total;
+            case_wall.push_back(out.wall_ms);
             if (out.ok) {
               ++ok;
               ++case_ok;
+              case_duration.push_back(out.duration_s);
             } else {
               codes[out.code]++;
             }
           }
+          wall.insert(wall.end(), case_wall.begin(), case_wall.end());
+          duration.insert(duration.end(), case_duration.begin(), case_duration.end());
           if (case_ok < pose_repeats) std::printf("      %.1f s %s: %d/%d ok\n", seconds, c.name.c_str(), case_ok, pose_repeats);
           json << (first_p ? "" : ",") << "{\"planning_time\":" << seconds << ",\"goal\":" << quote(c.name)
-               << ",\"ok\":" << case_ok << ",\"total\":" << pose_repeats << "}";
+               << ",\"ok\":" << case_ok << ",\"total\":" << pose_repeats
+               << ",\"wall_ms\":" << statsJson(summarize(case_wall))
+               << ",\"duration_s\":" << statsJson(summarize(case_duration)) << "}";
           first_p = false;
         }
-        std::printf("pose_plan  %s, %.1f s, 10000 attempts: %d/%d ok\n", arm_group.c_str(), seconds, ok, total);
+        const auto w = summarize(wall);
+        const auto d = summarize(duration);
+        std::printf(
+            "pose_plan  %s, %.1f s, 10000 attempts: %d/%d ok | %.0f ms median, %.0f max | motion %.2f s mean\n",
+            arm_group.c_str(), seconds, ok, total, w.median, w.max, d.mean);
         for (const auto & [code, n] : codes) std::printf("      %4d x MoveIt code %d\n", n, code);
+      }
+      json << "]";
+    }
+
+    // The same goals the way the commander plans them with ik_first_enable: up to four
+    // IK calls with its seeds and the full-robot clearance check, then a joint goal with
+    // 10000 attempts, and the pose goal for --planning-time if either step fails. Like the
+    // commander, a joint goal time at or above --planning-time plans for --planning-time.
+    if (has("ik_first")) {
+      random_numbers::RandomNumberGenerator rng(13);
+      json << ",\"ik_first\":[";
+      bool first_f = true;
+      for (const double requested : ik_first_times) {
+        const double seconds = std::min(requested, planning_time);
+        int by_ik = 0, by_fallback = 0, total = 0, no_ik = 0;
+        std::vector<double> total_ms, ik_ms, duration;
+        for (const auto & c : pose_cases) {
+          int case_ik = 0, case_fallback = 0, case_no_ik = 0;
+          std::vector<double> case_total, case_duration;
+          for (int r = 0; r < pose_repeats; ++r) {
+            const auto t0 = Clock::now();
+            const auto seq = ikSequence(*scene, c.start, arm, c.pose, tip, home_seed, 4, rng);
+            ik_ms.push_back(msSince(t0));
+            PlanOutcome out;
+            if (seq.first_ok >= 0) {
+              moveit::core::RobotState goal(c.start);
+              goal.setJointGroupPositions(arm, seq.solution);
+              goal.update();
+              out = plan(*pipeline, scene, c.start, goal, arm_group, seconds, 10000, ws_min, ws_max);
+            } else {
+              ++case_no_ik;
+            }
+            if (out.ok) {
+              ++case_ik;
+            } else {
+              out = plan(
+                  *pipeline, scene, c.start, poseGoal(model, tip, c.pose), arm_group, planning_time, 10000, ws_min,
+                  ws_max);
+              if (out.ok) ++case_fallback;
+            }
+            ++total;
+            case_total.push_back(msSince(t0));
+            if (out.ok) case_duration.push_back(out.duration_s);
+          }
+          by_ik += case_ik;
+          by_fallback += case_fallback;
+          no_ik += case_no_ik;
+          total_ms.insert(total_ms.end(), case_total.begin(), case_total.end());
+          duration.insert(duration.end(), case_duration.begin(), case_duration.end());
+          if (case_ik < pose_repeats) {
+            std::printf(
+                "      %.1f s %s: %d/%d by IK (%d without an IK solution), %d by the pose goal\n", seconds,
+                c.name.c_str(), case_ik, pose_repeats, case_no_ik, case_fallback);
+          }
+          json << (first_f ? "" : ",") << "{\"planning_time\":" << requested << ",\"joint_goal_time\":" << seconds
+               << ",\"fallback_time\":" << planning_time
+               << ",\"goal\":" << quote(c.name) << ",\"by_ik\":" << case_ik << ",\"no_ik\":" << case_no_ik
+               << ",\"by_fallback\":" << case_fallback << ",\"total\":" << pose_repeats
+               << ",\"total_ms\":" << statsJson(summarize(case_total))
+               << ",\"duration_s\":" << statsJson(summarize(case_duration)) << "}";
+          first_f = false;
+        }
+        const auto t = summarize(total_ms);
+        const auto i = summarize(ik_ms);
+        const auto d = summarize(duration);
+        std::printf(
+            "ik_first   %s, joint goal %.1f s: %d/%d by IK, %d by the pose goal, %d failed (%d without an IK "
+            "solution) | %.0f ms median, %.0f max | IK %.0f ms median | motion %.2f s mean\n",
+            arm_group.c_str(), seconds, by_ik, total, by_fallback, total - by_ik - by_fallback, no_ik, t.median,
+            t.max, i.median, d.mean);
       }
       json << "]";
     }

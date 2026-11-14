@@ -72,6 +72,7 @@ def _make_nodes(context: LaunchContext):
         "--attempt-goals", arg("attempt_goals"),
         "--attempt-counts", arg("attempt_counts"),
         "--pose-times", arg("pose_times"),
+        "--ik-first-times", arg("ik_first_times"),
         "--pose-goals", arg("pose_goals"),
         "--pose-repeats", arg("pose_repeats"),
         "--finger-padding", arg("finger_padding"),
@@ -103,7 +104,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "sections",
-                default_value="geometry,collision,ik,arm_plan,attempts,pose_plan,whole_body",
+                default_value="geometry,collision,ik,arm_plan,attempts,pose_plan,ik_first,whole_body",
                 description="Comma-separated parts to run.",
             ),
             DeclareLaunchArgument("ik_calls", default_value="16"),
@@ -131,12 +132,22 @@ def generate_launch_description():
                 description="Comma-separated planning times in seconds for the pose_plan section.",
             ),
             DeclareLaunchArgument(
+                "ik_first_times",
+                default_value="0.5,1,1.5",
+                description="Comma-separated planning times in seconds for the joint goal of the "
+                "ik_first section. Its fallback pose goal plans for planning_time.",
+            ),
+            DeclareLaunchArgument(
                 "pose_goals",
                 default_value="6",
-                description="Hand poses from the ik section that pose_plan plans to, besides the "
-                "launch tests' near arm target.",
+                description="Hand poses from the ik section that pose_plan and ik_first plan to, "
+                "besides the launch tests' near arm target.",
             ),
-            DeclareLaunchArgument("pose_repeats", default_value="4"),
+            DeclareLaunchArgument(
+                "pose_repeats",
+                default_value="4",
+                description="Plans per goal and planning time in pose_plan and ik_first.",
+            ),
             DeclareLaunchArgument(
                 "finger_padding",
                 default_value="0.01",
