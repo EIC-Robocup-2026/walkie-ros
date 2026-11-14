@@ -382,7 +382,7 @@ package.
 Folder: `manipulate/openarm_bimanual_commander_cpp/test/`. They start the real
 `move_group` and the real commander against `whole_body_stub_world`, which stands in
 for the controllers and TF, so they need no simulator. They need a Zenoh router.
-Together they take about 13 minutes, which CI spends too.
+Together they take about 11 minutes, which CI spends too.
 
 ```bash
 pixi run ros2 run rmw_zenoh_cpp rmw_zenohd    # in another terminal
@@ -401,6 +401,7 @@ because the tests share the graph with it. When a test fails, its details are in
 | `whole_body_plan_only.test.py` | About 10 s | A stored plan runs only while the base is where it was planned from |
 | `whole_body_clock.test.py` | About 25 s | The commander on simulation time: a clock at 0.1 of real time passes the gate, a stopped clock is refused |
 | `whole_body_stopping.test.py` | About 4 min 30 s | Every way a motion stops: a cancel at any moment, the deadline, an aborted controller, and Nav2 taking a goal. Each leaves no controller running, and an abort's reason reaches the caller. Also a base that moves during planning, the commander's heartbeat and its executing flag, that the flag arrives before the controllers get the plan, that an old abort does not stop the next goal, and that neither an abort on a controller outside the plan nor the late status of an older goal stops it. |
+| `arm_ik_first.test.py` | About 70 s | On a `fixed` bring-up, with the commander's `/compute_ik` remapped to a service of the test that passes requests on to `move_group`, fails them, or never answers: a single-arm pose goal plans to an IK solution; `ik_first_enable false` plans it directly; without an IK solution, or without an answer, the pose goal is planned instead; a cancel during IK ends the goal within 1 s without motion; a goal canceled while it waits for another goal's plan on the same group ends within 1 s; a `joint_goal_planning_time` at or below zero is rejected and changes nothing; and goals still succeed with a joint goal planning time of 0.01 s |
 | `whole_body_follower.test.py` | About 40 s | The real follower against a fake base, with no `move_group`: tracking in `map`, the heartbeat, one stop for a commander that dies during a motion, collision monitor stops and slowdowns, the stop event without an echo, a stale transform, a far start, a base that does not move, a slow base that falls behind or keeps up, and the diagonal plan speed under the shipped `PolygonSlow` ratio |
 
 !!! note "The exit codes of these tests are not asserted"

@@ -43,7 +43,7 @@ Client (Python / C++ / CLI)
 
 The arm and gripper groups never command the base. See [Move the base with a whole-body goal](../../docs/guides/manipulation.md#whole-body-goals).
 
-All arm groups run with `planningTime=5.0s` (`arm_planning_time`), `numPlanningAttempts=10000`, and the velocity and acceleration scaling of the `max_velocity_scaling_factor` and `max_acceleration_scaling_factor` parameters (default 0.5 and 0.3 from `joint_limits.yaml`).
+All arm groups run with `numPlanningAttempts=10000` and the velocity and acceleration scaling of the `max_velocity_scaling_factor` and `max_acceleration_scaling_factor` parameters (default 0.5 and 0.3 from `joint_limits.yaml`). Named states, joint goals, and single-arm pose goals solved by IK first (`ik_first_enable`) plan for `joint_goal_planning_time` (1.0 s); pose goals that OMPL plans directly, and every fallback, plan for `arm_planning_time` (5.0 s). See [Planning time and attempts](../../docs/guides/manipulation.md#planning-time-and-attempts).
 
 ---
 

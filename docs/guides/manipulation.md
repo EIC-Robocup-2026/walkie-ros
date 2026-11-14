@@ -218,7 +218,9 @@ Most parameters take effect live. The node reads `plan_only` and
 | Parameter | Default | Meaning |
 | --- | --- | --- |
 | `planner_id` | `RRTConnect` | OMPL planner for the arm groups |
-| `arm_planning_time` | `5.0` | Planning time per request, in seconds. Arm plans use all of it in practice, see [Planning time and attempts](#planning-time-and-attempts) |
+| `arm_planning_time` | `5.0` | Planning time of pose goals that OMPL plans directly, in seconds: both-arm groups, and the fallback of every shorter plan below. Arm plans use all of their planning time in practice, see [Planning time and attempts](#planning-time-and-attempts) |
+| `joint_goal_planning_time` | `1.0` | Planning time of the arm groups' named states, joint goals, and pose goals solved by IK first, in seconds. A named state or joint goal that fails plans again with `arm_planning_time`. A value at or above `arm_planning_time` turns the shorter plans off. Gripper groups keep 1 s |
+| `ik_first_enable` | `true` | For a pose goal to a single-arm group, solve IK first and plan to the joint solution, with the pose goal as the fallback |
 | `max_velocity_scaling_factor` | `0.5` from `config/joint_limits.yaml` | Velocity scaling for the arm groups, in (0, 1]. Applies to the next plan |
 | `max_acceleration_scaling_factor` | `0.3` from `config/joint_limits.yaml` | Acceleration scaling for the arm groups, in (0, 1]. Applies to the next plan |
 | `plan_only` | `false` | Plan without executing. The plan is stored per group |
@@ -978,10 +980,12 @@ pairs, and the octomap. Simplifying the `link3_symp.stl` collision mesh gives
 the largest gain.
 
 ??? info "Where each planning-cost setting lives"
-    - **Planning time:** commander parameter `arm_planning_time`, 5.0 s. With
-      10000 attempts arm plans use all of it in practice, see
-      [Planning time and attempts](#planning-time-and-attempts). Can be changed
-      live. Whole-body goals use `whole_body_planning_time` instead.
+    - **Planning time:** commander parameters `joint_goal_planning_time`, 1.0 s,
+      for the arm groups' named states, joint goals, and pose goals solved by IK first, and
+      `arm_planning_time`, 5.0 s, for the other pose goals and every fallback.
+      With 10000 attempts arm plans use all of their time in practice, see
+      [Planning time and attempts](#planning-time-and-attempts). Both can be
+      changed live. Whole-body goals use `whole_body_planning_time` instead.
     - **Planning attempts:** `setNumPlanningAttempts` in
       `manipulate/openarm_bimanual_commander_cpp/src/commander_template.cpp`,
       10000 for arm groups and 100 for grippers. Hard-coded. With more attempts
@@ -1008,7 +1012,7 @@ the largest gain.
 and the OMPL pipeline in one process. It plans against the table scene of the
 whole-body demo, as boxes or as an octomap, and pads the finger links by 0.01 m as
 the commander does. It needs no simulator, router, or `move_group`. A full run of the
-four default scenes takes about 30 minutes, 7 to 8 minutes per scene:
+four default scenes takes about 45 minutes, 10 to 14 minutes per scene:
 
 ```bash
 pixi run ros2 launch openarm_bimanual_moveit_config run_planning_benchmark.launch.py \
@@ -1027,11 +1031,14 @@ pixi run ros2 launch openarm_bimanual_moveit_config run_planning_benchmark.launc
 # Pose goals with three planning times
 pixi run ros2 launch openarm_bimanual_moveit_config run_planning_benchmark.launch.py \
   quick:=true scenes:=empty sections:=ik,pose_plan pose_times:=1.5,3,5 pose_repeats:=6
+# The same pose goals solved IK first, as the commander does
+pixi run ros2 launch openarm_bimanual_moveit_config run_planning_benchmark.launch.py \
+  scenes:=boxes sections:=ik,pose_plan,ik_first pose_times:=5 ik_first_times:=0.5,1
 ```
 
 The `arm_plan` and `attempts` sections take their goals from the `ik` section and
-refuse to start without it. Without `ik`, the `pose_plan` section plans only the
-launch tests' near target. Under
+refuse to start without it. Without `ik`, the `pose_plan` and `ik_first` sections plan
+only the launch tests' near target. Under
 `rmw_zenoh_cpp` the process aborts at exit (code -6) after it has written the JSON
 file; the results are complete.
 
@@ -1043,18 +1050,21 @@ file; the results are complete.
     | `ik` | IK from base poses at set gaps in front of the table, with the colliding links of every failure |
     | `arm_plan` | Arm plans to the IK solutions |
     | `attempts` | Arm plans with each count in `attempt_counts`, to `attempt_goals` goals whose start is collision free |
-    | `pose_plan` | Arm plans to pose goals, as the commander sends them, for each planning time in `pose_times`: the launch tests' near target and `pose_goals` hand poses from the `ik` section, `pose_repeats` times each |
+    | `pose_plan` | Arm plans to pose goals, as OMPL plans them directly, for each planning time in `pose_times`: the launch tests' near target and `pose_goals` hand poses from the `ik` section, `pose_repeats` times each |
+    | `ik_first` | The same goals as `pose_plan`, the way the commander plans them with `ik_first_enable`: up to four collision-aware IK calls, a check of the whole robot at the solution, a plan to it for each planning time in `ik_first_times`, and the pose goal for `planning_time` as the fallback |
     | `whole_body` | The steps of a whole-body goal, as the commander runs them, from a start 1 m before the table, for each idle-arm pose |
 
     | Argument | Default | Meaning |
     | --- | --- | --- |
     | `output_json` | `planning_benchmark.json` | Result file, relative to the working directory |
     | `scenes` | `empty,boxes,octomap:0.03,octomap:0.02` | `octomap:<resolution>` fills an octomap from the box faces |
-    | `sections` | all seven | Comma-separated |
+    | `sections` | all eight | Comma-separated |
     | `planning_time` | `5.0` | Planning time per plan, in seconds |
     | `ik_calls`, `plan_trials` | `16`, `3` | IK calls per target in the `ik` section, and single-attempt plans per IK solution in the `arm_plan` section |
     | `attempt_counts`, `attempt_goals` | `1,4,10000`, `4` | For the `attempts` section |
-    | `pose_times`, `pose_goals`, `pose_repeats` | `1.5,5`, `6`, `4` | For the `pose_plan` section |
+    | `pose_times` | `1.5,5` | Planning times of the `pose_plan` section |
+    | `ik_first_times` | `0.5,1,1.5` | Planning times of the joint goal in the `ik_first` section. As in the commander, a time at or above `planning_time` plans for `planning_time`; the JSON records both |
+    | `pose_goals`, `pose_repeats` | `6`, `4` | Goals and tries per goal and planning time, for the `pose_plan` and `ik_first` sections |
     | `target_xs` | empty | Target x positions in `map`; the table spans 1.55 to 2.25 m |
     | `quick` | `false` | Fewer targets and base poses |
     | `ik_solve_type`, `ik_timeout` | from `kinematics.yaml` | TRAC-IK overrides |
@@ -1065,15 +1075,70 @@ file; the results are complete.
 
 ### Planning time and attempts
 
-Every arm plan uses the full `arm_planning_time`, 5 s by default. The commander asks
-for 10000 attempts, far more than MoveIt runs in parallel, so MoveIt keeps starting
-rounds of RRTConnect searches until the time runs out, and OMPL merges the paths
-found into shorter ones along the way. A plan fails when no search finds a path in
-time, when the request or its start state is invalid, or when MoveIt's final check
-rejects the path (see below).
+A pose goal to `left_arm`, `right_arm`, `left_arm_lift`, or `right_arm_lift` is solved
+by IK first. The commander calls `move_group`'s `/compute_ik`, checks the whole robot
+at the solution (for the two lift groups also with the lift 1 cm lower), and plans to
+the first solution that passes for `joint_goal_planning_time`, 1.0 s by default. When
+none of four IK calls gives such a solution, it plans the pose goal itself for
+`arm_planning_time`, 5 s, as it did before, so such a goal takes about 5.5 s. When the
+plan to the solution fails, the goal also spends that plan's 1 s, about 6.5 s in all.
+When `move_group` stops answering, the commander gives the calls 2 s before it falls
+back, about 7 s in all. A cancel stops the IK calls within about 20 ms. Relative pose goals (`/go_to_pose_relative`) take the same path, also when their
+Cartesian path fails.
 
-Do not lower `arm_planning_time` to speed up arm goals. A pose goal has to find its
-IK goal state within the same time, and with the idle arm in `home` that can take
+Goals to the same group plan one after the other, and execute as before. A goal that is
+canceled while it waits for another goal's plan ends within about 20 ms.
+
+In the planning benchmark, `left_arm_lift` pose goals took a median of about 1.2 s
+this way, against about 5.2 s planned directly. On a 0.02 m octomap half the goals fell
+back, and the median stayed at about 5.3 s. The benchmark runs IK and planning in its
+own process, so it leaves out the service calls of the commander, and it measured
+`left_arm_lift` only.
+
+Named states (`/go_to_home`) and joint goals (`/set_joint_position`) of every arm
+group, `both_arms` and `both_arms_lift` included, plan for `joint_goal_planning_time`
+too, and plan again for `arm_planning_time` when that fails. Gripper groups keep
+their 1 s. Pose goals to `both_arms` and `both_arms_lift` have no IK solver and plan
+for `arm_planning_time`.
+
+With the idle arm in `home`, a target close to the body often takes the slow way: the
+launch tests' near target did in 47 of 48 tries of the benchmark, and planned to an
+IK solution in every try with the idle arm in `standby`. Send the idle arm to `standby`
+first when speed matters (see [Clear the idle arm](#clear-the-idle-arm)).
+
+The commander logs which way a pose goal went:
+
+```text
+[left_arm_lift] Planned to an IK solution in 1.07 s
+[left_arm_lift] IK first: 2 of 4 IK calls solved, none with clearance for the whole robot: planning to the pose goal
+```
+
+To plan every pose goal directly again, as before:
+
+```bash
+pixi run ros2 param set /bimanual_commander ik_first_enable false
+```
+
+!!! note "The same pose can end in a different arm configuration than before"
+    TRAC-IK `Distance` returns the solution closest to its seed, and the first seed is
+    the current arm pose. A pose goal planned directly ends at whatever goal state OMPL
+    samples. The plan also ends on the solution itself, rather than anywhere within the
+    0.02 m and 0.02 rad that a pose goal allows. In the benchmark the motions were about
+    as long as before on average, but not for every goal: for the launch tests' near
+    target with the idle arm in `standby`, the mean motion at full speed was 19.6 to
+    21.3 s per scene and planning time with IK first, against 15.0 to 19.7 s per scene
+    for the pose goal planned directly for 5 s.
+
+Every arm plan uses its full planning time. The commander asks for 10000 attempts,
+far more than MoveIt runs in parallel, so MoveIt keeps starting rounds of RRTConnect
+searches until the time runs out, and OMPL merges the paths found into shorter ones
+along the way. A plan fails when no search finds a path in time, when the request or
+its start state is invalid, or when MoveIt's final check rejects the path (see
+below).
+
+Do not lower `arm_planning_time` to speed up arm goals: it is the planning time of
+every fallback and of the pose goals that OMPL plans directly. Such a pose goal has
+to find its IK goal state within the same time, and with the idle arm in `home` that can take
 seconds: the launch tests' near target, from a free start with no obstacles, planned
 8 of 12 times in 1.5 s, 11 of 12 in 3 s, and 12 of 12 in 5 s. At 1.5 s the commander's
 launch tests failed 2 of 8 tries at that target with `Planning Failed`. With the idle
@@ -1114,6 +1179,30 @@ goal states by IK from random seeds, and many of those solutions put the lift be
     | Near target, idle arm in `home` | 8 of 12 | 11 of 12 | 12 of 12 |
     | Near target, idle arm in `standby` | 12 of 12 | 12 of 12 | 12 of 12 |
     | Four table targets, idle arm in `home` or `standby` | 48 of 48 | 48 of 48 | 48 of 48 |
+
+    IK first against the pose goal planned directly (`ik_first` and `pose_plan`
+    sections, run of 2026-11-14): in each scene the near target and six hand poses
+    from the `ik` section, each with the idle arm in `home` and in `standby`, eight
+    goals of four tries, so 32 tries per cell. "By IK" counts the tries planned to an
+    IK solution; the others took the pose goal with 5 s as the fallback. Times are the
+    median of the 32 tries, IK, checks, and fallback included.
+
+    | Scene | Pose goal, 1.5 s | Pose goal, 5 s | IK first, 0.5 s | IK first, 1.0 s (default) | IK first, 1.5 s |
+    | --- | --- | --- | --- | --- | --- |
+    | Empty | 30 of 32, 1.74 s | 31 of 32, 5.26 s | 32 of 32, 23 by IK, 0.79 s | 32 of 32, 25 by IK, 1.28 s | 31 of 32, 24 by IK, 1.82 s |
+    | Boxes | 31 of 32, 1.72 s | 32 of 32, 5.22 s | 32 of 32, 22 by IK, 0.72 s | 32 of 32, 23 by IK, 1.19 s | 32 of 32, 24 by IK, 1.67 s |
+    | Octomap, 0.03 m | 30 of 32, 1.62 s | 31 of 32, 5.17 s | 32 of 32, 26 by IK, 0.69 s | 32 of 32, 27 by IK, 1.18 s | 32 of 32, 27 by IK, 1.69 s |
+    | Octomap, 0.02 m | 30 of 32, 1.65 s | 30 of 32, 5.16 s | 31 of 32, 16 by IK, 3.06 s | 32 of 32, 15 by IK, 5.30 s | 32 of 32, 15 by IK, 5.27 s |
+
+    Most fallbacks found no IK solution with clearance in the four calls. The near
+    target with the idle arm in `home` found none in 47 of its 48 tries, and one table
+    target with the idle arm in `home` found none in any try of the empty and box
+    scenes. On the 0.02 m octomap four of the eight goals found none, so half the
+    tries fell back. The other fallbacks were joint plans that failed within the
+    planning time: 4 of 91 IK solutions at 0.5 s, 3 of 93 at 1.0 s, and 2 of 92 at 1.5 s. IK took about
+    50 ms per goal, 126 ms on the 0.02 m octomap. The mean motion at full speed was
+    7.9 to 11.2 s per scene and setting for IK first, against 8.4 to 10.4 s for the
+    pose goal at 5 s.
 
     The joint-goal plans counted under "Failed validation" failed MoveIt's final
     check of the timed trajectory (`ValidateSolution`) with `INVALID_MOTION_PLAN`.

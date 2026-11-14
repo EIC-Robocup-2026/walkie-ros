@@ -23,8 +23,11 @@ pulling. For day-to-day use, read
 - **Watch out:** arm moves take about twice as long, because this branch also takes the
   speed scaling from `feat/commander-speed-scaling`. A whole-body goal does not move the
   other arm, so send that arm to `standby` first (added 2026-11-11, see
-  [Planning near the table](#planning-near-the-table)). Whole-body goals have not run on
-  the real robot, so keep `base_mode:=fixed` there.
+  [Planning near the table](#planning-near-the-table)). A pose goal to a single-arm group
+  is now solved by IK first, and can end in a different arm configuration than before
+  (added 2026-11-14, `ik_first_enable` turns it off, see
+  [IK first for arm pose goals](#ik-first-for-arm-pose-goals)). Whole-body goals have not
+  run on the real robot, so keep `base_mode:=fixed` there.
 - **Result:** the MuJoCo demo passed all ten steps in the last run here and in six runs of
   three independent checks, and the launch tests pass ([Verification](#verification)). A
   collision monitor stop missed its 0.5 s target in four of seven runs, by up to 0.09 s of
@@ -74,7 +77,8 @@ that MoveIt loads is byte-identical to the one before this change.
 | `manipulate/openarm_bimanual_commander_cpp/src/unwrap_planar_heading.cpp` | A planning response adapter that keeps the base from turning the long way across ±π |
 | `manipulate/openarm_bimanual_commander_cpp/src/whole_body_demo.py` | The demo client. It tucks the right arm to `standby` before a target over the table, and sends `right_arm_lift` home at the end. It refuses to run when the commander has `plan_only` set. |
 | `manipulate/openarm_bimanual_commander_cpp/src/benchmark_planning.cpp`, `manipulate/openarm_bimanual_moveit_config/launch/run_planning_benchmark.launch.py` | A planning benchmark against the demo's table scene, see [Measure planning speed](../guides/manipulation.md#measure-planning-speed) |
-| `manipulate/openarm_bimanual_commander_cpp/test/` | Six launch files and a stub world, see [Tests](../guides/testing.md#whole-body-launch-tests) |
+| `manipulate/openarm_bimanual_commander_cpp/src/ik_first_goal.hpp`, `commander_template.cpp` | IK first for single-arm pose goals, and the parameters `joint_goal_planning_time` and `ik_first_enable`, see [IK first for arm pose goals](#ik-first-for-arm-pose-goals) |
+| `manipulate/openarm_bimanual_commander_cpp/test/` | Seven launch files and a stub world, see [Tests](../guides/testing.md#whole-body-launch-tests) |
 | `bringup/launch/whole_body_demo.launch.py` | Starts the demo. `bringup/scripts/ground_truth_map_odom.py` feeds `map` to `odom` from MuJoCo's ground truth. |
 | `bringup/launch/nav_mujoco_omnibot.launch.py` | Sets `state_topic` on the collision monitor, so the follower can see a stop |
 | `description/mujoco/scene_whole_body.xml` | The scene: a table, a free box, and a wall |
@@ -199,6 +203,8 @@ mesh was wrong. Most failures came from the idle arm and from targets placed too
   to find its IK goal state within that time. At 1.5 s, one goal with the idle arm in
   `home` failed 4 of 12 times in the benchmark and 2 of 8 times in the launch tests
   ([Planning time and attempts](../guides/manipulation.md#planning-time-and-attempts)).
+  The faster path for single-arm pose goals came later, see
+  [IK first for arm pose goals](#ik-first-for-arm-pose-goals).
 
 ??? info "Causes found, and what was done"
     | Cause | Effect | Done |
@@ -221,9 +227,67 @@ mesh was wrong. Most failures came from the idle arm and from targets placed too
     | TRAC-IK solve type | `Distance`, as before | `Speed`. Whole-body goals took 0.5 to 0.8 s instead of 0.5 to 0.9 s, hardly faster, and its solutions are not the nearest to the current arm pose, so motions are larger and less repeatable. |
     | The side box on the column | Unchanged | Removing it. Nobody here knows what it stands for. |
 
+## IK first for arm pose goals
+
+Added on 2026-11-14. In the planning benchmark, a `left_arm_lift` pose goal now plans in
+a median of about 1.2 s instead of about 5.2 s, and it succeeded at least as often. On a
+0.02 m octomap half the goals fell back, and the median stayed at about 5.3 s. The
+benchmark leaves out the commander's service calls and measured `left_arm_lift` only;
+`left_arm`, `right_arm`, and `right_arm_lift` take the same path. Every arm plan uses
+its full planning time, and a pose goal needed the 5 s of `arm_planning_time` because
+OMPL samples its IK goal states inside the plan. A joint goal skips that sampling, so
+the commander now turns the pose into a joint goal first:
+
+- **IK:** up to four calls to `move_group`'s `/compute_ik` with `avoid_collisions`,
+  seeded from the current state, from `home` with the lift where it is, and from both
+  again. `/compute_ik` checks only the links of the group, so each solution also has to
+  pass `/check_state_validity` for the whole robot; for `left_arm_lift` and
+  `right_arm_lift` also with the lift 0.01 m lower, as whole-body goals do. The calls
+  take about 50 ms per goal. All of them share 2 s, the commander stops at the first
+  call without an answer and sends none after the 2 s, and a cancel stops them within
+  about 20 ms.
+- **Plan:** to the first solution that passes, for the new parameter
+  `joint_goal_planning_time` (1.0 s), with a joint goal tolerance of 0.001 rad, so the
+  arm ends on the checked solution.
+- **Fallback:** when no solution passes, IK gets no answer, or that plan fails, the pose
+  goal itself for `arm_planning_time` (5 s), as before. The commander logs which way a
+  goal went.
+- **Relative pose goals** (`/go_to_pose_relative`) take the same path, also as the
+  fallback of a Cartesian path that fails.
+- **Named states and joint goals** (`/go_to_home`, `/set_joint_position`) of every arm
+  group, `both_arms` and `both_arms_lift` included, plan for `joint_goal_planning_time`
+  too, and plan again for `arm_planning_time` when that fails. Gripper groups keep 1 s.
+- **Unchanged:** pose goals to `both_arms` and `both_arms_lift`, which are not chains
+  and have no IK solver; Cartesian paths that succeed; and whole-body goals.
+- **Turn it off** with `ik_first_enable false`. A `joint_goal_planning_time` at or above
+  `arm_planning_time` turns off the shorter plans, so the commander then plans as it did
+  before this change.
+
+Each goal now holds a lock on its MoveGroupInterface from setting it up until its plan
+is done, and applies `planner_id`, `arm_planning_time`, and the two scaling factors to
+it under that lock. The parameter callback used to set them on the groups itself, which
+could change a group in the middle of another goal's plan; it now only checks and logs
+them. Two goals on the same group plan one after the other, and execute as before. A
+goal waits for the lock in 20 ms steps, so a cancel ends the wait within about 20 ms,
+and a goal canceled by then plans nothing.
+
+The benchmark numbers are in
+[Planning time and attempts](../guides/manipulation.md#planning-time-and-attempts).
+With the idle arm in `home`, a target close to the body still takes about 5.5 s: the four
+IK calls found no solution with clearance for the launch tests' near target in 47 of 48
+tries, and the fallback then planned it.
+
+??? info "The choices, and what was rejected"
+    | Question | Chosen | Rejected, and why |
+    | --- | --- | --- |
+    | Planning time of the joint goal | 1.0 s | 0.5 s: medians of 0.69 to 0.79 s, and its joint plans failed about as often (4 of 91 IK solutions, against 3 of 93 at 1.0 s). Not chosen because the robot's computer has not been measured: a slower one runs fewer searches in 0.5 s, and each failed plan costs the 5 s fallback. 1.5 s: about 0.5 s slower than 1.0 s, with about as many fallbacks. |
+    | Where IK runs | `move_group`'s `/compute_ik` and `/check_state_validity` | IK in the commander's process. The commander has no planning scene of its own, and the services check against `move_group`'s, octomap included. |
+    | Lowering `arm_planning_time` instead | Kept at 5 s | It is the planning time of every fallback, and the fallback gets exactly the goals that IK first could not solve, such as the near target with the idle arm in `home`, which planned 8 of 12 times at 1.5 s. |
+    | Which arm configuration a goal ends in | The first IK solution that passes, from the seeds in order: current state, `home`, current state, `home`. TRAC-IK's Distance mode returns a solution near its seed, so the first seed gives one near the current joints, and the `home` seed one near `home`. | Leaving the goal state to OMPL. A pose goal planned directly ends anywhere within the 0.02 m and 0.02 rad tolerances. In the benchmark the motions were about as long on average either way, and longer for some goals with IK first. |
+
 ## CI
 
-`openarm_bimanual_commander_cpp` joins the tested packages. Its launch tests add about 13
+`openarm_bimanual_commander_cpp` joins the tested packages. Its launch tests add about 11
 minutes to the **Test** step, and they use the router that CI already starts. These tests
 have not run in CI yet, because the branch has not been pushed. They are timing-sensitive
 in places, so a slower runner may show problems that this laptop did not.
@@ -325,6 +389,20 @@ without RViz, for the changes in [Planning near the table](#planning-near-the-ta
 | `deep_body` in the three runs | Base travel 0.37, 0.49 and 0.42 m. The column came within 0.100, 0.061 and 0.137 m of the table edge. Tip error 11.3, 11.2 and 9.0 mm. |
 | Collision monitor in the three runs | No stop. The slowdown polygon turned on 5, 3 and 4 times. |
 
+### IK first { #verification-ik-first }
+
+Checked on 2026-11-14 on the same laptop, for the changes in
+[IK first for arm pose goals](#ik-first-for-arm-pose-goals). Nothing ran in MuJoCo since
+these changes: the checks are the planning benchmark and the commander launch tests.
+
+| Check | Result |
+| --- | --- |
+| Planning benchmark | See [Planning time and attempts](../guides/manipulation.md#planning-time-and-attempts), run of 2026-11-14 |
+| `arm_ik_first.test.py` | 8 of 8 in about 70 s |
+| Red test | With a lock wait that ignored the cancel, the test of a goal canceled while it waits for another goal's plan failed: the goal ended 7.7 s after the cancel. |
+| Commander launch tests | 76 tests, 2 skipped, none failed, in 11 min 17 s. Before the review fixes: 72 tests, 2 skipped, none failed, in 10 min 57 s. |
+| `pixi run docs-build` | Builds without warnings |
+
 ## Commits
 
 To be listed once the branch lands.
@@ -377,7 +455,12 @@ Known limits:
   benchmark) fail with `INVALID_MOTION_PLAN`, most likely because OMPL's motion checks miss a
   graze that the final check finds. Denser checks (`longest_valid_segment_fraction` 0.0005)
   removed it, but made each search 6 to 9 times slower and whole-body goals 3 to 4 times
-  slower. A retry in the commander on that error code would be cheaper, and is not built.
+  slower. Since IK first, named states and joint goals plan again with `arm_planning_time`
+  after any failed plan, and a pose goal solved by IK falls back to the pose goal. Pose goals
+  that OMPL plans directly, and Cartesian paths, still get no second plan.
+- With the idle arm in `home`, the four IK calls of IK first miss solutions that the
+  pose-goal fallback then finds, so such goals take about 5.5 s. More IK calls from random
+  seeds would likely catch some of them, and are not built.
 - Close to the table legs, the collision monitor stopped short base moves of whole-body
   goals: 4 of 14 deep goals at y 0.10 to 0.30 m. The one stop examined lasted a single scan
   (20 ms), and the follower aborts the goal on any stop. MuJoCo disables the monitor's
