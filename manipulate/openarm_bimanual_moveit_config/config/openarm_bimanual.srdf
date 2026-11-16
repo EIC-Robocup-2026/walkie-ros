@@ -172,6 +172,47 @@
         <joint name="openarm_right_joint7" value="0.2094"/>
     </group_state>
 
+    <!-- rest_pose: a reach over a table. Like hands_up (level forearm, gripper pointing
+         forward, hand within 2 cm of its height), but the upper arm leans 12 deg forward and the
+         hand is 0.40 m ahead of the shoulder instead of 0.18 m. Default whole_body_rest_state
+         of the commander. deg left j1-j7 = -11.7,0,0,80.6,0,0,2.2 (right: j1, j7 negated). -->
+    <group_state name="rest_pose" group="left_arm">
+        <joint name="openarm_left_joint1" value="-0.2036"/>
+        <joint name="openarm_left_joint2" value="0"/>
+        <joint name="openarm_left_joint3" value="0"/>
+        <joint name="openarm_left_joint4" value="1.4059"/>
+        <joint name="openarm_left_joint5" value="0"/>
+        <joint name="openarm_left_joint6" value="0"/>
+        <joint name="openarm_left_joint7" value="0.0386"/>
+    </group_state>
+
+    <group_state name="rest_pose" group="right_arm">
+        <joint name="openarm_right_joint1" value="0.2036"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
+        <joint name="openarm_right_joint3" value="0"/>
+        <joint name="openarm_right_joint4" value="1.4059"/>
+        <joint name="openarm_right_joint5" value="0"/>
+        <joint name="openarm_right_joint6" value="0"/>
+        <joint name="openarm_right_joint7" value="-0.0386"/>
+    </group_state>
+
+    <group_state name="rest_pose" group="both_arms">
+        <joint name="openarm_left_joint1" value="-0.2036"/>
+        <joint name="openarm_left_joint2" value="0"/>
+        <joint name="openarm_left_joint3" value="0"/>
+        <joint name="openarm_left_joint4" value="1.4059"/>
+        <joint name="openarm_left_joint5" value="0"/>
+        <joint name="openarm_left_joint6" value="0"/>
+        <joint name="openarm_left_joint7" value="0.0386"/>
+        <joint name="openarm_right_joint1" value="0.2036"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
+        <joint name="openarm_right_joint3" value="0"/>
+        <joint name="openarm_right_joint4" value="1.4059"/>
+        <joint name="openarm_right_joint5" value="0"/>
+        <joint name="openarm_right_joint6" value="0"/>
+        <joint name="openarm_right_joint7" value="-0.0386"/>
+    </group_state>
+
     <group_state name="standby" group="left_arm">
         <joint name="openarm_left_joint1" value="0.6458"/>
         <joint name="openarm_left_joint2" value="0"/>
@@ -427,6 +468,48 @@
         <joint name="openarm_right_joint5" value="0"/>
         <joint name="openarm_right_joint6" value="0"/>
         <joint name="openarm_right_joint7" value="0.2094"/>
+    </group_state>
+
+    <!-- rest_pose: same arm pose as left_arm/right_arm rest_pose, lift at the top like
+         hands_up. The commander's rest cost leaves the lift out. -->
+    <group_state name="rest_pose" group="left_arm_lift">
+        <joint name="lift_joint" value="0.7435"/>
+        <joint name="openarm_left_joint1" value="-0.2036"/>
+        <joint name="openarm_left_joint2" value="0"/>
+        <joint name="openarm_left_joint3" value="0"/>
+        <joint name="openarm_left_joint4" value="1.4059"/>
+        <joint name="openarm_left_joint5" value="0"/>
+        <joint name="openarm_left_joint6" value="0"/>
+        <joint name="openarm_left_joint7" value="0.0386"/>
+    </group_state>
+
+    <group_state name="rest_pose" group="right_arm_lift">
+        <joint name="lift_joint" value="0.7435"/>
+        <joint name="openarm_right_joint1" value="0.2036"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
+        <joint name="openarm_right_joint3" value="0"/>
+        <joint name="openarm_right_joint4" value="1.4059"/>
+        <joint name="openarm_right_joint5" value="0"/>
+        <joint name="openarm_right_joint6" value="0"/>
+        <joint name="openarm_right_joint7" value="-0.0386"/>
+    </group_state>
+
+    <group_state name="rest_pose" group="both_arms_lift">
+        <joint name="lift_joint" value="0.7435"/>
+        <joint name="openarm_left_joint1" value="-0.2036"/>
+        <joint name="openarm_left_joint2" value="0"/>
+        <joint name="openarm_left_joint3" value="0"/>
+        <joint name="openarm_left_joint4" value="1.4059"/>
+        <joint name="openarm_left_joint5" value="0"/>
+        <joint name="openarm_left_joint6" value="0"/>
+        <joint name="openarm_left_joint7" value="0.0386"/>
+        <joint name="openarm_right_joint1" value="0.2036"/>
+        <xacro:unless value="$(arg right_joint2_fixed)"><joint name="openarm_right_joint2" value="0"/></xacro:unless>
+        <joint name="openarm_right_joint3" value="0"/>
+        <joint name="openarm_right_joint4" value="1.4059"/>
+        <joint name="openarm_right_joint5" value="0"/>
+        <joint name="openarm_right_joint6" value="0"/>
+        <joint name="openarm_right_joint7" value="-0.0386"/>
     </group_state>
 
     <group_state name="standby" group="left_arm_lift">
