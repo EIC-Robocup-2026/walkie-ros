@@ -141,6 +141,12 @@ install(PROGRAMS
 )
 
 install(PROGRAMS
+  src/whole_body_marker.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME whole_body_marker
+)
+
+install(PROGRAMS
   src/commander_benchmark.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME commander_benchmark
@@ -165,6 +171,8 @@ if(BUILD_TESTING)
   add_ros_test(test/whole_body_stopping.test.py TIMEOUT 600)
   add_ros_test(test/whole_body_follower.test.py TIMEOUT 180)
   add_ros_test(test/arm_ik_first.test.py TIMEOUT 300)
+  add_ros_test(test/whole_body_marker.test.py TIMEOUT 300)
+  add_ros_test(test/whole_body_marker_client.test.py TIMEOUT 120)
 endif()
 
 ament_package()

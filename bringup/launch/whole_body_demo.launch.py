@@ -8,6 +8,9 @@ client in a second terminal:
     pixi run ros2 launch robot_bringup whole_body_demo.launch.py
     pixi run ros2 run openarm_bimanual_commander_cpp whole_body_demo
 
+Or drag the hand target marker in RViz and pick "Reach with left arm" from its
+right-click menu (whole_body_marker, started with use_rviz:=true).
+
 map -> odom comes from ground truth, because the omni controller's odometry reports
 commands and not wheel motion. A real robot needs AMCL there.
 """
@@ -103,6 +106,15 @@ def generate_launch_description():
         parameters=[{"use_sim_time": True}],
     )
 
+    # Drag the hand target in RViz and pick "Reach with left arm" from its menu.
+    hand_marker = Node(
+        package="openarm_bimanual_commander_cpp",
+        executable="whole_body_marker",
+        output="screen",
+        parameters=[{"use_sim_time": True}],
+        condition=IfCondition(LaunchConfiguration("use_rviz")),
+    )
+
     # The commander's MoveGroupInterface needs move_group's action server at startup.
     wait_for_move_group = Node(
         package="openarm_bimanual_moveit_config",
@@ -122,5 +134,5 @@ def generate_launch_description():
 
     return LaunchDescription(
         declared_arguments
-        + [router, simulation, moveit, follower, wait_for_move_group, start_commander]
+        + [router, simulation, moveit, follower, hand_marker, wait_for_move_group, start_commander]
     )

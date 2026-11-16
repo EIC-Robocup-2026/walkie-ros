@@ -22,6 +22,8 @@ from rclpy.action import ActionClient
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
+from visualization_msgs.msg import InteractiveMarkerFeedback
+from visualization_msgs.srv import GetInteractiveMarkers
 
 FAR_TARGET = (1.75, 0.15, 1.05)
 FAR_TARGET_RIGHT = (1.75, -0.15, 1.05)
@@ -264,3 +266,59 @@ class CommanderClient:
                 type=ParameterType.PARAMETER_DOUBLE, double_value=float(value))
         request = SetParameters.Request(parameters=[Parameter(name=name, value=parameter_value)])
         return self.wait(self.parameters.call_async(request), 30.0).results[0]
+
+
+class MarkerDriver:
+    """Plays the part of RViz for whole_body_marker.
+
+    Reads the marker from its server and moves it or picks its menu entries with feedback
+    messages, as the InteractiveMarkers display does. `node` has to be spinning.
+    """
+
+    NAMESPACE = '/whole_body_hand_target'
+    MARKER = 'hand_target'
+
+    def __init__(self, node, client_id):
+        self.client_id = client_id
+        self.markers = node.create_client(GetInteractiveMarkers, self.NAMESPACE + '/get_interactive_markers')
+        self.feedback = node.create_publisher(InteractiveMarkerFeedback, self.NAMESPACE + '/feedback', 10)
+
+    def marker(self):
+        assert self.markers.wait_for_service(timeout_sec=30.0)
+        response = CommanderClient.wait(self.markers.call_async(GetInteractiveMarkers.Request()), 10.0)
+        found = [m for m in response.markers if m.name == self.MARKER]
+        assert len(found) == 1, [m.name for m in response.markers]
+        return found[0]
+
+    def wait_for_marker(self, check, timeout):
+        """Return the marker once check(marker) is true."""
+        deadline = time.monotonic() + timeout
+        while True:
+            marker = self.marker()
+            if check(marker):
+                return marker
+            assert time.monotonic() < deadline, (
+                f'The marker did not change in {timeout} s; last description: {marker.description}')
+            time.sleep(0.2)
+
+    def wait_for_status(self, prefix, timeout):
+        return self.wait_for_marker(lambda m: m.description.startswith(prefix), timeout).description
+
+    def send(self, event_type, pose=None, entry=''):
+        message = InteractiveMarkerFeedback(
+            client_id=self.client_id, marker_name=self.MARKER, event_type=event_type)
+        message.header.frame_id = 'map'
+        if pose is not None:
+            message.pose = pose
+        if entry:
+            ids = [e.id for e in self.marker().menu_entries if e.title == entry]
+            assert len(ids) == 1, entry
+            message.menu_entry_id = ids[0]
+        deadline = time.monotonic() + 10.0
+        while self.feedback.get_subscription_count() == 0 and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert self.feedback.get_subscription_count() > 0, 'whole_body_marker is not listening'
+        self.feedback.publish(message)
+
+    def pick(self, entry):
+        self.send(InteractiveMarkerFeedback.MENU_SELECT, entry=entry)

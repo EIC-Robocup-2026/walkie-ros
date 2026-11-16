@@ -646,6 +646,15 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /pick_and_place/markers
       Value: true
+    - Class: rviz_default_plugins/InteractiveMarkers
+      Enable Transparency: true
+      Enabled: true
+      Interactive Markers Namespace: /whole_body_hand_target
+      Name: Whole-Body Hand Target
+      Show Axes: false
+      Show Descriptions: true
+      Show Visual Aids: false
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
