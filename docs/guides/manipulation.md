@@ -535,18 +535,20 @@ cost = base_xy × base travel (m) + base_yaw × base turn (rad) + lift × lift t
 ```
 
 A higher weight makes its part move less, at the cost of the others. Only the ratios
-matter: doubling every weight picks the same pose. The defaults weigh base travel
-alone, so the robot stands at the nearest usable base pose and the arm and the lift
-do the rest, as before these parameters existed.
+matter: doubling every weight picks the same pose. The defaults weigh base travel and,
+at 0.3, the arm's distance from `rest_pose`, a reach over a table (see
+[Planning groups and named states](#planning-groups-and-named-states)). The robot
+stands near the target, and goal postures stay near `rest_pose` where a little more
+base travel allows it.
 
 | You want | Set |
 | --- | --- |
-| The base to move as little as possible, and the arm to do the rest | The defaults |
+| The base to move as little as possible, the arm to do the rest, and the fastest search | `whole_body_weight_rest` 0.0 |
 | The base to turn less | `whole_body_weight_base_yaw` 0.3 |
 | The arm to move less, and the base a little more | `whole_body_weight_arm_joints` 0.1 on every joint |
 | One joint to move less, such as the shoulder (joint1) | A weight on that joint alone: `[0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]` |
 | The lift to stay near its height. It moves at 0.03 m/s, so it often sets the duration of the motion | `whole_body_weight_lift` 3.0 |
-| Goal postures near a named state | `whole_body_rest_state` and `whole_body_weight_rest` 0.3 |
+| Goal postures near another named state | `whole_body_rest_state`, such as `hands_up` |
 
 Set them live. A goal reads them once, when it starts:
 
@@ -566,20 +568,22 @@ arm only). To change a default, add the value to the commander's `parameters` in
 The commander logs the choice of every goal that moves the base:
 
 ```text
-Whole-body goal on whole_body_left: candidate 1 of 1 usable, cost 0.981 (base 0.981 m 0.556 rad, lift 0.085 m, arm 5.536 rad, 5.536 rad from rest state 'home')
+Whole-body goal on whole_body_left: candidate 1 of 8 usable, cost 2.287 (base 1.101 m 0.505 rad, lift 0.205 m, arm 4.445 rad, 3.953 rad from rest state 'rest_pose')
 ```
 
-`candidate 1` is the first base pose planned to, and `1 usable` the number of usable
-poses found up to then: with the defaults the search stops at the first. The numbers
-in brackets are the unweighted motion of that candidate, so they show what a weight
-would trade. Here the arm started in its rest state, so its motion and its distance
-from rest are the same.
+`candidate 1` is the first base pose planned to, and `8 usable` the number of usable
+poses held up to then: with the defaults the search usually fills all
+`whole_body_candidates` before it picks one. The numbers in brackets are the
+unweighted motion of that candidate, so they show what a weight would trade. Here the
+cost is the base travel plus 0.3 times the distance from `rest_pose`. With
+`whole_body_weight_rest` 0.0, the search stops at the first usable pose and logs
+`candidate 1 of 1 usable`.
 
-An arm weight keeps the arm near the posture the last goal left it in, not near
-`home`. A 7-joint arm on a moving base reaches the same hand pose in many postures. In
-a MuJoCo run, a goal that brought the hand back to where it started from `home` left
-the arm 7.2 rad from `home`. Set `whole_body_weight_rest` when goal postures should
-stay near a named state.
+An arm weight keeps the arm near the posture the last goal left it in, not near a
+named state. A 7-joint arm on a moving base reaches the same hand pose in many
+postures. In a MuJoCo run without a rest weight, a goal that brought the hand back to
+where it started from `home` left the arm 7.2 rad from `home`. The rest weight is what
+keeps goal postures near `whole_body_rest_state`.
 
 !!! warning "Weights cost planning time"
     The commander solves IK at the sampled poses in order of base cost. When only
@@ -587,9 +591,12 @@ stay near a named state.
     usable pose is the cheapest, and the search stops there. A weight on the lift, the
     arm joints, or the rest posture can make a later pose cheaper, so the commander
     keeps solving until no later pose can beat the cheapest it found, or it holds
-    `whole_body_candidates` usable ones. In the benchmark below that took a goal from
-    about 0.95 s to about 1.5 s, with about twice the IK calls. A smaller
-    `whole_body_candidates` gives some of it back.
+    `whole_body_candidates` usable ones. The default rest weight does this on every
+    goal that moves the base. In the benchmark below a goal took about 2.0 s, with about
+    30 IK calls. `whole_body_candidates` 4 gives back 0.4 s and about 30 percent of the
+    posture gain. `whole_body_weight_rest` 0.0 gives back 0.9 s. With
+    `whole_body_rest_state` `home` as well, a goal takes about 0.9 s and 8 IK calls, as
+    before `rest_pose`.
 
 Weights only rank base poses. A goal the arm reaches from where the robot stands
 never moves the base, whatever the weights. Use an arm group when the base must not
@@ -604,7 +611,7 @@ the rest state alone. It needs no simulator:
 ```bash
 pixi run ros2 launch openarm_bimanual_moveit_config run_planning_benchmark.launch.py \
   scenes:=boxes sections:=whole_body output_json:=/tmp/weights.json \
-  "wb_presets:=default;yaw base_yaw=0.3;arm arm=0.1;rest rest=0.3 rest_state=hands_up"
+  "wb_presets:=default;base_only rest=0;yaw base_yaw=0.3;hands_up rest_state=hands_up"
 ```
 
 Presets are separated by `;`. Each is a name followed by `key=value` pairs:
@@ -614,7 +621,44 @@ one value for all seven joints or seven values separated by `/`
 prints the mean motion of each preset over the goals it reached, and the JSON file
 has the motion and cost of every goal.
 
+??? info "Results of 2026-11-17: rest weights with `rest_pose`"
+    The same 72 goals as on 2026-11-16, below, and every preset reached all of them.
+    The arm starts in `home`. Every preset but the first has `rest_pose` as its rest
+    state. The last column counts the goals whose base pose differs from the first
+    row's.
+
+    | Preset | Median time | Median IK calls | Base travel | Base turn | Lift travel | Arm motion | From the rest state | Other pose |
+    | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+    | `rest=0 rest_state=home`, the defaults before 2026-11-17 | 0.88 s | 8 | 0.54 m | 0.62 rad | 0.21 m | 4.66 rad | 4.66 rad from `home` | |
+    | `rest=0` | 1.11 s | 13 | 0.57 m | 0.59 rad | 0.23 m | 5.01 rad | 5.04 rad | 50 |
+    | `rest=0.1` | 1.82 s | 29 | 0.62 m | 0.60 rad | 0.20 m | 4.28 rad | 3.71 rad | 65 |
+    | `rest=0.2` | 1.89 s | 28 | 0.63 m | 0.60 rad | 0.19 m | 4.17 rad | 3.51 rad | 67 |
+    | `rest=0.3`, the defaults | 1.99 s | 30 | 0.63 m | 0.59 rad | 0.19 m | 4.16 rad | 3.52 rad | 67 |
+    | `rest=0.5` | 2.03 s | 29 | 0.64 m | 0.60 rad | 0.18 m | 4.15 rad | 3.50 rad | 67 |
+    | `rest=0.3 candidates=4` | 1.59 s | 22 | 0.61 m | 0.58 rad | 0.20 m | 4.48 rad | 3.98 rad | 64 |
+
+    - Against `rest=0`, `rest_pose` as the seed alone, a rest weight of 0.2 or more
+      brings goals from 5.0 to 3.5 rad from `rest_pose` and cuts arm motion by 17
+      percent, for 6 cm more base travel and 0.9 s more per goal. Against the old
+      defaults, arm motion falls by 11 percent, for 9 cm more travel and 1.1 s more per
+      goal. The base turn and the lift barely change.
+    - From 0.1 up, the search found eight usable poses on 67 to 70 of the 72 goals, so
+      a higher weight only reorders the same few poses. Above 0.2 the means do not
+      change.
+    - `candidates=4` gives back 0.4 s, and loses 30 percent of the gain: its goals end
+      3.98 rad from `rest_pose`, against 3.52 rad with eight and 5.04 rad with none.
+    - 3.5 rad over seven joints is about 0.5 rad per joint. A hand at a table target
+      needs another posture than `rest_pose`, so goals do not end at it.
+    - The old defaults took 0.88 s here and 0.95 s on 2026-11-16: compare times within
+      one run.
+
+    The raw results are in `~/.cache/walkie-plan-fullbody/bench/rest_pose/presets.json`
+    on the laptop that ran them.
+
 ??? info "Results of 2026-11-16"
+    Before `rest_pose` existed. The defaults then weighed base travel alone, with
+    `home` as the rest state.
+
     `scenes:=boxes,octomap:0.03`, the 18 whole-body targets from 1 m before the table,
     with the idle arm in `home` and in `standby`: 72 goals per preset, and every preset
     reached all of them. Times are IK and planning in the benchmark's process; the
@@ -770,12 +814,12 @@ take effect on the next goal. `base_mode` is read once, at startup.
 | `whole_body_acceleration_scaling` | `1.0` | Acceleration scaling of a plan that moves the base, in (0, 1] |
 | `whole_body_goal_joint_tolerance` | `0.001` | Joint tolerance of the goal |
 | `whole_body_execution_margin` | `15.0` | Seconds added to 1.5 times the planned duration for the execution deadline, on the node's clock |
-| `whole_body_rest_state` | `home` | Named state of both `left_arm_lift` and `right_arm_lift`: the IK seed, and the posture `whole_body_weight_rest` pulls toward. Its lift value is ignored. |
+| `whole_body_rest_state` | `rest_pose` | Named state of both `left_arm_lift` and `right_arm_lift`: the IK seed, and the posture `whole_body_weight_rest` pulls toward. Its lift value is ignored. |
 | `whole_body_weight_base_xy` | `1.0` | Cost per meter of base travel, in a straight line |
 | `whole_body_weight_base_yaw` | `0.0` | Cost per radian of base turn |
 | `whole_body_weight_lift` | `0.0` | Cost per meter of lift travel |
 | `whole_body_weight_arm_joints` | seven `0.0` | Cost per radian of each joint of the reaching arm, joint1 to joint7 |
-| `whole_body_weight_rest` | `0.0` | Cost per radian between the goal's arm joints and `whole_body_rest_state`, summed over the seven joints |
+| `whole_body_weight_rest` | `0.3` | Cost per radian between the goal's arm joints and `whole_body_rest_state`, summed over the seven joints |
 | `whole_body_candidates` | `8` | Most usable base poses the search holds and compares before it plans the cheapest. More can find a cheaper pose, for more IK calls. |
 
 The last seven are explained in [Tune whole-body goals](#tune-whole-body-goals).
@@ -1059,7 +1103,7 @@ Named states, for `go_to_home` and for the MoveIt RViz panel:
 
 | State | Groups |
 | --- | --- |
-| `home`, `hands_up`, `standby`, `basket`, `basket_hold` | all six arm groups |
+| `home`, `hands_up`, `rest_pose`, `standby`, `basket`, `basket_hold` | all six arm groups |
 | `pre-place` | `left_arm`, `both_arms`, `left_arm_lift`, `both_arms_lift` |
 | `tray` | `both_arms`, `both_arms_lift` |
 | `open` (0.044), `half_closed` (0.022), `closed` (0) | `left_gripper`, `right_gripper` |
@@ -1067,6 +1111,13 @@ Named states, for `go_to_home` and for the MoveIt RViz panel:
 ??? info "Lift heights in named states and other SRDF contents"
     In the `*_lift` variants, the lift is at 0.7435 m for every state except
     `pre-place` (0.735 m) and `basket` (0.303 m).
+
+    `rest_pose` reaches over a table. Like `hands_up`, the forearm is level and the
+    gripper points forward within 2 cm of the same height, but the upper arm leans 12° forward,
+    which puts the hand 0.40 m ahead of the shoulder instead of 0.18 m. The hand is
+    about 1.06 m above the floor at full lift. Both arms in `rest_pose` are free of
+    collisions above a lift of 0.124 m. With the other arm in `home`, they are free
+    above 0.495 m, the limit of `home` itself.
 
     The SRDF also defines the virtual joint `virtual_joint` (fixed from `world` to
     `base_footprint` under `base_mode:=fixed`, planar from `map` to `base_footprint`

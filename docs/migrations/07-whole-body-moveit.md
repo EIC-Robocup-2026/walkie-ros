@@ -32,6 +32,12 @@ pulling. For day-to-day use, read
   rest posture, and a hand target to drag in RViz. The defaults pick the same base pose
   as before. See
   [Weighted whole-body goals and a hand target](#weighted-whole-body-goals-and-a-hand-target).
+- **Changed 2026-11-17:** a named state `rest_pose`, a reach over a table, is the
+  default rest state, with a rest weight of 0.3. Whole-body goals that move the base now
+  end nearer `rest_pose`, for about 1.1 s more planning and 9 cm more base travel. Set
+  `whole_body_weight_rest` to 0.0 and `whole_body_rest_state` to `home` for the old
+  behaviour. See
+  [A rest pose by default](#a-rest-pose-by-default).
 - **Result:** the MuJoCo demo passed all ten steps in the last run here and in six runs of
   three independent checks, and the launch tests pass ([Verification](#verification)). A
   collision monitor stop missed its 0.5 s target in four of seven runs, by up to 0.09 s of
@@ -370,6 +376,50 @@ to 5 cm more base travel and about 0.5 s more per goal. See
     exits and a new one that appears in that moment would make it follow the wrong one.
     A restart takes about a second, so this needs both to land in under a millisecond.
 
+## A rest pose by default
+
+Added on 2026-11-17. The defaults of 2026-11-16 weighed base travel alone and seeded IK
+from `home`. A goal that moved the base left the arm where IK happened to land: 4.7 rad
+from `home` on average in the planning benchmark, and up to 7.2 rad in MuJoCo.
+
+- **`rest_pose`:** a new named state of all six arm groups, a reach over a table. Like
+  `hands_up`, the forearm is level and the gripper points forward within 2 cm of the same height, but
+  the upper arm leans 12° forward, so the hand is 0.40 m ahead of the shoulder instead of
+  0.18 m. Left joint1 to joint7 are -11.7°, 0, 0, 80.6°, 0, 0, 2.2°, and the right arm
+  negates joint1 and joint7. The `*_lift` variants put the lift at 0.7435 m, as in
+  `hands_up`.
+- **Defaults:** `whole_body_rest_state` is `rest_pose`, and `whole_body_weight_rest` is
+  0.3. The commander and the benchmark's presets share both.
+- **Unchanged:** `whole_body_candidates` stays at 8. A goal the arm reaches from where
+  the robot stands still ignores the weights, but its IK is now seeded from `rest_pose`.
+
+In the planning benchmark, goals that moved the base ended 3.5 rad from `rest_pose`,
+against 5.0 rad with `rest_pose` as the seed alone. Against the old defaults, arm motion
+fell by 11 percent, for 9 cm more base travel and about 1.1 s more planning per goal. See
+[Compare weights in the benchmark](../guides/manipulation.md#compare-weights-in-the-benchmark).
+
+??? info "The choices, and what was rejected"
+    | Question | Chosen | Rejected, and why |
+    | --- | --- | --- |
+    | A new state, or a changed `hands_up` | A new state | Moving `hands_up` forward. Callers and the RViz panel use it as it is. |
+    | The rest weight | 0.3 | 0.1: goals ended 0.2 rad farther from `rest_pose`. 0.5: no nearer than 0.2 or 0.3. 0.2 and 0.3 gave the same means, and 0.3 is what the guide already suggested for a rest state. |
+    | The number of candidates | 8, as before | 4: 0.4 s faster per goal, but it lost 30 percent of the gain. |
+    | A margin in the collision check of the pose | None | Link padding on the arm links. MoveIt's self-collision check ignores link padding, so a padded check found the same limits. |
+
+??? info "Where `rest_pose` is free of collisions"
+    Checked with `move_group`'s `/check_state_validity` on the whole robot, by bisection
+    on the lift.
+
+    | Left arm | Right arm | Free of collisions above a lift of |
+    | --- | --- | --- |
+    | `rest_pose` | `rest_pose` | 0.124 m |
+    | `hands_up` | `hands_up` | 0.107 m |
+    | `rest_pose` | `home` | 0.495 m |
+    | `home` | `home` | 0.495 m |
+
+    With the other arm in `hands_up` or `standby`, `rest_pose` was free at every checked
+    lift from 0.2 m up. At a lift of 0, link4 hits `base_link`, as it does in `hands_up`.
+
 ## CI
 
 `openarm_bimanual_commander_cpp` joins the tested packages. Its launch tests add about 11
@@ -517,6 +567,21 @@ this order, so it is not a comparison of the weights.
 The arm ended 5.6 to 7.2 rad from `home` after every goal, as no run set a rest weight.
 RViz itself, the restart of a commander during a goal, and the rest weights have not run
 in MuJoCo.
+
+### A rest pose by default { #verification-rest-pose }
+
+Checked on 2026-11-17 on the same laptop, for the changes in
+[A rest pose by default](#a-rest-pose-by-default).
+
+| Check | Result |
+| --- | --- |
+| `test_whole_body_goal` (gtest) | 11 of 11. The tests now set their weights in full, so a change of the defaults does not change them. |
+| Commander launch tests | 10 of 10 files, 100 results with 2 skipped and none failed, in 12 min 56 s |
+| `test_srdf_urdf_contract.py` | 26 of 26 |
+| Collisions of `rest_pose` | `move_group`'s `/check_state_validity` over lift heights and pairings, see "Where `rest_pose` is free of collisions" in [A rest pose by default](#a-rest-pose-by-default) |
+| Planning benchmark | See [Compare weights in the benchmark](../guides/manipulation.md#compare-weights-in-the-benchmark), results of 2026-11-17 |
+| Demo, one fresh run with the new defaults | Passed every step. `near_body` reported `base fixed` with no base command. `far_body` drove the base 1.12 m and turned it 0.66 rad. Largest tip error 14.6 mm. The collision monitor only slowed the base, it never stopped it. Report in `~/.cache/walkie-plan-fullbody/demo_rest_pose.json`. |
+| `pixi run docs-build` | Builds without warnings |
 
 ## Commits
 
