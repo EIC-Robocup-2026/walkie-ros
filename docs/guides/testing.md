@@ -257,7 +257,7 @@ The first four suites below are in `walkie_description` and
     | Package | Tests | Registered by |
     | --- | --- | --- |
     | `openarm_bimanual_moveit_config` | `test_srdf_urdf_contract`, `test_cloud_floor_gate` | `ament_add_pytest_test` in its `CMakeLists.txt`, with `TIMEOUT 120` and `TIMEOUT 60` |
-    | `openarm_bimanual_commander_cpp` | The [whole-body launch tests](#whole-body-launch-tests) | `add_ros_test` in its `CMakeLists.txt` |
+    | `openarm_bimanual_commander_cpp` | The [whole-body launch tests](#whole-body-launch-tests), and the gtest `test_whole_body_goal` | `add_ros_test` and `ament_add_gtest` in its `CMakeLists.txt` |
     | `robot_bringup`, `robot_simulation`, `robot_navigation`, `lakibeam1`, `dual_laser_merger`, `dynamixel_hardware_interface`, `dynamixel_interfaces`, `dynamixel_sdk_examples`, `spatio_temporal_voxel_layer` | Lint tests (some linters turned off per package) | `ament_lint_auto_find_test_dependencies()` |
     | `topic_based_ros2_control` | Lint tests, the gtest `topic_based_system_test`, and the launch test `test/ros2_control.test.py` (`TIMEOUT 120`) | Its `CMakeLists.txt` (submodule) |
     | `urg_node2` | gtest `urg_node2_test` (`TIMEOUT 200`) | Its `CMakeLists.txt`. Needs a real lidar. |
@@ -396,13 +396,23 @@ because the tests share the graph with it. When a test fails, its details are in
 
 | File | Time | Checks |
 | --- | --- | --- |
-| `whole_body_option.test.py` | About 2 min 40 s | On a `whole_body` bring-up: arm groups never command the base, far goals move it near the straight line, near goals keep it still, the heading seam, every refusal, a Nav2 status left by a dead or restarted server, start repairs limited to the planned group, single-flight, cancel, and the execution deadline |
+| `whole_body_option.test.py` | About 2 min 40 s | On a `whole_body` bring-up: arm groups never command the base, far goals move it near the straight line, near goals keep it still, goal weights and a rest state reach the cost the commander logs, the heading seam, every refusal, a Nav2 status left by a dead or restarted server, start repairs limited to the planned group, single-flight, cancel, and the execution deadline |
 | `whole_body_gate.test.py` | About 4 min 40 s | Five bring-ups with `move_group` and the commander in `fixed`, `map`, and `whole_body`, matching and mismatched: which goals each one refuses, and that arm groups still work |
 | `whole_body_plan_only.test.py` | About 10 s | A stored plan runs only while the base is where it was planned from |
 | `whole_body_clock.test.py` | About 25 s | The commander on simulation time: a clock at 0.1 of real time passes the gate, a stopped clock is refused |
 | `whole_body_stopping.test.py` | About 4 min 30 s | Every way a motion stops: a cancel at any moment, the deadline, an aborted controller, and Nav2 taking a goal. Each leaves no controller running, and an abort's reason reaches the caller. Also a base that moves during planning, the commander's heartbeat and its executing flag, that the flag arrives before the controllers get the plan, that an old abort does not stop the next goal, and that neither an abort on a controller outside the plan nor the late status of an older goal stops it. |
 | `arm_ik_first.test.py` | About 70 s | On a `fixed` bring-up, with the commander's `/compute_ik` remapped to a service of the test that passes requests on to `move_group`, fails them, or never answers: a single-arm pose goal plans to an IK solution; `ik_first_enable false` plans it directly; without an IK solution, or without an answer, the pose goal is planned instead; a cancel during IK ends the goal within 1 s without motion; a goal canceled while it waits for another goal's plan on the same group ends within 1 s; a `joint_goal_planning_time` at or below zero is rejected and changes nothing; and goals still succeed with a joint goal planning time of 0.01 s |
 | `whole_body_follower.test.py` | About 40 s | The real follower against a fake base, with no `move_group`: tracking in `map`, the heartbeat, one stop for a commander that dies during a motion, collision monitor stops and slowdowns, the stop event without an echo, a stale transform, a far start, a base that does not move, a slow base that falls behind or keeps up, and the diagonal plan speed under the shipped `PolygonSlow` ratio |
+| `whole_body_marker.test.py` | About 15 s | The RViz hand target on a `whole_body` bring-up, driven with the feedback messages RViz sends: it starts on the left hand, snaps to the right hand, and **Reach with left arm** sends a whole-body goal that moves the base |
+| `whole_body_marker_client.test.py` | About 25 s | The RViz hand target against a fake commander in its own process, with no `move_group`, and on simulation time with a `/clock` that stands still: **Cancel goal** before the commander accepts the goal cancels it once accepted; a commander killed during a goal, or replaced by a new one, frees the marker for new goals; a second publisher on the action's status topic makes the marker refuse a goal; and the marker exits with code 0 on SIGINT |
+
+The gtest `test_whole_body_goal` checks the ranking of base poses in
+`src/whole_body_goal.hpp` without ROS, in under a second: that the default weights
+take the nearest usable pose with no extra IK call, that arm, rest, and tier rules
+change the choice as documented, that a failed plan goes on to the cheapest remaining
+candidate even if it was not solved yet, and that the weights do not change which
+poses are sampled. It runs with the other tests, or alone with
+`--ctest-args -R test_whole_body_goal`.
 
 !!! note "The exit codes of these tests are not asserted"
     `move_group` and the commander abort with signal 6 during shutdown, in a panic inside

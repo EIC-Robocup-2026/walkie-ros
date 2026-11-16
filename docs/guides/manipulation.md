@@ -150,6 +150,11 @@ logs `The kinematics plugin (trac_ik_kinematics_plugin/TRAC_IKKinematicsPlugin)
 failed to load`, the environment is older than `pixi.lock`: run
 `pixi install`.
 
+The whole-body groups `whole_body_left` and `whole_body_right` show a marker at the
+base and none at the hand, because no IK solver covers the planar base joint. To
+give one of them a hand target, use the
+[hand target](#drag-a-hand-target-in-rviz) instead.
+
 !!! warning "On the real robot, Execute moves the arms"
     Check the planned motion in RViz before you click **Execute**.
 
@@ -263,6 +268,7 @@ Most parameters take effect live. The node reads `plan_only` and
     | `commander_benchmark` | Planning and execution benchmark |
     | `pick_and_place_isaac`, `pick_and_place_isaac2` | Pick-and-place demos for Isaac Sim |
     | `save_named_constraint` | Saves a named orientation constraint to the MoveIt warehouse, so RViz can select it |
+    | `whole_body_marker` | Hand target in RViz that sends whole-body pose goals, see [Drag a hand target in RViz](#drag-a-hand-target-in-rviz) |
 
 ## Grippers
 
@@ -393,6 +399,44 @@ planned base path.
     headless, and 0.16 to 0.30 with the viewer and RViz, depending on what else the
     laptop runs. A step takes about 40 to 70 s of wall time.
 
+### Drag a hand target in RViz
+
+The demo launch file starts `whole_body_marker`, which shows an orange box with a
+blue arrow in RViz (display **Whole-Body Hand Target**). It starts on the left
+hand.
+
+1. Drag the box to where the hand should go. The box moves in the view plane, an
+   arrow along one axis. Turn it with the rings. The blue arrow is the hand's z
+   axis, the direction the gripper points.
+2. Right-click the box and pick **Reach with left arm** or **Reach with right
+   arm**. Nothing moves until you pick one.
+3. The text above the box shows the goal: `whole_body_left: sent (...)`,
+   `accepted, running`, then `done` or `failed` with the commander's status.
+
+The entry sends a `/go_to_pose_quat` goal with `group_name: whole_body_left` or
+`whole_body_right` in `map`, so it runs every step of a whole-body goal: the arm
+alone first, then base poses ranked as set in
+[Tune whole-body goals](#tune-whole-body-goals). **Snap to left hand** and **Snap to
+right hand** move the box onto that hand. **Cancel goal** cancels the running goal,
+also one the commander has not accepted yet. A second **Reach** while a goal runs is
+refused by the marker. If the commander exits or restarts during a goal, the text says
+`outcome unknown` within about 3 s of wall time, also with the simulation paused, and
+the marker takes new goals again. With two commanders running, the marker sends no goal
+and says `Two or more commanders serve go_to_pose_quat`: it could not tell which one
+has the goal.
+
+The box is the pose of the hand frame, not the fingertips, see
+[Targets close to a surface](#targets-close-to-a-surface).
+
+To use it without the demo launch file, start it next to a whole-body commander:
+
+```bash
+pixi run ros2 run openarm_bimanual_commander_cpp whole_body_marker --ros-args -p use_sim_time:=true
+```
+
+`config/moveit_map.rviz` has the display. In another RViz config, add an
+**InteractiveMarkers** display with the namespace `/whole_body_hand_target`.
+
 ### Keep the base still
 
 | You want | Send | What happens |
@@ -477,6 +521,148 @@ its goal, because the lift settles a few millimetres short. Plan for about 0.05 
 all over the real surface for a whole-body goal. The demo's forward-pointing targets
 use 0.2 m above the box top, and its deep target under the table top leaves about
 0.10 m.
+
+### Tune whole-body goals { #tune-whole-body-goals }
+
+When the arm cannot reach from where the robot stands, the commander samples base
+poses around the target and solves IK at each. It scores every usable one by how far
+it moves each part from the current state, and plans to the cheapest first:
+
+```text
+cost = base_xy × base travel (m) + base_yaw × base turn (rad) + lift × lift travel (m)
+     + Σ arm[i] × motion of arm joint i (rad)
+     + rest × Σ |arm joint i − whole_body_rest_state joint i| (rad)
+```
+
+A higher weight makes its part move less, at the cost of the others. Only the ratios
+matter: doubling every weight picks the same pose. The defaults weigh base travel
+alone, so the robot stands at the nearest usable base pose and the arm and the lift
+do the rest, as before these parameters existed.
+
+| You want | Set |
+| --- | --- |
+| The base to move as little as possible, and the arm to do the rest | The defaults |
+| The base to turn less | `whole_body_weight_base_yaw` 0.3 |
+| The arm to move less, and the base a little more | `whole_body_weight_arm_joints` 0.1 on every joint |
+| One joint to move less, such as the shoulder (joint1) | A weight on that joint alone: `[0.3, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]` |
+| The lift to stay near its height. It moves at 0.03 m/s, so it often sets the duration of the motion | `whole_body_weight_lift` 3.0 |
+| Goal postures near a named state | `whole_body_rest_state` and `whole_body_weight_rest` 0.3 |
+
+Set them live. A goal reads them once, when it starts:
+
+```bash
+pixi run ros2 param set /bimanual_commander whole_body_weight_base_yaw 0.3
+pixi run ros2 param set /bimanual_commander whole_body_weight_arm_joints "[0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]"
+pixi run ros2 param set /bimanual_commander whole_body_rest_state hands_up
+```
+
+Write `3.0`, not `3`, and give every array element a decimal point: the weights are
+doubles and reject integers. The commander also rejects a negative or infinite
+weight, an array without seven values, a `whole_body_candidates` below 1, and a rest
+state that `left_arm_lift` or `right_arm_lift` lacks (`pre-place` exists for the left
+arm only). To change a default, add the value to the commander's `parameters` in
+`commander.launch.py`.
+
+The commander logs the choice of every goal that moves the base:
+
+```text
+Whole-body goal on whole_body_left: candidate 1 of 1 usable, cost 0.981 (base 0.981 m 0.556 rad, lift 0.085 m, arm 5.536 rad, 5.536 rad from rest state 'home')
+```
+
+`candidate 1` is the first base pose planned to, and `1 usable` the number of usable
+poses found up to then: with the defaults the search stops at the first. The numbers
+in brackets are the unweighted motion of that candidate, so they show what a weight
+would trade. Here the arm started in its rest state, so its motion and its distance
+from rest are the same.
+
+An arm weight keeps the arm near the posture the last goal left it in, not near
+`home`. A 7-joint arm on a moving base reaches the same hand pose in many postures. In
+a MuJoCo run, a goal that brought the hand back to where it started from `home` left
+the arm 7.2 rad from `home`. Set `whole_body_weight_rest` when goal postures should
+stay near a named state.
+
+!!! warning "Weights cost planning time"
+    The commander solves IK at the sampled poses in order of base cost. When only
+    `whole_body_weight_base_xy` and `whole_body_weight_base_yaw` are set, the first
+    usable pose is the cheapest, and the search stops there. A weight on the lift, the
+    arm joints, or the rest posture can make a later pose cheaper, so the commander
+    keeps solving until no later pose can beat the cheapest it found, or it holds
+    `whole_body_candidates` usable ones. In the benchmark below that took a goal from
+    about 0.95 s to about 1.5 s, with about twice the IK calls. A smaller
+    `whole_body_candidates` gives some of it back.
+
+Weights only rank base poses. A goal the arm reaches from where the robot stands
+never moves the base, whatever the weights. Use an arm group when the base must not
+move, see [Keep the base still](#keep-the-base-still).
+
+#### Compare weights in the benchmark
+
+The planning benchmark plans the same whole-body goals once per preset. A goal gets the
+same sampled base poses in every preset, so the differences come from the weights and
+the rest state alone. It needs no simulator:
+
+```bash
+pixi run ros2 launch openarm_bimanual_moveit_config run_planning_benchmark.launch.py \
+  scenes:=boxes sections:=whole_body output_json:=/tmp/weights.json \
+  "wb_presets:=default;yaw base_yaw=0.3;arm arm=0.1;rest rest=0.3 rest_state=hands_up"
+```
+
+Presets are separated by `;`. Each is a name followed by `key=value` pairs:
+`base_xy`, `base_yaw`, `lift`, `rest`, `rest_state`, `candidates`, and `arm`, with
+one value for all seven joints or seven values separated by `/`
+(`arm=0.3/0/0/0/0/0/0`). Keys left out keep the commander's defaults. The console
+prints the mean motion of each preset over the goals it reached, and the JSON file
+has the motion and cost of every goal.
+
+??? info "Results of 2026-11-16"
+    `scenes:=boxes,octomap:0.03`, the 18 whole-body targets from 1 m before the table,
+    with the idle arm in `home` and in `standby`: 72 goals per preset, and every preset
+    reached all of them. Times are IK and planning in the benchmark's process; the
+    commander adds its service calls. Motions are means over the 72 goals. The last
+    column counts the goals whose base pose differs from the defaults'.
+
+    | Preset | Median time | Median IK calls | Base travel | Base turn | Lift travel | Arm motion | From the rest state | Other pose |
+    | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+    | Defaults | 0.95 s | 9 | 0.54 m | 0.64 rad | 0.20 m | 4.60 rad | 4.60 rad from `home` | |
+    | `base_yaw=0.3` | 0.94 s | 9 | 0.58 m | 0.27 rad | 0.15 m | 4.58 rad | 4.58 rad from `home` | 61 |
+    | `arm=0.1` | 1.50 s | 20 | 0.56 m | 0.60 rad | 0.19 m | 4.07 rad | 4.07 rad from `home` | 50 |
+    | `arm=0.1 candidates=4` | 1.15 s | 13 | 0.56 m | 0.57 rad | 0.20 m | 4.13 rad | 4.13 rad from `home` | 51 |
+    | `rest=0.3` | 1.44 s | 21 | 0.59 m | 0.61 rad | 0.17 m | 3.86 rad | 3.86 rad from `home` | 59 |
+    | `rest_state=hands_up` | 1.32 s | 14 | 0.60 m | 0.60 rad | 0.27 m | 4.70 rad | 4.77 rad from `hands_up` | 54 |
+    | `rest=0.3 rest_state=hands_up` | 2.49 s | 40 | 0.66 m | 0.63 rad | 0.24 m | 4.57 rad | 3.92 rad from `hands_up` | 67 |
+
+    - A turn weight costs no time. `base_yaw=0.3` more than halved the turn for 3 cm
+      more travel, because a weight on the base alone keeps the search at the first
+      usable pose.
+    - An arm or rest weight saves 0.5 to 0.7 rad of arm motion, 12 to 16 percent, for
+      2 to 5 cm more travel, and costs about 0.5 s per goal. `candidates=4` keeps most
+      of the saving for less of the time.
+    - A rest state without a rest weight only seeds IK. It changed most base poses,
+      but the goal postures stayed 4.77 rad from `hands_up`, against 3.92 rad with
+      `rest=0.3`.
+    - The arm starts in `home`, so with `home` as the rest state the arm motion and
+      the distance from the rest state are the same.
+
+    The raw results are in `~/.cache/walkie-plan-fullbody/bench/weights/presets.json` on
+    the laptop that ran them.
+
+??? info "What the weights cannot do"
+    - **They choose among the sampled poses, and sample none of their own.** The
+      samples keep the shoulder 0.3 to 0.6 m behind the hand (0.2 to 0.7 m in the
+      second tier), whatever the weights. The second tier is only scored once the
+      first has nothing usable that plans.
+    - **One IK solution per base pose.** TRAC-IK returns the solution nearest its seed,
+      `whole_body_rest_state`. A different arm posture at the same base pose is never
+      scored. So the rest state changes the arm posture even with
+      `whole_body_weight_rest` at 0.
+    - **Straight-line motion.** Base travel is the distance from the start to the goal
+      pose, and joint motion is the difference of the start and goal values. The
+      planned path can be longer.
+    - **At most five plans.** When a plan fails, the search goes on to the next
+      cheapest candidate, and solves more poses first if one of them could be
+      cheaper. After five failed plans the goal fails.
+    - **All weights at zero** make every candidate cost nothing, so the first usable
+      sample wins, in random order. Keep at least one weight above zero.
 
 ### Choose the base model
 
@@ -584,6 +770,15 @@ take effect on the next goal. `base_mode` is read once, at startup.
 | `whole_body_acceleration_scaling` | `1.0` | Acceleration scaling of a plan that moves the base, in (0, 1] |
 | `whole_body_goal_joint_tolerance` | `0.001` | Joint tolerance of the goal |
 | `whole_body_execution_margin` | `15.0` | Seconds added to 1.5 times the planned duration for the execution deadline, on the node's clock |
+| `whole_body_rest_state` | `home` | Named state of both `left_arm_lift` and `right_arm_lift`: the IK seed, and the posture `whole_body_weight_rest` pulls toward. Its lift value is ignored. |
+| `whole_body_weight_base_xy` | `1.0` | Cost per meter of base travel, in a straight line |
+| `whole_body_weight_base_yaw` | `0.0` | Cost per radian of base turn |
+| `whole_body_weight_lift` | `0.0` | Cost per meter of lift travel |
+| `whole_body_weight_arm_joints` | seven `0.0` | Cost per radian of each joint of the reaching arm, joint1 to joint7 |
+| `whole_body_weight_rest` | `0.0` | Cost per radian between the goal's arm joints and `whole_body_rest_state`, summed over the seven joints |
+| `whole_body_candidates` | `8` | Most usable base poses the search holds and compares before it plans the cheapest. More can find a cheaper pose, for more IK calls. |
+
+The last seven are explained in [Tune whole-body goals](#tune-whole-body-goals).
 
 A goal the arm reaches alone uses the arm groups' `max_velocity_scaling_factor`
 and `max_acceleration_scaling_factor`. The base limits are `virtual_joint/*` in
@@ -595,11 +790,14 @@ and `max_acceleration_scaling_factor`. The base limits are `virtual_joint/*` in
        [refusals](#why-a-goal-is-refused).
     2. It freezes the goal in `map`, so a goal in `base_footprint` does not move along
        with the base.
-    3. It solves IK with the base where it is. If that works and the goal has
-       clearance, the matching `*_arm_lift` group plans and runs it. The status says
-       `base fixed`.
-    4. Otherwise it samples base poses that put the arm's shoulder behind the hand,
-       nearest first. Up to five with a usable IK solution are planned to.
+    3. It solves IK with the base where it is, seeded from the current state and from
+       `whole_body_rest_state`. If that works and the goal has clearance, the matching
+       `*_arm_lift` group plans and runs it. The status says `base fixed`. The weights
+       play no part here.
+    4. Otherwise it samples base poses that put the arm's shoulder behind the hand, and
+       solves IK at each, seeded from `whole_body_rest_state`. It ranks the usable ones
+       by the cost in [Tune whole-body goals](#tune-whole-body-goals), and plans to up to
+       five, cheapest first.
     5. Each plan first runs in a small box, 0.3 m around the start and the end of the
        move, for at most 2 s. Only if that fails does it run in a 5 m box. RRTConnect
        samples the base uniformly in the box, and path simplification does not always
@@ -621,8 +819,11 @@ and `max_acceleration_scaling_factor`. The base limits are `virtual_joint/*` in
     The sampled poses come in two tiers of 40. The first keeps to where IK finds usable
     goals for a hand pointing forward at about 1 m: shoulder 0.3 to 0.6 m behind the
     hand, body turned up to 1 rad away from the hand direction, mirrored for the right
-    arm. The second tier is wider, for other hand orientations. So the base often
-    arrives turned away from the target, which matters if the head camera has to see it.
+    arm. The second tier is wider, for other hand orientations. Its poses are scored
+    only once the first tier has none left that is usable and plans, whatever their
+    cost. So the base often arrives turned
+    away from the target, which matters if the head camera has to see it.
+    `whole_body_weight_base_yaw` reduces the turn.
 
     A pose goal at z = 1.05 m often needs the lift at the top. The lift moves at
     0.03 m/s, so it often sets the duration of the whole motion.
@@ -1072,6 +1273,7 @@ file; the results are complete.
     | `segment_fraction` | from `ompl_planning.yaml` | `longest_valid_segment_fraction` of every group |
     | `totg_path_tolerance` | MoveIt's 0.1 | Corner blend tolerance of the time parameterization |
     | `wb_reseeds` | `0` | Second whole-body pass that retries failed IK calls with random seeds |
+    | `wb_presets` | `default` | Weight presets of the `whole_body` section, each planned from the same samples, see [Compare weights in the benchmark](#compare-weights-in-the-benchmark) |
 
 ### Planning time and attempts
 

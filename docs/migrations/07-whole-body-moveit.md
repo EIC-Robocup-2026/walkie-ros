@@ -28,6 +28,10 @@ pulling. For day-to-day use, read
   (added 2026-11-14, `ik_first_enable` turns it off, see
   [IK first for arm pose goals](#ik-first-for-arm-pose-goals)). Whole-body goals have not
   run on the real robot, so keep `base_mode:=fixed` there.
+- **Added 2026-11-16:** weights that rank the sampled base poses of a whole-body goal, a
+  rest posture, and a hand target to drag in RViz. The defaults pick the same base pose
+  as before. See
+  [Weighted whole-body goals and a hand target](#weighted-whole-body-goals-and-a-hand-target).
 - **Result:** the MuJoCo demo passed all ten steps in the last run here and in six runs of
   three independent checks, and the launch tests pass ([Verification](#verification)). A
   collision monitor stop missed its 0.5 s target in four of seven runs, by up to 0.09 s of
@@ -84,6 +88,9 @@ that MoveIt loads is byte-identical to the one before this change.
 | `description/mujoco/scene_whole_body.xml` | The scene: a table, a free box, and a wall |
 | `pixi.toml`, `pixi.lock` | `ros-jazzy-depth-image-proc` |
 | `scripts/tmux_walkie.sh`, `.tmuxp.yaml` | Pass `base_mode:=fixed` explicitly to the MoveIt and commander panes |
+| `manipulate/openarm_bimanual_commander_cpp/src/whole_body_goal.hpp` | The base pose sampling, the weighted cost, and the candidate search, without ROS. See [Weighted whole-body goals](#weighted-whole-body-goals-and-a-hand-target). |
+| `manipulate/openarm_bimanual_commander_cpp/src/whole_body_marker.py` | The RViz hand target. `whole_body_demo.launch.py` starts it with `use_rviz:=true`, and `moveit_map.rviz` shows it. |
+| `manipulate/openarm_bimanual_commander_cpp/test/test_whole_body_goal.cpp`, `whole_body_marker.test.py`, `whole_body_marker_client.test.py` | The gtest of the candidate search, and the hand target's launch tests |
 
 ??? info "The choices, and what was rejected"
     | Question | Chosen | Rejected, and why |
@@ -285,6 +292,84 @@ tries, and the fallback then planned it.
     | Lowering `arm_planning_time` instead | Kept at 5 s | It is the planning time of every fallback, and the fallback gets exactly the goals that IK first could not solve, such as the near target with the idle arm in `home`, which planned 8 of 12 times at 1.5 s. |
     | Which arm configuration a goal ends in | The first IK solution that passes, from the seeds in order: current state, `home`, current state, `home`. TRAC-IK's Distance mode returns a solution near its seed, so the first seed gives one near the current joints, and the `home` seed one near `home`. | Leaving the goal state to OMPL. A pose goal planned directly ends anywhere within the 0.02 m and 0.02 rad tolerances. In the benchmark the motions were about as long on average either way, and longer for some goals with IK first. |
 
+## Weighted whole-body goals and a hand target
+
+Added on 2026-11-16. A whole-body goal that the arm cannot reach alone used to plan to
+the nearest base pose with a usable IK solution. It now ranks the usable poses by a
+weighted cost of how far each part moves, and the RViz bring-up has a hand target that
+sends whole-body goals:
+
+- **Weights:** six new commander parameters, `whole_body_weight_base_xy`, `_base_yaw`,
+  `_lift`, `_arm_joints` (seven values, joint1 to joint7), `_rest`, and
+  `whole_body_candidates`. The cost of a base pose is the weighted sum of base travel,
+  base turn, lift travel, each arm joint's motion, and the arm's distance from the rest
+  posture. The defaults weigh base travel alone, which picks the same pose as before.
+- **Rest posture:** `whole_body_rest_state` (`home`) names the state the arm should stay
+  near. It seeds IK at every sampled base pose and in the arm-alone attempt, and
+  `whole_body_weight_rest` turns it into a cost. It has to be a state of both
+  `left_arm_lift` and `right_arm_lift`.
+- **Search:** the samples of each tier stay sorted by base cost. The commander solves IK
+  in that order and holds up to `whole_body_candidates` usable poses, until a pose's base
+  cost alone reaches the cheapest one held. It plans to the cheapest, and after a failed
+  plan goes on to the next cheapest. With the defaults that is the nearest usable pose,
+  with no extra IK call.
+- **Hand target:** `whole_body_marker` shows a box in RViz. Drag it, right-click it, and
+  pick **Reach with left arm** or **Reach with right arm**, see
+  [Drag a hand target in RViz](../guides/manipulation.md#drag-a-hand-target-in-rviz).
+- **Benchmark:** `wb_presets` plans the same whole-body goals once per weight preset, see
+  [Compare weights in the benchmark](../guides/manipulation.md#compare-weights-in-the-benchmark).
+- **Unchanged:** arm groups, goals the arm reaches from where the robot stands, and every
+  plan's limits and checks. A weight cannot keep the base still; an arm group does.
+
+In the planning benchmark, a turn weight (`base_yaw=0.3`) more than halved the base turn
+at no extra planning time. Arm and rest weights cut arm motion by 12 to 16 percent, for 2
+to 5 cm more base travel and about 0.5 s more per goal. See
+[Compare weights in the benchmark](../guides/manipulation.md#compare-weights-in-the-benchmark).
+
+??? info "The choices, and what was rejected"
+    | Question | Chosen | Rejected, and why |
+    | --- | --- | --- |
+    | Where the weights act | On the base poses after IK, as a cost that ranks them | Weighted IK, so the arm and the base share one solve. TRAC-IK has no joint weights, and the planar base is not part of its chain. |
+    | What the rest posture does | Seeds IK and, with a weight, adds a cost | A seed alone. TRAC-IK's Distance mode returns a solution near its seed, but a different seed can still win, so the seed cannot guarantee a posture. |
+    | How many poses get IK | Only while an unsolved pose could still be cheaper, at most `whole_body_candidates` held | IK at every sample before planning. 80 samples cost far more IK calls, and most of them cannot beat the poses already found. |
+    | How the base stays still | An arm group, as before | A weight on the base. Any finite weight still lets the base move when the arm cannot reach. |
+    | How RViz sends a goal | An interactive marker that sends `/go_to_pose_quat` when a menu entry is picked | RViz's MotionPlanning gizmo on the whole-body groups. It needs an IK solver for the planar base plus the arm, which MoveIt does not have. Planning on every drag. A plan takes about a second and moves the robot. |
+
+??? info "What the review found"
+    An independent review of the first version found six problems.
+
+    | Finding | Fix |
+    | --- | --- |
+    | After a failed plan, the next candidate came from the poses already solved, though an unsolved pose could be cheaper | The search resumes after a failed plan, and bounds the unsolved poses by the cheapest candidate still held |
+    | The benchmark gave each preset other sampled poses, and planned some goals the commander refuses because the base turns too far | One sampler seed per target, shared by every preset, and the commander's turn check |
+    | **Cancel goal** before the commander accepted the goal did nothing, and the goal ran on | The cancel waits for the acceptance and is sent then |
+    | A failed goal request, a failed result, or a commander that died left the marker busy for good. A late reply to an old goal could change the text of a new one. | Each goal has a number, and replies to an older one are dropped. Errors end the goal. When the action server is gone for 3 s during a goal, the text says `outcome unknown` and the marker takes new goals. |
+    | A `ros2 param set` of several whole-body parameters at once was applied one parameter at a time, so a goal could start with half of them | The whole set is applied under one lock |
+    | The guide said to drag the box, which had no control of its own | The box moves in the view plane |
+
+    A second review, of the fixed version, found two gaps in the marker's lost-goal
+    check. Both tests failed on the code before the fix.
+
+    | Finding | Fix |
+    | --- | --- |
+    | A commander that restarted within a second or two served the action again before the check counted three misses, and the new one never answers the old goal, so the marker stayed busy | The marker remembers the endpoint gid of the status publisher of the server it sent the goal to, and counts a miss while that server is gone, whatever else serves the action |
+    | The check ran on the node's clock, so on simulation time a paused `/clock` stopped it | It runs on steady time |
+
+    A third review, of that fix, found that the marker took the gids of every publisher on
+    the action's status topic. With a second one, such as a second commander, the dead
+    server stayed hidden behind the live one. The tests below failed on the code before
+    the fix.
+
+    | Finding | Fix |
+    | --- | --- |
+    | With two status publishers, the commander that had the goal could exit and the marker stayed busy | The marker sends a goal only when exactly one server publishes the status, and follows that one |
+    | The restart test let the new commander start after the old one exited, so it relied on the restart being fast | The new commander starts before the old one exits, so a check that only asks whether the action is served fails it |
+    | Ctrl-C ended the marker with exit code 1: rclpy's signal handler and `main()` both shut the context down, and the second `rcl_shutdown` failed. The same happened in 10 of 10 tries with the usual `except (KeyboardInterrupt, ExternalShutdownException)`. | The marker installs no rclpy signal handler, so Ctrl-C is a `KeyboardInterrupt` and `main()` alone shuts down. 10 of 10 tries exited with 0, within 0.64 s. A post-shutdown test checks the exit code. |
+
+    Not changed: the marker takes the gid just before it sends the goal. A commander that
+    exits and a new one that appears in that moment would make it follow the wrong one.
+    A restart takes about a second, so this needs both to land in under a millisecond.
+
 ## CI
 
 `openarm_bimanual_commander_cpp` joins the tested packages. Its launch tests add about 11
@@ -402,6 +487,36 @@ these changes: the checks are the planning benchmark and the commander launch te
 | Red test | With a lock wait that ignored the cancel, the test of a goal canceled while it waits for another goal's plan failed: the goal ended 7.7 s after the cancel. |
 | Commander launch tests | 76 tests, 2 skipped, none failed, in 11 min 17 s. Before the review fixes: 72 tests, 2 skipped, none failed, in 10 min 57 s. |
 | `pixi run docs-build` | Builds without warnings |
+
+### Weighted goals and the hand target { #verification-weighted-goals }
+
+Checked on 2026-11-16 on the same laptop, for the changes in
+[Weighted whole-body goals and a hand target](#weighted-whole-body-goals-and-a-hand-target).
+
+| Check | Result |
+| --- | --- |
+| `test_whole_body_goal` (gtest) | 11 of 11 |
+| Commander launch tests | Option 18 of 18, gate 10 of 10, plan-only 1 of 1, clock 2 of 2, stopping 15 of 15, follower 17 of 17, IK first 8 of 8, marker 3 of 3, marker client 3 of 3. After the third review's fixes, marker client 4 of 4 and its exit-code check, in 23 s. In the full run, two files failed and passed when run again: stopping lost `test_near_goal_after_an_arm_goal_keeps_the_base_still` to `Planning Failed` in the `left_arm_lift` fallback, a path this change does not touch, while other tests ran on the laptop; marker client ran against an installed marker older than the source. |
+| Red tests | The tests of the second review's fixes failed on the code before them. With the paused simulation clock, the lost and the restarted commander both failed. With the marker on wall time, the restarted commander still failed. The tests of the third review's fixes failed on the code before them: two status publishers, and the exit code. The new restart test failed on a copy of the marker that only asks whether the action is served. |
+| Planning benchmark | See [Compare weights in the benchmark](../guides/manipulation.md#compare-weights-in-the-benchmark), results of 2026-11-16 |
+| `pixi run docs-build` | Builds without warnings |
+
+A smoke run in MuJoCo, headless and without an RViz window: `whole_body_marker` ran on
+simulation time next to the demo launch file, and a script sent it the feedback messages
+that RViz sends. Base motion is from MuJoCo's ground truth. One run of each goal, in
+this order, so it is not a comparison of the weights.
+
+| Goal through the marker | Weights | Result | Base displacement | Turn | Lift | Arm | Commander log |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Far target, from the start pose | Defaults | Success after 27 s | 1.05 m | 0.83 rad | 0.23 m | 5.6 rad | `candidate 1 of 1 usable` |
+| Back to the start | Defaults | Success after 24 s | 1.00 m | 0.65 rad | 0.08 m | 4.4 rad | `candidate 1 of 1 usable` |
+| Far target | `base_yaw` 0.3, `arm_joints` 0.1 each, set with `ros2 param set` | Success after 29 s | 1.17 m | 0.19 rad | 0.08 m | 1.9 rad | `candidate 1 of 8 usable` |
+| Back to the start | The same | Success after 29 s | 1.21 m | 0.09 rad | 0.02 m | 1.0 rad | `candidate 1 of 3 usable` |
+| **Cancel goal** 8 s into a far goal | The same | `failed: Canceled` 0.2 s after the pick | | | | | |
+
+The arm ended 5.6 to 7.2 rad from `home` after every goal, as no run set a rest weight.
+RViz itself, the restart of a commander during a goal, and the rest weights have not run
+in MuJoCo.
 
 ## Commits
 
