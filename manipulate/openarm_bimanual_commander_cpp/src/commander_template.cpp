@@ -468,8 +468,8 @@ public:
                 bool finger_changed = false;
                 bool table_changed = false;
                 bool octomap_changed = false;
+                whole_body_->applyParameters(params);
                 for (const auto & p : params) {
-                    whole_body_->applyParameter(p);
                     if (p.get_name() == "planner_id") {
                         RCLCPP_INFO(node_->get_logger(),
                                     "planner_id -> '%s' (live)", p.as_string().c_str());

@@ -147,6 +147,9 @@ install(PROGRAMS
 )
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_whole_body_goal test/test_whole_body_goal.cpp)
+
   find_package(ros_testing REQUIRED)
   # The real move_group and commander against stub controllers. They need a running
   # Zenoh router, see docs/guides/testing.md.

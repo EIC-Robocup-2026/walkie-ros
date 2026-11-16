@@ -5,6 +5,7 @@ are not asserted: move_group and the commander abort in libzenohc during shutdow
 """
 import math
 import os
+import re
 import sys
 import time
 import unittest
@@ -14,6 +15,7 @@ from launch import LaunchDescription
 import launch_testing
 from my_robot_interfaces.srv import GetEEPose
 import pytest
+from rcl_interfaces.msg import Log
 import rclpy
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_srvs.srv import SetBool
@@ -97,6 +99,56 @@ class TestWholeBodyOption(unittest.TestCase):
         self.assertIn('base fixed', result.status)
         self.assertIn(harness.LEFT_ARM, self.client.controllers())
         self.assertEqual(self.client.base_goals(), [])
+
+    def test_invalid_goal_weights_are_rejected(self):
+        cases = (
+            ('whole_body_weight_lift', -1.0),
+            ('whole_body_weight_base_yaw', math.inf),
+            ('whole_body_weight_arm_joints', [1.0] * 6),
+            ('whole_body_weight_arm_joints', [1.0] * 6 + [-0.1]),
+            ('whole_body_rest_state', 'no_such_state'),
+            ('whole_body_candidates', 0),
+        )
+        for name, value in cases:
+            with self.subTest(name=name, value=value):
+                result = self.client.try_set_parameter(name, value)
+                self.assertFalse(result.successful)
+                self.assertIn(name, result.reason)
+
+    def test_far_goal_with_weights_and_a_rest_state(self):
+        settings = {
+            'whole_body_weight_lift': (2.0, 0.0),
+            'whole_body_weight_base_yaw': (0.2, 0.0),
+            'whole_body_weight_arm_joints': ([0.1] * 7, [0.0] * 7),
+            'whole_body_weight_rest': (0.2, 0.0),
+            'whole_body_rest_state': ('standby', 'home'),
+            'whole_body_candidates': (4, 8),
+        }
+        for name, (value, default) in settings.items():
+            self.client.set_parameter(name, value)
+            self.addCleanup(self.client.set_parameter, name, default)
+        lines = []
+        logs = self.client.node.create_subscription(
+            Log, '/rosout', lambda m: lines.append(m.msg) if m.msg.startswith('Whole-body goal on') else None,
+            QoSProfile(depth=100, reliability=ReliabilityPolicy.RELIABLE))
+        self.addCleanup(self.client.node.destroy_subscription, logs)
+        self.client.settle()
+        result = self.client.pose('whole_body_left', harness.FAR_TARGET)
+        self.assertTrue(result.success, result.status)
+        self.assertIn('base travel', result.status)
+        self.assertEqual(len(self.client.base_goals()), 1)
+        # The commander logs the chosen candidate's motion and its cost. The cost has to be
+        # the motion weighted with the values set above (base_xy keeps its weight of 1).
+        deadline = time.monotonic() + 10.0
+        while not lines and time.monotonic() < deadline:
+            time.sleep(0.1)
+        self.assertEqual(len(lines), 1, lines)
+        match = re.search(
+            r"cost (\S+) \(base (\S+) m (\S+) rad, lift (\S+) m, arm (\S+) rad, (\S+) rad from rest state "
+            r"'standby'\)", lines[0])
+        self.assertIsNotNone(match, lines[0])
+        cost, base_xy, base_yaw, lift, arm, rest = (float(v) for v in match.groups())
+        self.assertAlmostEqual(cost, base_xy + 0.2 * base_yaw + 2.0 * lift + 0.1 * arm + 0.2 * rest, delta=0.005)
 
     def test_no_goal_spins_the_base_near_the_heading_seam(self):
         for heading in (-3.0, -1.5, 1.5, 3.0):

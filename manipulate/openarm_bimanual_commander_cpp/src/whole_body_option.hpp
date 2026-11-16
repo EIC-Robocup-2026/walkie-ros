@@ -8,8 +8,9 @@
 // A whole-body goal is frozen in map when it arrives. The current base pose is
 // tried first through the matching *_arm_lift group, so a reachable target does
 // not move the base. Otherwise base poses are sampled so that the arm's shoulder
-// stands behind the hand, and the first ones with a usable IK solution are planned
-// to with the whole-body group.
+// stands behind the hand, the ones with a usable IK solution are ranked by the
+// weighted cost in whole_body_goal.hpp, and they are planned to with the whole-body
+// group, cheapest first.
 //
 // Every refusal is an accepted goal followed by an abort with a reason in the
 // status string, because a rejected goal gives the client no reason.
@@ -57,6 +58,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "whole_body_goal.hpp"
 
 class WholeBodyOption
 {
@@ -112,6 +115,26 @@ public:
         acceleration_scaling_ = node_->declare_parameter<double>("whole_body_acceleration_scaling", 1.0);
         goal_joint_tolerance_ = node_->declare_parameter<double>("whole_body_goal_joint_tolerance", 0.001);
         execution_margin_ = node_->declare_parameter<double>("whole_body_execution_margin", 15.0);
+        // Validated here too, because a launch-file value does not pass the parameter
+        // callback, and a bad rest state or weight would otherwise only show in the plans.
+        const whole_body_goal::Weights defaults;
+        node_->declare_parameter<std::string>("whole_body_rest_state", rest_state_);
+        node_->declare_parameter<double>("whole_body_weight_base_xy", defaults.base_xy);
+        node_->declare_parameter<double>("whole_body_weight_base_yaw", defaults.base_yaw);
+        node_->declare_parameter<double>("whole_body_weight_lift", defaults.lift);
+        node_->declare_parameter<std::vector<double>>(
+            "whole_body_weight_arm_joints", std::vector<double>(defaults.arm.begin(), defaults.arm.end()));
+        node_->declare_parameter<double>("whole_body_weight_rest", defaults.rest);
+        node_->declare_parameter<int64_t>("whole_body_candidates", static_cast<int64_t>(max_candidates_));
+        const auto goal_parameters = node_->get_parameters(
+            {"whole_body_rest_state", "whole_body_weight_base_xy", "whole_body_weight_base_yaw",
+             "whole_body_weight_lift", "whole_body_weight_arm_joints", "whole_body_weight_rest",
+             "whole_body_candidates"});
+        for (const auto & p : goal_parameters) {
+            std::string reason;
+            if (!validateParameter(p, reason)) throw std::invalid_argument(reason);
+        }
+        applyParameters(goal_parameters);
 
         if (base_mode_ != "fixed") {
             state_validity_ = node_->create_client<moveit_msgs::srv::GetStateValidity>(
@@ -243,10 +266,6 @@ public:
             entry.arm = std::make_shared<MoveGroupInterface>(node_, spec[1]);
             entry.tip = spec[2];
             entry.shoulder = spec[3];
-            // The lift stays out of the seed: it is the slowest joint, so a goal near
-            // its current height arrives soonest.
-            entry.seed = entry.arm->getNamedTargetValues("home");
-            entry.seed.erase("lift_joint");
             // The other arm hangs in front of the base in its home pose, at table height, and
             // a whole-body goal does not move it. Its contacts are counted apart, so that a
             // failure can say when tucking it would help.
@@ -279,19 +298,65 @@ public:
             reason = "base_mode is fixed at startup, because the robot model depends on it";
             return false;
         }
+        if ((name == "whole_body_weight_base_xy" || name == "whole_body_weight_base_yaw" ||
+             name == "whole_body_weight_lift" || name == "whole_body_weight_rest") &&
+            !(std::isfinite(p.as_double()) && p.as_double() >= 0.0)) {
+            reason = name + " must be zero or positive";
+            return false;
+        }
+        if (name == "whole_body_weight_arm_joints") {
+            const auto weights = p.as_double_array();
+            const bool valid = weights.size() == whole_body_goal::kArmJoints &&
+                               std::all_of(weights.begin(), weights.end(), [](double w) {
+                                   return std::isfinite(w) && w >= 0.0;
+                               });
+            if (!valid) {
+                reason = name + " must hold " + std::to_string(whole_body_goal::kArmJoints) +
+                         " weights, zero or positive, for joint1 to joint7";
+                return false;
+            }
+        }
+        if (name == "whole_body_candidates" && p.as_int() < 1) {
+            reason = name + " must be at least 1";
+            return false;
+        }
+        if (name == "whole_body_rest_state") {
+            for (const char * group : {"left_arm_lift", "right_arm_lift"}) {
+                if (!model_->hasJointModelGroup(group)) continue;
+                const auto & states = model_->getJointModelGroup(group)->getDefaultStateNames();
+                if (std::find(states.begin(), states.end(), p.as_string()) == states.end()) {
+                    reason = "whole_body_rest_state '" + p.as_string() + "' is not a named state of " + group;
+                    return false;
+                }
+            }
+        }
         return true;
     }
 
-    void applyParameter(const rclcpp::Parameter & p)
+    // Applies one parameter call as a whole, under one lock, so a goal reads either the
+    // values before it or the values after it, never a mix of the two.
+    void applyParameters(const std::vector<rclcpp::Parameter> & params)
     {
-        const auto & name = p.get_name();
         std::lock_guard<std::mutex> lock(mutex_);
-        if (name == "whole_body_planner_id") planner_id_ = p.as_string();
-        else if (name == "whole_body_planning_time") planning_time_ = p.as_double();
-        else if (name == "whole_body_velocity_scaling") velocity_scaling_ = p.as_double();
-        else if (name == "whole_body_acceleration_scaling") acceleration_scaling_ = p.as_double();
-        else if (name == "whole_body_goal_joint_tolerance") goal_joint_tolerance_ = p.as_double();
-        else if (name == "whole_body_execution_margin") execution_margin_ = p.as_double();
+        for (const auto & p : params) {
+            const auto & name = p.get_name();
+            if (name == "whole_body_planner_id") planner_id_ = p.as_string();
+            else if (name == "whole_body_planning_time") planning_time_ = p.as_double();
+            else if (name == "whole_body_velocity_scaling") velocity_scaling_ = p.as_double();
+            else if (name == "whole_body_acceleration_scaling") acceleration_scaling_ = p.as_double();
+            else if (name == "whole_body_goal_joint_tolerance") goal_joint_tolerance_ = p.as_double();
+            else if (name == "whole_body_execution_margin") execution_margin_ = p.as_double();
+            else if (name == "whole_body_rest_state") rest_state_ = p.as_string();
+            else if (name == "whole_body_weight_base_xy") weights_.base_xy = p.as_double();
+            else if (name == "whole_body_weight_base_yaw") weights_.base_yaw = p.as_double();
+            else if (name == "whole_body_weight_lift") weights_.lift = p.as_double();
+            else if (name == "whole_body_weight_rest") weights_.rest = p.as_double();
+            else if (name == "whole_body_candidates") max_candidates_ = static_cast<std::size_t>(p.as_int());
+            else if (name == "whole_body_weight_arm_joints") {
+                const auto weights = p.as_double_array();
+                std::copy(weights.begin(), weights.end(), weights_.arm.begin());
+            }
+        }
     }
 
     // Single-flight guard. An arm goal is refused only during whole-body motion, so
@@ -353,12 +418,13 @@ public:
 
         clearVoxelsInsideRobot();
         applyPlanningParameters();
+        const GoalSettings settings = goalSettings(entry);
         MoveGroupInterface::Plan plan;
         std::shared_ptr<MoveGroupInterface> runner;
         double travel = 0.0;
 
         std::map<std::string, double> joints;
-        if (solveForArmAlone(entry, goal, base, joints)) {
+        if (solveForArmAlone(entry, goal, base, settings.rest, joints)) {
             setStartToCurrent(entry.arm);
             if (entry.arm->setJointValueTarget(joints) &&
                 entry.arm->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS) {
@@ -372,7 +438,7 @@ public:
         if (canceled()) return cancelResult();
 
         if (!runner) {
-            Outcome planned = planWithSampledBase(entry, group_name, goal, base, canceled, plan, travel);
+            Outcome planned = planWithSampledBase(entry, group_name, goal, base, settings, canceled, plan, travel);
             if (!planned.success) return planned;
             runner = entry.body;
         }
@@ -437,10 +503,36 @@ private:
         std::shared_ptr<MoveGroupInterface> arm;   // *_arm_lift: base stays still
         std::string tip;
         std::string shoulder;
-        std::map<std::string, double> seed;  // IK seed for goals with a sampled base
-        std::string idle_arm;                // the other arm's group, which this goal never moves
-        std::set<std::string> idle_links;    // links that move with the other arm's joints
+        std::string idle_arm;              // the other arm's group, which this goal never moves
+        std::set<std::string> idle_links;  // links that move with the other arm's joints
     };
+
+    // The parameters one goal uses, read once so that a change during the goal cannot
+    // mix two settings.
+    struct GoalSettings
+    {
+        whole_body_goal::Weights weights;
+        std::string rest_state;
+        whole_body_goal::Joints rest;  // IK seed and preferred arm posture, without the lift
+        std::size_t max_candidates;
+    };
+
+    GoalSettings goalSettings(const Entry & entry)
+    {
+        GoalSettings settings;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            settings.weights = weights_;
+            settings.rest_state = rest_state_;
+            settings.max_candidates = max_candidates_;
+        }
+        // The lift stays out: it is the slowest joint, so a goal near its current height
+        // arrives soonest, and its weight is on its own motion.
+        model_->getJointModelGroup(entry.arm->getName())
+            ->getVariableDefaultPositions(settings.rest_state, settings.rest);
+        settings.rest.erase("lift_joint");
+        return settings;
+    }
 
     struct StoredPlan
     {
@@ -525,7 +617,7 @@ private:
     void applyPlanningParameters()
     {
         // Read before taking the lock: the parameter callback holds the node's
-        // parameter lock while it waits for mutex_ in applyParameter().
+        // parameter lock while it waits for mutex_ in applyParameters().
         const double arm_velocity = node_->get_parameter("max_velocity_scaling_factor").as_double();
         const double arm_acceleration = node_->get_parameter("max_acceleration_scaling_factor").as_double();
         std::lock_guard<std::mutex> lock(mutex_);
@@ -745,11 +837,11 @@ private:
     // clearance check from one seed and pass it from another. So this tries a few times.
     bool solveForArmAlone(
         const Entry & entry, const geometry_msgs::msg::Pose & goal, const BasePose & base,
-        std::map<std::string, double> & joints)
+        const std::map<std::string, double> & rest, std::map<std::string, double> & joints)
     {
         const std::map<std::string, double> current_state;
         const std::array<const std::map<std::string, double> *, 4> seeds = {
-            &current_state, &entry.seed, &current_state, &entry.seed};
+            &current_state, &rest, &current_state, &rest};
         int solved = 0;
         for (const auto * seed : seeds) {
             if (!solveAtBase(entry, goal, base, joints, *seed)) continue;
@@ -946,24 +1038,13 @@ private:
         });
     }
 
-    // Base poses that put the arm's shoulder behind the hand, nearest to the current base
-    // first. Reach and heading have to vary together, because the shoulder is off the base
-    // centre. The first tier keeps to where IK finds usable goals, measured for a hand
-    // pointing forward at about 1 m: the shoulder 0.3 to 0.6 m behind the hand, the hand
-    // mostly on the arm's own side of the shoulder, and the body turned up to 1 rad away
-    // from that side, which keeps the target near the head camera's view. The second tier
-    // is wider, for other hand orientations.
-    std::vector<BasePose> sampleBasePoses(
-        const Entry & entry, const geometry_msgs::msg::Pose & goal, const BasePose & base)
+    std::vector<whole_body_goal::BaseSample> sampleBasePoses(
+        const Entry & entry, const geometry_msgs::msg::Pose & goal, const BasePose & base,
+        const whole_body_goal::Weights & weights)
     {
-        // Base behind the hand when the hand points sideways enough, otherwise on
-        // the line to the target.
         tf2::Quaternion q;
         tf2::fromMsg(goal.orientation, q);
         const tf2::Vector3 hand_z = tf2::quatRotate(q, tf2::Vector3(0.0, 0.0, 1.0));
-        const double approach = std::hypot(hand_z.x(), hand_z.y()) > 0.3
-                                    ? std::atan2(hand_z.y(), hand_z.x())
-                                    : std::atan2(goal.position.y - base[1], goal.position.x - base[0]);
         double shoulder_x = 0.0;
         double shoulder_y = 0.0;
         try {
@@ -973,41 +1054,23 @@ private:
         } catch (const tf2::TransformException & ex) {
             RCLCPP_WARN(node_->get_logger(), "Sampling around the base centre: %s", ex.what());
         }
-        // Mirrors the first tier for the arm on the other side.
-        const double side = shoulder_y >= 0.0 ? 1.0 : -1.0;
+        return whole_body_goal::sampleBasePoses(
+            goal.position.x, goal.position.y, hand_z.x(), hand_z.y(), base, shoulder_x, shoulder_y, weights, rng_);
+    }
 
-        struct Tier
-        {
-            double reach_min, reach_max, around_min, around_max, turn_min, turn_max;
-        };
-        const std::array<Tier, 2> tiers = {{{0.30, 0.60, -0.4, 0.8, -1.0, 0.0}, {0.20, 0.70, -0.8, 0.8, -1.5, 1.5}}};
-        std::vector<BasePose> samples;
-        for (const auto & range : tiers) {
-            std::uniform_real_distribution<double> reach(range.reach_min, range.reach_max);
-            std::uniform_real_distribution<double> around(range.around_min, range.around_max);
-            std::uniform_real_distribution<double> turn(range.turn_min, range.turn_max);
-            const auto tier = static_cast<std::ptrdiff_t>(samples.size());
-            for (int i = 0; i < 40; ++i) {
-                const double r = reach(rng_);
-                const double a = approach + side * around(rng_);
-                const double yaw = approach + side * turn(rng_);
-                samples.push_back(
-                    {goal.position.x - r * std::cos(a) - (std::cos(yaw) * shoulder_x - std::sin(yaw) * shoulder_y),
-                     goal.position.y - r * std::sin(a) - (std::sin(yaw) * shoulder_x + std::cos(yaw) * shoulder_y),
-                     std::remainder(yaw, 2.0 * M_PI)});
-            }
-            std::sort(samples.begin() + tier, samples.end(), [&](const BasePose & a, const BasePose & b) {
-                return std::hypot(a[0] - base[0], a[1] - base[1]) < std::hypot(b[0] - base[0], b[1] - base[1]);
-            });
-        }
-        return samples;
+    std::map<std::string, double> currentJoints()
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return joint_positions_;
     }
 
     Outcome planWithSampledBase(
         const Entry & entry, const std::string & group_name, const geometry_msgs::msg::Pose & goal,
-        const BasePose & base, const CancelCheck & canceled, MoveGroupInterface::Plan & plan, double & travel)
+        const BasePose & base, const GoalSettings & settings, const CancelCheck & canceled,
+        MoveGroupInterface::Plan & plan, double & travel)
     {
-        const auto samples = sampleBasePoses(entry, goal, base);
+        const auto samples = sampleBasePoses(entry, goal, base, settings.weights);
+        const auto current = currentJoints();
         double planning_time;
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -1017,30 +1080,40 @@ private:
         int on_limit = 0;
         int idle_arm_contact = 0;
         int solved = 0;
+        int planned = 0;
         int last_code = 0;
         std::string last_spin;
-        // A failed plan or a spinning plan moves on to the next sampled base, because
-        // one base pose can sit behind an obstacle while the next one does not.
-        const int max_plan_attempts = 5;
-        for (const auto & sample : samples) {
-            if (canceled()) return cancelResult();
-            std::map<std::string, double> joints;
-            if (!solveAtBase(entry, goal, sample, joints, entry.seed)) continue;
+        const auto usable = [&](const BasePose & sample, whole_body_goal::Joints & joints) {
+            if (canceled()) return false;
+            if (!solveAtBase(entry, goal, sample, joints, settings.rest)) return false;
             ++with_ik;
             // Another sample costs nothing, and a goal on a joint limit can end just
             // past it, where the next plan starts out of bounds.
             if (nearJointLimit(joints)) {
                 ++on_limit;
-                continue;
+                return false;
             }
             // compute_ik only checks the links of its group, so the idle arm shows up here.
             std::set<std::string> contacts;
             if (!goalHasClearance(sample, joints, &contacts)) {
                 if (touchesIdleArm(entry, contacts)) ++idle_arm_contact;
-                continue;
+                return false;
             }
             ++solved;
-
+            return true;
+        };
+        // A failed plan or a spinning plan moves on to the next candidate, because one
+        // base pose can sit behind an obstacle while the next one does not.
+        const int max_plan_attempts = 5;
+        whole_body_goal::CandidateSearch search(
+            samples, settings.weights, base, current, settings.rest, settings.max_candidates);
+        while (planned < max_plan_attempts) {
+            const auto candidate = search.next(usable);
+            if (canceled()) return cancelResult();
+            if (!candidate) break;
+            ++planned;
+            const BasePose & sample = candidate->base;
+            std::map<std::string, double> joints = candidate->joints;
             joints["virtual_joint/x"] = sample[0];
             joints["virtual_joint/y"] = sample[1];
             joints["virtual_joint/theta"] = sample[2];
@@ -1071,22 +1144,30 @@ private:
             }
             if (code != moveit::core::MoveItErrorCode::SUCCESS) {
                 last_code = code.val;
-            } else {
-                const double turned = totalTurn(plan);
-                const double heading_change = std::abs(std::remainder(sample[2] - base[2], 2.0 * M_PI));
-                // The UnwrapPlanarHeading adapter in move_group keeps a plan from taking
-                // the long way round across +-pi. This catches a pipeline that runs
-                // without it, or a plan that really does spin. Smaller wiggles around
-                // obstacles are normal, hence the margin of pi.
-                if (turned <= heading_change + M_PI) {
-                    travel = basePathLength(plan);
-                    return Outcome{true, false, ""};
-                }
+                continue;
+            }
+            const double turned = totalTurn(plan);
+            const double heading_change = std::abs(std::remainder(sample[2] - base[2], 2.0 * M_PI));
+            // The UnwrapPlanarHeading adapter in move_group keeps a plan from taking
+            // the long way round across +-pi. This catches a pipeline that runs
+            // without it, or a plan that really does spin. Smaller wiggles around
+            // obstacles are normal, hence the margin of pi.
+            if (turned > heading_change + M_PI) {
                 last_spin = " Last plan spun " + std::to_string(turned) + " rad for a heading change of " +
                             std::to_string(heading_change) + " rad.";
+                continue;
             }
-            if (solved >= max_plan_attempts) break;
+            travel = basePathLength(plan);
+            const auto & m = candidate->motion;
+            RCLCPP_INFO(
+                node_->get_logger(),
+                "Whole-body goal on %s: candidate %d of %d usable, cost %.3f (base %.3f m %.3f rad, "
+                "lift %.3f m, arm %.3f rad, %.3f rad from rest state '%s')",
+                group_name.c_str(), planned, solved, candidate->cost, m.base_xy, m.base_yaw, m.lift,
+                m.armTotal(), m.rest, settings.rest_state.c_str());
+            return Outcome{true, false, ""};
         }
+        if (canceled()) return cancelResult();
         if (solved == 0) {
             std::string idle_note;
             if (idle_arm_contact > 0) {
@@ -1098,7 +1179,7 @@ private:
                         std::to_string(with_ik) + " with an IK solution, " + std::to_string(on_limit) +
                         " of those on a joint limit, the rest in collision or too close to it)." + idle_note);
         }
-        return fail("Planning Failed for " + std::to_string(solved) + " sampled base pose(s), last MoveIt code " +
+        return fail("Planning Failed for " + std::to_string(planned) + " sampled base pose(s), last MoveIt code " +
                     std::to_string(last_code) + "." + last_spin);
     }
 
@@ -1347,6 +1428,9 @@ private:
     double acceleration_scaling_{1.0};
     double goal_joint_tolerance_{0.001};
     double execution_margin_{15.0};
+    whole_body_goal::Weights weights_;
+    std::string rest_state_{"home"};
+    std::size_t max_candidates_{8};
     std::map<std::string, Nav2Status> nav2_status_;
     // The goals each controller's status topic lists, and which of them existed before
     // the current execution: only a new goal on a controller of the plan is its abort.

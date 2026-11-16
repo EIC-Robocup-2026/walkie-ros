@@ -254,6 +254,11 @@ class CommanderClient:
             parameter_value = ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=value)
         elif isinstance(value, bool):
             parameter_value = ParameterValue(type=ParameterType.PARAMETER_BOOL, bool_value=value)
+        elif isinstance(value, int):
+            parameter_value = ParameterValue(type=ParameterType.PARAMETER_INTEGER, integer_value=value)
+        elif isinstance(value, (list, tuple)):
+            parameter_value = ParameterValue(
+                type=ParameterType.PARAMETER_DOUBLE_ARRAY, double_array_value=[float(v) for v in value])
         else:
             parameter_value = ParameterValue(
                 type=ParameterType.PARAMETER_DOUBLE, double_value=float(value))
