@@ -13,7 +13,8 @@
 //     planning times,
 //   - the same pose goals solved IK first, as the commander's ik_first_enable does: IK,
 //     then a plan to the joint solution, with the pose goal as the fallback,
-//   - whole-body goals, following the steps of WholeBodyOption::moveTo.
+//   - whole-body goals, following the steps of WholeBodyOption::moveTo, once per set of
+//     goal weights given with --wb-presets.
 // Launch it with run_planning_benchmark.launch.py in openarm_bimanual_moveit_config.
 
 #include <algorithm>
@@ -47,10 +48,12 @@
 #include <random_numbers/random_numbers.h>
 #include <rclcpp/rclcpp.hpp>
 
+#include "whole_body_goal.hpp"
+
 namespace
 {
 using Clock = std::chrono::steady_clock;
-using BasePose = std::array<double, 3>;
+using whole_body_goal::BasePose;
 
 double msSince(Clock::time_point start)
 {
@@ -407,10 +410,11 @@ IkCall ikCall(
 }
 
 // The seeds the commander uses, then random ones. Call 0 is the current state, call 1
-// the named home state without the lift (WholeBodyOption::solveForArmAlone).
+// `named_seed`: the home state without the lift for arm goals, the rest state for
+// whole-body goals (WholeBodyOption::solveForArmAlone).
 void seedFor(
     int call, moveit::core::RobotState & state, const moveit::core::RobotState & current,
-    const moveit::core::JointModelGroup * jmg, const std::map<std::string, double> & home_seed,
+    const moveit::core::JointModelGroup * jmg, const std::map<std::string, double> & named_seed,
     random_numbers::RandomNumberGenerator & rng)
 {
   std::vector<double> values;
@@ -418,7 +422,7 @@ void seedFor(
   state.setJointGroupPositions(jmg, values);
   if (call < 4) {
     if (call % 2 == 1) {
-      for (const auto & [name, value] : home_seed) state.setVariablePosition(name, value);
+      for (const auto & [name, value] : named_seed) state.setVariablePosition(name, value);
     }
   } else {
     state.setToRandomPositions(jmg, rng);
@@ -460,6 +464,7 @@ struct PlanOutcome
   double planning_time_ms{0.0};
   size_t waypoints{0};
   double base_travel{0.0};
+  double base_turn{0.0};   // sum of the heading steps, rad
   double joint_path{0.0};  // sum of the joint-space steps of the group's non-planar joints, rad and m
   double duration_s{0.0};  // after time parameterization at full speed
 };
@@ -508,6 +513,8 @@ PlanOutcome plan(
       out.base_travel += std::hypot(
           b.getVariablePosition("virtual_joint/x") - a.getVariablePosition("virtual_joint/x"),
           b.getVariablePosition("virtual_joint/y") - a.getVariablePosition("virtual_joint/y"));
+      out.base_turn += std::abs(std::remainder(
+          b.getVariablePosition("virtual_joint/theta") - a.getVariablePosition("virtual_joint/theta"), 2.0 * M_PI));
       double step = 0.0;
       for (const auto & j : joints) step += std::pow(b.getVariablePosition(j) - a.getVariablePosition(j), 2);
       out.joint_path += std::sqrt(step);
@@ -548,40 +555,22 @@ moveit_msgs::msg::Constraints poseGoal(
   return kinematic_constraints::constructGoalConstraints(link, stamped, kGoalTolerance, kGoalTolerance);
 }
 
-// Copy of WholeBodyOption::sampleBasePoses (two tiers of 40, nearest first per tier).
-std::vector<BasePose> sampleBasePoses(
-    const Eigen::Isometry3d & goal, const BasePose & base, double shoulder_x, double shoulder_y, std::mt19937 & rng)
+// Goal settings of one whole-body pass, the commander's whole_body_weight_*,
+// whole_body_rest_state and whole_body_candidates parameters.
+struct WbPreset
 {
-  const Eigen::Vector3d hand_z = goal.linear().col(2);
-  const double approach = std::hypot(hand_z.x(), hand_z.y()) > 0.3
-                              ? std::atan2(hand_z.y(), hand_z.x())
-                              : std::atan2(goal.translation().y() - base[1], goal.translation().x() - base[0]);
-  const double side = shoulder_y >= 0.0 ? 1.0 : -1.0;
-  struct Tier
-  {
-    double reach_min, reach_max, around_min, around_max, turn_min, turn_max;
-  };
-  const std::array<Tier, 2> tiers = {{{0.30, 0.60, -0.4, 0.8, -1.0, 0.0}, {0.20, 0.70, -0.8, 0.8, -1.5, 1.5}}};
-  std::vector<BasePose> samples;
-  for (const auto & range : tiers) {
-    std::uniform_real_distribution<double> reach(range.reach_min, range.reach_max);
-    std::uniform_real_distribution<double> around(range.around_min, range.around_max);
-    std::uniform_real_distribution<double> turn(range.turn_min, range.turn_max);
-    const auto tier = static_cast<std::ptrdiff_t>(samples.size());
-    for (int i = 0; i < 40; ++i) {
-      const double r = reach(rng);
-      const double a = approach + side * around(rng);
-      const double yaw = approach + side * turn(rng);
-      samples.push_back(
-          {goal.translation().x() - r * std::cos(a) - (std::cos(yaw) * shoulder_x - std::sin(yaw) * shoulder_y),
-           goal.translation().y() - r * std::sin(a) - (std::sin(yaw) * shoulder_x + std::cos(yaw) * shoulder_y),
-           std::remainder(yaw, 2.0 * M_PI)});
-    }
-    std::sort(samples.begin() + tier, samples.end(), [&](const BasePose & a, const BasePose & b) {
-      return std::hypot(a[0] - base[0], a[1] - base[1]) < std::hypot(b[0] - base[0], b[1] - base[1]);
-    });
-  }
-  return samples;
+  std::string name;
+  whole_body_goal::Weights weights;
+  std::string rest_state{"home"};
+  std::size_t candidates{8};
+  whole_body_goal::Joints rest;  // the arm joints of rest_state, without the lift
+};
+
+whole_body_goal::Joints groupJoints(const moveit::core::RobotState & state, const moveit::core::JointModelGroup * jmg)
+{
+  whole_body_goal::Joints joints;
+  for (const auto & name : jmg->getVariableNames()) joints[name] = state.getVariablePosition(name);
+  return joints;
 }
 
 bool nearJointLimit(const moveit::core::RobotState & state, const moveit::core::JointModelGroup * jmg)
@@ -605,6 +594,9 @@ struct WholeBodyOutcome
   double total_ms{0.0}, ik_ms{0.0}, plan_ms{0.0};
   int ik_calls{0}, samples_tried{0}, samples_with_ik{0}, samples_on_limit{0}, samples_clear{0}, plans_tried{0};
   double base_travel{0.0};
+  // The goal that was planned to, for arm_only and base_moved.
+  whole_body_goal::Motion motion;
+  double cost{0.0};
   std::map<std::string, int> rejections;  // failure reason or contact pair -> count
 };
 
@@ -614,9 +606,8 @@ struct WholeBodyOutcome
 WholeBodyOutcome wholeBodyGoal(
     const planning_pipeline::PlanningPipeline & pipeline, const planning_scene::PlanningSceneConstPtr & scene,
     const moveit::core::RobotState & current, const Eigen::Isometry3d & goal, const std::string & body_group,
-    const std::string & arm_group, const std::string & tip, const std::string & shoulder,
-    const std::map<std::string, double> & home_seed, double planning_time, int reseeds,
-    random_numbers::RandomNumberGenerator & rng, std::mt19937 & sampler_rng)
+    const std::string & arm_group, const std::string & tip, const std::string & shoulder, const WbPreset & preset,
+    double planning_time, int reseeds, random_numbers::RandomNumberGenerator & rng, std::mt19937 & sampler_rng)
 {
   WholeBodyOutcome out;
   const auto t0 = Clock::now();
@@ -625,6 +616,7 @@ WholeBodyOutcome wholeBodyGoal(
   const BasePose base = {
       current.getVariablePosition("virtual_joint/x"), current.getVariablePosition("virtual_joint/y"),
       current.getVariablePosition("virtual_joint/theta")};
+  const auto current_joints = groupJoints(current, arm);
 
   // Without `deferred`, a solution has to pass goalClear() too. With it, the first IK
   // solution ends the search even if it fails goalClear(), and *deferred holds that call,
@@ -634,7 +626,7 @@ WholeBodyOutcome wholeBodyGoal(
                          IkCall * deferred) {
     for (int k = 0; k <= reseeds; ++k) {
       moveit::core::RobotState state(at);
-      seedFor(k == 0 ? first_seed : 4, state, at, arm, home_seed, rng);
+      seedFor(k == 0 ? first_seed : 4, state, at, arm, preset.rest, rng);
       const auto call = ikCall(*scene, state, arm, goal, tip);
       ++out.ik_calls;
       out.ik_ms += call.ms;
@@ -648,7 +640,7 @@ WholeBodyOutcome wholeBodyGoal(
     return false;
   };
 
-  // Arm alone: four calls, current state and home seed alternating.
+  // Arm alone: four calls, current state and rest seed alternating.
   for (int i = 0; i < 4; ++i) {
     moveit::core::RobotState solution(current);
     if (!solve(current, i, solution, nullptr)) continue;
@@ -660,36 +652,54 @@ WholeBodyOutcome wholeBodyGoal(
     ++out.plans_tried;
     if (outcome.ok) {
       out.result = "arm_only";
+      out.motion = whole_body_goal::measure(base, base, current_joints, groupJoints(solution, arm), preset.rest);
+      out.cost = whole_body_goal::cost(preset.weights, out.motion);
       out.total_ms = msSince(t0);
       return out;
     }
     break;  // the commander moves on to base sampling after one failed arm plan
   }
 
-  Eigen::Isometry3d shoulder_in_base = current.getGlobalLinkTransform("base_footprint").inverse() *
-                                       current.getGlobalLinkTransform(shoulder);
-  const auto samples = sampleBasePoses(
-      goal, base, shoulder_in_base.translation().x(), shoulder_in_base.translation().y(), sampler_rng);
-  int solved = 0;
-  for (const auto & sample : samples) {
+  const Eigen::Isometry3d shoulder_in_base = current.getGlobalLinkTransform("base_footprint").inverse() *
+                                             current.getGlobalLinkTransform(shoulder);
+  const Eigen::Vector3d hand_z = goal.linear().col(2);
+  const auto samples = whole_body_goal::sampleBasePoses(
+      goal.translation().x(), goal.translation().y(), hand_z.x(), hand_z.y(), base,
+      shoulder_in_base.translation().x(), shoulder_in_base.translation().y(), preset.weights, sampler_rng);
+  // WholeBodyOption::planWithSampledBase seeds every sample with the rest seed.
+  const auto usable = [&](const BasePose & sample, whole_body_goal::Joints & joints) {
     ++out.samples_tried;
     moveit::core::RobotState at(current);
     setBase(at, sample);
     moveit::core::RobotState solution(at);
-    // WholeBodyOption::planWithSampledBase seeds every sample with the home seed.
     IkCall ik{};
-    if (!solve(at, 1, solution, &ik)) continue;
+    if (!solve(at, 1, solution, &ik)) return false;
     ++out.samples_with_ik;
     if (nearJointLimit(solution, arm)) {
       ++out.samples_on_limit;
-      continue;
+      return false;
     }
     if (ik.result == CallResult::kClearance) {
       out.rejections[std::string(toString(ik.result)) + (ik.pairs.empty() ? "" : " " + ik.pairs)]++;
-      continue;
+      return false;
     }
     ++out.samples_clear;
-    ++solved;
+    joints = groupJoints(solution, arm);
+    return true;
+  };
+  const int max_plan_attempts = 5;
+  int planned = 0;
+  whole_body_goal::CandidateSearch search(
+      samples, preset.weights, base, current_joints, preset.rest, preset.candidates);
+  while (planned < max_plan_attempts) {
+    const auto candidate = search.next(usable);
+    if (!candidate) break;
+    ++planned;
+    const BasePose & sample = candidate->base;
+    moveit::core::RobotState solution(current);
+    setBase(solution, sample);
+    for (const auto & [name, value] : candidate->joints) solution.setVariablePosition(name, value);
+    solution.update();
     const Eigen::Vector2d lo(std::min(base[0], sample[0]), std::min(base[1], sample[1]));
     const Eigen::Vector2d hi(std::max(base[0], sample[0]), std::max(base[1], sample[1]));
     const auto p0 = Clock::now();
@@ -704,16 +714,22 @@ WholeBodyOutcome wholeBodyGoal(
       ++out.plans_tried;
     }
     out.plan_ms += msSince(p0);
+    // WholeBodyOption::planWithSampledBase rejects a plan that spins, see there.
+    if (outcome.ok && outcome.base_turn > std::abs(std::remainder(sample[2] - base[2], 2.0 * M_PI)) + M_PI) {
+      out.rejections["plan_spun"]++;
+      continue;
+    }
     if (outcome.ok) {
       out.result = "base_moved";
       out.base_travel = outcome.base_travel;
+      out.motion = candidate->motion;
+      out.cost = candidate->cost;
       out.total_ms = msSince(t0);
       return out;
     }
     out.rejections["plan_failed code " + std::to_string(outcome.code)]++;
-    if (solved >= 5) break;
   }
-  out.result = solved == 0 ? "no_base_pose" : "plan_failed";
+  out.result = out.samples_clear == 0 ? "no_base_pose" : "plan_failed";
   out.total_ms = msSince(t0);
   return out;
 }
@@ -778,6 +794,73 @@ std::vector<std::string> split(const std::string & text, char sep)
   return out;
 }
 
+// --wb-presets: presets separated by ';', each a name and then key=value words. The keys
+// are base_xy, base_yaw, lift, arm (one weight for all seven arm joints, or seven
+// separated by '/'), rest, rest_state and candidates. Keys left out keep the commander's
+// defaults.
+bool parsePresets(
+    const std::string & text, const moveit::core::JointModelGroup * arm, std::vector<WbPreset> & presets,
+    std::string & error)
+{
+  for (const auto & spec : split(text, ';')) {
+    const auto words = split(spec, ' ');
+    if (words.empty()) continue;
+    WbPreset preset;
+    preset.name = words[0];
+    for (std::size_t i = 1; i < words.size(); ++i) {
+      const auto eq = words[i].find('=');
+      const std::string key = words[i].substr(0, eq);
+      const std::string value = eq == std::string::npos ? "" : words[i].substr(eq + 1);
+      try {
+        if (key == "base_xy") preset.weights.base_xy = std::stod(value);
+        else if (key == "base_yaw") preset.weights.base_yaw = std::stod(value);
+        else if (key == "lift") preset.weights.lift = std::stod(value);
+        else if (key == "rest") preset.weights.rest = std::stod(value);
+        else if (key == "rest_state") preset.rest_state = value;
+        else if (key == "candidates") {
+          const long count = std::stol(value);
+          if (count < 1) {
+            error = "preset " + preset.name + ": candidates must be at least 1";
+            return false;
+          }
+          preset.candidates = static_cast<std::size_t>(count);
+        } else if (key == "arm") {
+          const auto parts = split(value, '/');
+          if (parts.size() == 1) {
+            preset.weights.arm.fill(std::stod(parts[0]));
+          } else if (parts.size() == whole_body_goal::kArmJoints) {
+            for (std::size_t j = 0; j < parts.size(); ++j) preset.weights.arm[j] = std::stod(parts[j]);
+          } else {
+            error = "preset " + preset.name + ": arm takes 1 or 7 weights";
+            return false;
+          }
+        } else {
+          error = "preset " + preset.name + ": unknown key in '" + words[i] + "'";
+          return false;
+        }
+      } catch (const std::exception &) {
+        error = "preset " + preset.name + ": no number in '" + words[i] + "'";
+        return false;
+      }
+    }
+    const auto & w = preset.weights;
+    std::vector<double> all = {w.base_xy, w.base_yaw, w.lift, w.rest};
+    all.insert(all.end(), w.arm.begin(), w.arm.end());
+    if (!std::all_of(all.begin(), all.end(), [](double v) { return std::isfinite(v) && v >= 0.0; })) {
+      error = "preset " + preset.name + ": weights must be zero or positive";
+      return false;
+    }
+    if (!arm->getVariableDefaultPositions(preset.rest_state, preset.rest)) {
+      error = "preset " + preset.name + ": '" + preset.rest_state + "' is not a named state of " + arm->getName();
+      return false;
+    }
+    preset.rest.erase("lift_joint");
+    presets.push_back(preset);
+  }
+  if (presets.empty()) error = "--wb-presets holds no preset";
+  return !presets.empty();
+}
+
 // Everything that holds the node lives in here, so it is gone before rclcpp::shutdown().
 // Zenoh aborts the process when a session is closed from a static destructor.
 int run(int argc, char ** argv)
@@ -796,6 +879,7 @@ int run(int argc, char ** argv)
   int plan_trials = 3;
   int collision_states = 2000;
   int wb_reseeds = 0;
+  std::string wb_presets_arg = "default";
   double planning_time = 5.0;
   bool quick = false;
   std::string other_arms_arg = "home,standby";
@@ -820,6 +904,7 @@ int run(int argc, char ** argv)
     else if (arg == "--plan-trials") plan_trials = std::stoi(next());
     else if (arg == "--collision-states") collision_states = std::stoi(next());
     else if (arg == "--wb-reseeds") wb_reseeds = std::stoi(next());
+    else if (arg == "--wb-presets") wb_presets_arg = next();
     else if (arg == "--planning-time") planning_time = std::stod(next());
     else if (arg == "--quick") quick = true;
     else if (arg == "--other-arms") other_arms_arg = next();
@@ -906,6 +991,14 @@ int run(int argc, char ** argv)
       if (name != "lift_joint") home_seed[name] = s.getVariablePosition(name);
     }
   }
+  std::vector<WbPreset> wb_presets;
+  {
+    std::string error;
+    if (!parsePresets(wb_presets_arg, arm, wb_presets, error)) {
+      RCLCPP_FATAL(node->get_logger(), "%s", error.c_str());
+      return 1;
+    }
+  }
 
   const auto param = [&](const std::string & name) {
     rclcpp::Parameter p;
@@ -920,7 +1013,7 @@ int run(int argc, char ** argv)
          << quote(param("ompl." + body_group + ".longest_valid_segment_fraction"))
          << ",\"planning_time\":" << planning_time << ",\"ik_calls\":" << ik_calls << ",\"quick\":" << quick
          << ",\"pose_times\":" << quote(pose_times_arg) << ",\"ik_first_times\":" << quote(ik_first_times_arg)
-         << ",\"pose_repeats\":" << pose_repeats
+         << ",\"pose_repeats\":" << pose_repeats << ",\"wb_presets\":" << quote(wb_presets_arg)
          << ",\"finger_padding\":" << scene->getCollisionEnv()->getLinkPadding("openarm_left_left_finger") << "}";
   std::cout << "config " << config.str() << std::endl;
 
@@ -1322,38 +1415,65 @@ int run(int argc, char ** argv)
       }
       std::vector<int> reseed_passes = {0};
       if (wb_reseeds > 0) reseed_passes.push_back(wb_reseeds);
-      for (const auto & other : other_arms) for (const int reseeds : reseed_passes) {
+      for (const auto & other : other_arms) for (const int reseeds : reseed_passes) for (const auto & preset : wb_presets) {
         const auto current = homeState(model, {0.55, 0.0, 0.0}, other);
-        random_numbers::RandomNumberGenerator rng(11);
-        std::mt19937 sampler_rng(5);
         std::map<std::string, int> results;
-        std::vector<double> total_ms, ik_ms, plan_ms;
-        std::printf("whole_body right arm %s, reseeds %d\n", other.c_str(), reseeds);
-        for (const auto & target : wb_targets) {
+        std::vector<double> total_ms, ik_ms, plan_ms, base_xy, lift, arm_moved, rest;
+        std::printf(
+            "whole_body right arm %s, reseeds %d, preset %s\n", other.c_str(), reseeds, preset.name.c_str());
+        for (std::size_t index = 0; index < wb_targets.size(); ++index) {
+          const auto & target = wb_targets[index];
+          // Seeded per target, so every preset sees the same sampled base poses for it,
+          // whatever the earlier targets drew.
+          random_numbers::RandomNumberGenerator rng(static_cast<uint32_t>(11 + index));
+          std::mt19937 sampler_rng(static_cast<std::mt19937::result_type>(5 + index));
           const auto out = wholeBodyGoal(
-              *pipeline, scene, current, toPose(target), body_group, arm_group, tip, shoulder, home_seed,
+              *pipeline, scene, current, toPose(target), body_group, arm_group, tip, shoulder, preset,
               planning_time, reseeds, rng, sampler_rng);
           results[out.result]++;
           total_ms.push_back(out.total_ms);
           ik_ms.push_back(out.ik_ms);
           plan_ms.push_back(out.plan_ms);
+          const auto & m = out.motion;
+          const bool reached = out.result == "arm_only" || out.result == "base_moved";
+          if (reached) {
+            base_xy.push_back(m.base_xy);
+            lift.push_back(m.lift);
+            arm_moved.push_back(m.armTotal());
+            rest.push_back(m.rest);
+          }
           json << (first_wb ? "" : ",") << "{\"other_arm\":" << quote(other) << ",\"reseeds\":" << reseeds
-               << ",\"target\":" << quote(target.name)
+               << ",\"preset\":" << quote(preset.name) << ",\"target\":" << quote(target.name)
                << ",\"result\":" << quote(out.result) << ",\"total_ms\":" << out.total_ms << ",\"ik_ms\":" << out.ik_ms
                << ",\"plan_ms\":" << out.plan_ms << ",\"ik_calls\":" << out.ik_calls
                << ",\"samples_tried\":" << out.samples_tried << ",\"samples_with_ik\":" << out.samples_with_ik
-               << ",\"samples_on_limit\":" << out.samples_on_limit << ",\"plans_tried\":" << out.plans_tried
-               << ",\"base_travel\":" << out.base_travel << ",\"rejections\":" << mapJson(out.rejections) << "}";
+               << ",\"samples_on_limit\":" << out.samples_on_limit << ",\"samples_clear\":" << out.samples_clear
+               << ",\"plans_tried\":" << out.plans_tried << ",\"base_travel\":" << out.base_travel
+               << ",\"cost\":" << out.cost << ",\"base_xy\":" << m.base_xy << ",\"base_yaw\":" << m.base_yaw
+               << ",\"lift\":" << m.lift << ",\"arm\":" << m.armTotal() << ",\"rest\":" << m.rest
+               << ",\"rejections\":" << mapJson(out.rejections) << "}";
           first_wb = false;
           std::printf(
-              "  %-22s %-12s %6.0f ms (ik %5.0f, plan %5.0f) ik calls %3d, samples %2d with ik %2d, base %.2f m\n",
+              "  %-22s %-12s %6.0f ms (ik %5.0f, plan %5.0f) ik calls %3d, samples %2d with ik %2d usable %2d",
               target.name.c_str(), out.result.c_str(), out.total_ms, out.ik_ms, out.plan_ms, out.ik_calls,
-              out.samples_tried, out.samples_with_ik, out.base_travel);
+              out.samples_tried, out.samples_with_ik, out.samples_clear);
+          if (reached) {
+            std::printf(
+                " | base %.2f m %.2f rad, lift %.3f m, arm %.2f rad, rest %.2f rad, cost %.2f", m.base_xy, m.base_yaw,
+                m.lift, m.armTotal(), m.rest, out.cost);
+          }
+          std::printf("\n");
         }
         const auto t = summarize(total_ms);
         std::string tally;
         for (const auto & [k, v] : results) tally += " " + k + "=" + std::to_string(v);
-        std::printf("  summary:%s | %.0f ms median, %.0f max\n", tally.c_str(), t.median, t.max);
+        const auto mean = [](const std::vector<double> & v) {
+          return v.empty() ? 0.0 : std::accumulate(v.begin(), v.end(), 0.0) / static_cast<double>(v.size());
+        };
+        std::printf(
+            "  summary:%s | %.0f ms median, %.0f max | mean of reached goals: base %.2f m, lift %.3f m, arm %.2f "
+            "rad, rest %.2f rad\n",
+            tally.c_str(), t.median, t.max, mean(base_xy), mean(lift), mean(arm_moved), mean(rest));
       }
       json << "]";
     }

@@ -68,6 +68,7 @@ def _make_nodes(context: LaunchContext):
         "--ik-calls", arg("ik_calls"),
         "--plan-trials", arg("plan_trials"),
         "--wb-reseeds", arg("wb_reseeds"),
+        "--wb-presets", arg("wb_presets"),
         "--planning-time", arg("planning_time"),
         "--attempt-goals", arg("attempt_goals"),
         "--attempt-counts", arg("attempt_counts"),
@@ -114,6 +115,14 @@ def generate_launch_description():
                 default_value="0",
                 description="If above 0, a second whole-body pass retries each failed IK call "
                 "this many times with random seeds.",
+            ),
+            DeclareLaunchArgument(
+                "wb_presets",
+                default_value="default",
+                description="Whole-body goal settings to compare, separated by ';': a name, then "
+                "key=value words with the keys base_xy, base_yaw, lift, arm (one weight, or seven "
+                "separated by '/'), rest, rest_state and candidates. Example: "
+                "'default;arm_first base_xy=2 arm=0.1 rest=0.2'.",
             ),
             DeclareLaunchArgument("planning_time", default_value="5.0"),
             DeclareLaunchArgument(
