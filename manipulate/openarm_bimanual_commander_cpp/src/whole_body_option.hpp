@@ -1429,8 +1429,8 @@ private:
     double goal_joint_tolerance_{0.001};
     double execution_margin_{15.0};
     whole_body_goal::Weights weights_;
-    std::string rest_state_{"home"};
-    std::size_t max_candidates_{8};
+    std::string rest_state_{whole_body_goal::kDefaultRestState};
+    std::size_t max_candidates_{whole_body_goal::kDefaultCandidates};
     std::map<std::string, Nav2Status> nav2_status_;
     // The goals each controller's status topic lists, and which of them existed before
     // the current execution: only a new goal on a controller of the plan is its abort.

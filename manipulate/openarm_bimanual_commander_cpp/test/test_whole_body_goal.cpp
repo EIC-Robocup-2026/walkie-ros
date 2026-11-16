@@ -52,6 +52,9 @@ struct FakeSolver
 const Joints kCurrent{{"openarm_left_joint1", 0.0}, {"lift_joint", 0.0}};
 const Joints kRest{{"openarm_left_joint1", 0.0}};
 
+// Weight on base travel alone, so the costs in the tests do not depend on the defaults.
+const Weights kBaseOnly{1.0, 0.0, 0.0, {}, 0.0};
+
 TEST(WholeBodyGoal, ArmJointIndexCoversBothArms)
 {
     EXPECT_EQ(whole_body_goal::armJointIndex("openarm_left_joint1"), 0);
@@ -101,10 +104,10 @@ whole_body_goal::CandidateSearch searchOver(
     return whole_body_goal::CandidateSearch(samples, w, kOrigin, kCurrent, rest, max_candidates);
 }
 
-TEST(WholeBodyGoal, DefaultWeightsTakeTheNearestUsableSampleWithoutExtraIk)
+TEST(WholeBodyGoal, BaseOnlyWeightsTakeTheNearestUsableSampleWithoutExtraIk)
 {
     FakeSolver solve{{9.0, 9.0, 0.0, 0.0}, {false, true, true, true}, {}};
-    auto s = searchOver(line({0.1, 0.2, 0.3, 0.4}), Weights{});
+    auto s = searchOver(line({0.1, 0.2, 0.3, 0.4}), kBaseOnly);
     EXPECT_EQ(handOut(s, solve, 1), (std::vector<double>{0.2}));
     // The next sample costs 0.3 in base motion alone, more than 0.2, so it is not solved
     // until the plan to 0.2 fails.
@@ -116,7 +119,7 @@ TEST(WholeBodyGoal, DefaultWeightsTakeTheNearestUsableSampleWithoutExtraIk)
 TEST(WholeBodyGoal, ArmWeightTradesBaseMotionForArmMotion)
 {
     FakeSolver solve{{3.0, 2.0, 0.0, 0.0}, {}, {}};
-    Weights w;
+    Weights w = kBaseOnly;
     w.arm[0] = 0.1;
     auto s = searchOver(line({0.1, 0.2, 0.3, 0.4}), w);
     // Costs: 0.1 + 0.3, 0.2 + 0.2, 0.3 + 0. Sample 0.4 costs 0.4 in the base alone, more
@@ -131,7 +134,7 @@ TEST(WholeBodyGoal, ArmWeightTradesBaseMotionForArmMotion)
 TEST(WholeBodyGoal, RestWeightPrefersTheRestPosture)
 {
     FakeSolver solve{{0.0, 1.0}, {}, {}};
-    Weights w;
+    Weights w = kBaseOnly;
     w.rest = 1.0;
     auto s = searchOver(line({0.1, 0.2}), w, 8, {{"openarm_left_joint1", 1.0}});
     const auto first = s.next(std::ref(solve));
@@ -146,7 +149,7 @@ TEST(WholeBodyGoal, FailedPlanResumesTheSearchAgainstTheCheapestHeldCandidate)
     // first, because 0.2 is cheaper than its base cost. When the plan to 0.2 fails, 0.3
     // is still cheaper than the held 2.1 and has to come next.
     FakeSolver solve{{2.0, 0.0, 0.0}, {}, {}};
-    Weights w;
+    Weights w = kBaseOnly;
     w.arm[0] = 1.0;
     auto s = searchOver(line({0.1, 0.2, 0.3}), w);
     EXPECT_EQ(handOut(s, solve, 1), (std::vector<double>{0.2}));
@@ -158,7 +161,7 @@ TEST(WholeBodyGoal, HandsOutEveryCandidateOfATierBeforeTheNext)
 {
     // Tier 1 holds the cheapest candidate, but tier 0 goes first.
     FakeSolver solve{{5.0, 5.0, 0.0}, {}, {}};
-    Weights w;
+    Weights w = kBaseOnly;
     w.arm[0] = 1.0;
     auto s = searchOver(line({0.1, 0.2, 0.3}, {0, 0, 1}), w);
     EXPECT_EQ(handOut(s, solve, 1), (std::vector<double>{0.1}));
@@ -169,7 +172,7 @@ TEST(WholeBodyGoal, HandsOutEveryCandidateOfATierBeforeTheNext)
 TEST(WholeBodyGoal, HoldsAtMostMaxCandidates)
 {
     FakeSolver solve{{9.0, 9.0, 9.0, 0.0}, {}, {}};
-    Weights w;
+    Weights w = kBaseOnly;
     w.arm[0] = 1.0;
     auto s = searchOver(line({0.1, 0.2, 0.3, 0.4}), w, 2);
     // With room for two, the search stops before it reaches the cheap sample 0.4.
@@ -181,7 +184,7 @@ TEST(WholeBodyGoal, HoldsAtMostMaxCandidates)
 TEST(WholeBodyGoal, EndsWhenNoSampleIsUsable)
 {
     FakeSolver solve{{0.0, 0.0}, {false, false}, {}};
-    auto s = searchOver(line({0.1, 0.2}), Weights{});
+    auto s = searchOver(line({0.1, 0.2}), kBaseOnly);
     EXPECT_FALSE(s.next(std::ref(solve)));
     EXPECT_EQ(solve.called, (std::vector<double>{0.1, 0.2}));
     EXPECT_FALSE(s.next(std::ref(solve)));
@@ -191,7 +194,7 @@ TEST(WholeBodyGoal, EndsWhenNoSampleIsUsable)
 TEST(WholeBodyGoal, SamplesAreSortedByBaseCostWithinEachTier)
 {
     std::mt19937 rng(3);
-    Weights w;
+    Weights w = kBaseOnly;
     w.base_yaw = 0.5;
     const BasePose from{0.2, -0.1, 0.4};
     const auto samples = whole_body_goal::sampleBasePoses(1.5, 0.0, 1.0, 0.0, from, 0.05, 0.2, w, rng);

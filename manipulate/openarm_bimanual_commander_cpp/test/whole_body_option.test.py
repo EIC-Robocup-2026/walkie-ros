@@ -120,8 +120,8 @@ class TestWholeBodyOption(unittest.TestCase):
             'whole_body_weight_lift': (2.0, 0.0),
             'whole_body_weight_base_yaw': (0.2, 0.0),
             'whole_body_weight_arm_joints': ([0.1] * 7, [0.0] * 7),
-            'whole_body_weight_rest': (0.2, 0.0),
-            'whole_body_rest_state': ('standby', 'home'),
+            'whole_body_weight_rest': (0.2, 0.3),
+            'whole_body_rest_state': ('standby', 'rest_pose'),
             'whole_body_candidates': (4, 8),
         }
         for name, (value, default) in settings.items():

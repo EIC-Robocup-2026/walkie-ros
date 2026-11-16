@@ -27,16 +27,23 @@ using Joints = std::map<std::string, double>;
 
 constexpr std::size_t kArmJoints = 7;
 
+// Defaults of the commander's whole_body_rest_state and whole_body_candidates parameters,
+// and of the benchmark's presets. The whole_body_weight_* defaults are those of Weights.
+inline constexpr char kDefaultRestState[] = "rest_pose";
+inline constexpr std::size_t kDefaultCandidates = 8;
+
 // Cost per unit of motion from the current state: per metre for base_xy and lift, per
 // radian for the others. arm[i] is joint i + 1 of the reaching arm. rest is per radian
-// between an arm joint and the rest posture, summed over the arm joints.
+// between an arm joint and the rest posture, summed over the arm joints. In the planning
+// benchmark, rest weights from 0.2 to 0.5 ended goals equally near rest_pose, and 0.1
+// less near.
 struct Weights
 {
     double base_xy{1.0};
     double base_yaw{0.0};
     double lift{0.0};
     std::array<double, kArmJoints> arm{};
-    double rest{0.0};
+    double rest{0.3};
 };
 
 // How far a candidate moves each part, before weighting.

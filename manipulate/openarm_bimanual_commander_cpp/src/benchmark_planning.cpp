@@ -561,8 +561,8 @@ struct WbPreset
 {
   std::string name;
   whole_body_goal::Weights weights;
-  std::string rest_state{"home"};
-  std::size_t candidates{8};
+  std::string rest_state{whole_body_goal::kDefaultRestState};
+  std::size_t candidates{whole_body_goal::kDefaultCandidates};
   whole_body_goal::Joints rest;  // the arm joints of rest_state, without the lift
 };
 
