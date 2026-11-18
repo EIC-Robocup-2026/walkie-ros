@@ -151,13 +151,17 @@ domain 77.
 - When a driver or a `dev_id` differs, fix the names at the robot, with nothing
   running on the buses. These steps have not been tried yet:
 
-    1. Unplug both USB-CAN adapters, the PCAN (arms) and the candleLight
+    1. Make sure the arms rest or hang where they cannot hit anything. Switch
+       off the motor power for the arms, the wheels, and the lift, and keep the
+       computer on.
+    2. Unplug both USB-CAN adapters, the PCAN (arms) and the candleLight
        (wheels and lift).
-    2. Plug the PCAN back into the same USB port, and wait until
+    3. Plug the PCAN back into the same USB port, and wait until
        `ip -br link show type can` lists `can0` and `can1`.
-    3. Plug in the candleLight.
-    4. Run the check above again. `readlink -f /sys/class/net/can0/device` must
+    4. Plug in the candleLight.
+    5. Run the check above again. `readlink -f /sys/class/net/can0/device` must
        end in `3-2.4:1.0`, the PCAN's port.
+    6. Switch the motor power back on, with the rest of this list in place.
 
     Replugging only the PCAN does not help. The names follow the order in which
     the adapters appear, and the rule that names the PCAN `can0` cannot take a
