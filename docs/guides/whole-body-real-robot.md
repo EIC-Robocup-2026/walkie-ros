@@ -165,19 +165,41 @@ pixi run ros2 launch openarm_bimanual_commander_cpp commander.launch.py base_mod
 - `use_rviz:=false`: the RViz with **MotionPlanning** comes from
   `moveit_only.launch.py`, see [Open RViz on the robot's desktop](#rviz-on-the-desktop).
 
-Move the arms as in [Move the arms in RViz](manipulation.md#move-the-arms-in-rviz).
-Try `rest_pose` on `left_arm` first, then on `both_arms_lift`. Look at the
-planned path before you click **Execute**. The hand target does nothing in this
-stage: `base_mode:=fixed` refuses whole-body goals.
+Move the arms as in [Move the arms in RViz](manipulation.md#move-the-arms-in-rviz),
+with the groups without `_lift`: `left_arm`, `right_arm`, and `both_arms`. Try
+`rest_pose` on `left_arm` first, then on `both_arms`. Look at the planned path
+before you click **Execute**. To change the height,
+[move the lift alone](#move-the-lift-alone) while the arms hold still, then plan
+the arms. The hand target does nothing in this stage: `base_mode:=fixed` refuses
+whole-body goals.
 
 !!! warning "The lift ignores the plan's timing and cannot be canceled"
-    The lift node drives to the plan's last height at its own speed, so the arm
-    and the lift do not move in step as planned. A plan that is free of
-    collisions in MoveIt can then hit the base on the robot, for example `home`
-    while the lift is still below 0.50 m. The lift node also rejects a cancel: a
-    stop halts the arms and the base, and the lift finishes its move. Groups
-    without `_lift` leave the lift where it is. To move the lift alone, see step 2
-    of [Stop safely](#stop-safely).
+    The lift node starts at once and drives to the plan's last height at its own
+    speed, so in a group with `_lift` the arm and the lift do not move in step as
+    planned. A plan that is free of collisions in MoveIt can then hit the base on
+    the robot, for example `home` while the lift is still below 0.50 m. The lift
+    node also rejects a cancel: a stop halts the arms and the base, and the lift
+    finishes its move.
+
+### Move the lift alone { #move-the-lift-alone }
+
+```bash
+pixi run ros2 topic pub --once /lift/cmd std_msgs/msg/Float64MultiArray "{data: [74.0]}"
+```
+
+- The value is the height in cm, from 0 to 74.35, the upper hard stop that
+  homing found. The lift node rejects a value outside this range. Use 74.0 for
+  the top.
+- The lift moves at 3 cm/s at most, so 30 cm takes about 12 s. The command does
+  not wait for it. If the command hangs, the lift node is not running in
+  domain 77.
+- The arm controllers hold their joints, so the arms ride along in their current
+  posture. Before you send it, look along the whole travel: nothing above or
+  below the hands, and the arms clear the base and the head all the way.
+- Watch the lift and wait until it stops. `lift/joint_states`, the **Joints**
+  tab, and RViz show the height the lift node commands, not a measured one. The
+  node also reports a MoveIt goal for the lift as done after 60 s, even when the
+  lift has not arrived.
 
 ## Real whole body { #real-whole-body }
 
@@ -204,12 +226,27 @@ Before the first goal:
 - At least 1.5 m of free floor around the robot, and no table or shelf within
   reach. Without the ZED, MoveIt sees no obstacles. Only the collision monitor
   protects the base, from the two lidars.
-- The plans that move the base run slowly:
+- The lift is at the top: [move the lift alone](#move-the-lift-alone) to 74.0.
+- The plans that move the base run slowly and prefer to keep the lift where it
+  is:
 
     ```bash
     pixi run ros2 param set /bimanual_commander whole_body_velocity_scaling 0.3
     pixi run ros2 param set /bimanual_commander whole_body_acceleration_scaling 0.3
+    pixi run ros2 param set /bimanual_commander whole_body_weight_lift 3.0
     ```
+
+!!! warning "The lift does not follow the plan in this stage either"
+    Every whole-body goal can move the lift, and the lift node drives straight to
+    the plan's last height at up to 3 cm/s from the start. The plan moves it
+    slower, and slower still with the scaling above. A goal that lowers the lift
+    therefore brings the arm down sooner than MoveIt checked. The lift weight
+    applies only to plans that move the base, not to the first try with the arm
+    and the lift alone. Keep lift travel small: start each goal from
+    **Snap to left hand** and drag the box forward or sideways, not down. When
+    the lift moves during a goal, watch the arm near the base and cut the power
+    if it closes in. Stage 3 carries this risk until the lift node follows the
+    plan's timing.
 
 Then, with the hand target (the RViz fixed frame is `map`):
 
@@ -221,8 +258,9 @@ Then, with the hand target (the RViz fixed frame is `map`):
    status ends in `(base travel ... m)`. Be ready for the base to move from this
    first goal on.
 2. Drag the box about 0.3 m further forward and pick **Reach with left arm**
-   again. The base drives, and the lift and the arm follow. The lift moves at its
-   own speed here too, so watch the arm near the base.
+   again. The base may drive: the status then ends in `(base travel ... m)`, and
+   in `(base fixed)` when the arm and the lift reach it from where the robot
+   stands.
 3. Pick **Cancel goal** during a motion. The base and the arm stop, the lift does
    not.
 
@@ -270,11 +308,16 @@ arms drop.
 Otherwise, in this order:
 
 1. End the running goal: **Cancel goal** on the hand target, or **Stop** in
-   **MotionPlanning**. Wait for the lift to finish its move.
-2. Raise the lift alone, with the arms held where they are: **Planning Group**
-   `both_arms_lift`, **Goal State** `<current>`, then on the **Joints** tab set
-   `lift_joint` to 0.74, **Plan** and **Execute**. Wait until the lift stops.
-   Skip this step when the **Joints** tab already shows `lift_joint` at 0.74.
+   **MotionPlanning**. Watch the lift until it stops.
+2. Raise the lift to the top, with the arms held where they are, as in
+   [Move the lift alone](#move-the-lift-alone):
+
+    ```bash
+    pixi run ros2 topic pub --once /lift/cmd std_msgs/msg/Float64MultiArray "{data: [74.0]}"
+    ```
+
+    Wait until you see the lift stop at the top.
+
 3. Let both arms hang: **Planning Group** `both_arms` (without the lift),
    **Goal State** `home`, **Plan** and **Execute**. `home` needs the lift at
    0.50 m or higher, or the fingers hit the base. Wait until the arms are still.
@@ -308,8 +351,10 @@ As of 2026-11-19:
   [Migration 7: A first run on the real robot](../migrations/07-whole-body-moveit.md#a-first-run-on-the-real-robot).
 - `real_omnibot.launch.py` has not been started from this workspace, so
   `use_rosbridge:=false` has not run on the robot either.
-- The staged stop in [Stop safely](#stop-safely), the lift alone and then
-  `both_arms` to `home`, has not run on the robot.
+- The staged stop in [Stop safely](#stop-safely), the lift alone through
+  `/lift/cmd` and then `both_arms` to `home`, has not run on the robot.
+- The lift node does not follow a plan's timing and rejects a cancel. Stage 2
+  avoids this with the groups without `_lift`. Stage 3 cannot, see its warning.
 - The rehearsal ran on the robot computer without windows. RViz has not been
   opened on its desktop.
 - How the arms and the lift behave when their motors turn off.

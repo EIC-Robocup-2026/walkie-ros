@@ -676,6 +676,10 @@ Known limits:
   so with Nav2 on the real robot the follower notices a stop through its stall check only.
   `whole_body_real.launch.py` sets `state_topic` for its own monitor. The real lift has its
   own driver, which rejects a cancel and drives to the plan's last height at its own speed.
+  Its joint state is the commanded profile, not a measured height. A whole-body goal that
+  lowers the lift can therefore bring the arm down sooner than MoveIt checked. The guide
+  keeps lift travel small and moves the lift alone through `/lift/cmd`. A lift driver that
+  follows the trajectory's timing would close this, and is not built.
 - The demo's `table_clearance_m` and `deep_column_gap_m` ignore the base heading, so they are
   only rough numbers. `table_clearance_m` was 0.14 m in one run and -0.02 m in the run before
   it. No contact was seen, but the box pose is not recorded.
