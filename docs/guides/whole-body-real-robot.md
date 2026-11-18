@@ -9,7 +9,8 @@ the last one behaves:
 2. [Real arms, base fixed](#real-arms-base-fixed). The arms and the lift move.
    MoveIt does not command the base, but the wheels stay powered.
 3. [Real whole body](#real-whole-body). The base, the lift, and one arm move
-   together.
+   together. Hold this stage back for now: the lift does not follow the plan's
+   timing yet.
 
 !!! warning "Whole-body goals have not run on the real robot"
     Stage 3 is tested only with MuJoCo in place of the hardware (see
@@ -187,12 +188,19 @@ whole-body goals.
 pixi run ros2 topic pub --once /lift/cmd std_msgs/msg/Float64MultiArray "{data: [74.0]}"
 ```
 
-- The value is the height in cm, from 0 to 74.35, the upper hard stop that
-  homing found. The lift node rejects a value outside this range. Use 74.0 for
-  the top.
+- Send it only while nothing else moves: no goal running in **MotionPlanning**
+  or on the hand target, and the arms and the base still. The lift node follows
+  the newest command, from MoveIt or from this topic. A MoveIt goal that is still
+  running then reports success after 60 s for a height the lift never reached.
+- The value is the height in cm. `lift_homing.launch.py` limits it to 8 to 74.35,
+  and the lift node rejects a value outside. 74.35 is where homing stopped
+  against the upper hard stop. Use 74.0, 3.5 mm below it, to go near the top.
 - The lift moves at 3 cm/s at most, so 30 cm takes about 12 s. The command does
-  not wait for it. If the command hangs, the lift node is not running in
-  domain 77.
+  not wait for it.
+- `--once` waits until it finds a subscriber on `/lift/cmd`. If the command
+  hangs, it has not found the lift node through this router in domain 77. Press
+  Ctrl-C before you look for the cause: a command left waiting publishes as soon
+  as the lift node shows up.
 - The arm controllers hold their joints, so the arms ride along in their current
   posture. Before you send it, look along the whole travel: nothing above or
   below the hands, and the arms clear the base and the head all the way.
@@ -202,6 +210,15 @@ pixi run ros2 topic pub --once /lift/cmd std_msgs/msg/Float64MultiArray "{data: 
   lift has not arrived.
 
 ## Real whole body { #real-whole-body }
+
+!!! danger "Do not run this stage on the robot yet"
+    Every whole-body goal can move the lift. The lift node drops the plan's
+    intermediate points and timing, and drives straight to the plan's last height
+    at up to 3 cm/s from the start. A goal that lowers the lift therefore brings
+    the arm down sooner than MoveIt checked, and keeping the hand target's moves
+    small does not prevent that. This stage waits for a lift driver that follows
+    the trajectory's timing, reports the measured height, and accepts a cancel.
+    The steps below are kept for that run.
 
 Keep `lift_homing.launch.py` and `real_omnibot.launch.py` running. Stop MoveIt and
 the commander, then start these in order:
@@ -226,27 +243,13 @@ Before the first goal:
 - At least 1.5 m of free floor around the robot, and no table or shelf within
   reach. Without the ZED, MoveIt sees no obstacles. Only the collision monitor
   protects the base, from the two lidars.
-- The lift is at the top: [move the lift alone](#move-the-lift-alone) to 74.0.
-- The plans that move the base run slowly and prefer to keep the lift where it
-  is:
+- The lift is near the top: [move the lift alone](#move-the-lift-alone) to 74.0.
+- The plans that move the base run slowly:
 
     ```bash
     pixi run ros2 param set /bimanual_commander whole_body_velocity_scaling 0.3
     pixi run ros2 param set /bimanual_commander whole_body_acceleration_scaling 0.3
-    pixi run ros2 param set /bimanual_commander whole_body_weight_lift 3.0
     ```
-
-!!! warning "The lift does not follow the plan in this stage either"
-    Every whole-body goal can move the lift, and the lift node drives straight to
-    the plan's last height at up to 3 cm/s from the start. The plan moves it
-    slower, and slower still with the scaling above. A goal that lowers the lift
-    therefore brings the arm down sooner than MoveIt checked. The lift weight
-    applies only to plans that move the base, not to the first try with the arm
-    and the lift alone. Keep lift travel small: start each goal from
-    **Snap to left hand** and drag the box forward or sideways, not down. When
-    the lift moves during a goal, watch the arm near the base and cut the power
-    if it closes in. Stage 3 carries this risk until the lift node follows the
-    plan's timing.
 
 Then, with the hand target (the RViz fixed frame is `map`):
 
@@ -354,7 +357,8 @@ As of 2026-11-19:
 - The staged stop in [Stop safely](#stop-safely), the lift alone through
   `/lift/cmd` and then `both_arms` to `home`, has not run on the robot.
 - The lift node does not follow a plan's timing and rejects a cancel. Stage 2
-  avoids this with the groups without `_lift`. Stage 3 cannot, see its warning.
+  avoids this with the groups without `_lift`. Stage 3 cannot, so it waits for a
+  new lift driver.
 - The rehearsal ran on the robot computer without windows. RViz has not been
   opened on its desktop.
 - How the arms and the lift behave when their motors turn off.

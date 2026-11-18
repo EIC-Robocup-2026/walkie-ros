@@ -27,8 +27,8 @@ pulling. For day-to-day use, read
   is now solved by IK first, and can end in a different arm configuration than before
   (added 2026-11-14, `ik_first_enable` turns it off, see
   [IK first for arm pose goals](#ik-first-for-arm-pose-goals)). Whole-body goals have not
-  run on the real robot. Keep `base_mode:=fixed` there, except for a supervised first run
-  that follows [Whole-Body MoveIt on the Real Robot](../guides/whole-body-real-robot.md).
+  run on the real robot. Keep `base_mode:=fixed` there until the lift driver follows the
+  trajectory's timing, see [Whole-Body MoveIt on the Real Robot](../guides/whole-body-real-robot.md).
 - **Added 2026-11-16:** weights that rank the sampled base poses of a whole-body goal, a
   rest posture, and a hand target to drag in RViz. The defaults pick the same base pose
   as before. See
@@ -437,7 +437,9 @@ and the commander:
 - `whole_body_marker`, the hand target (`use_marker:=true`).
 
 The steps of a first run, from a rehearsal in MuJoCo to the whole robot, are in
-[Whole-Body MoveIt on the Real Robot](../guides/whole-body-real-robot.md).
+[Whole-Body MoveIt on the Real Robot](../guides/whole-body-real-robot.md). Its last stage,
+whole-body goals on the robot, waits for a lift driver that follows the trajectory's
+timing (see the known limits in [Still open](#still-open)).
 
 ??? info "Why a launch file, and why these choices"
     - **YAML anchors.** `nav2_mppi_walkie_params.yaml` uses anchors. `ros2 run` with
@@ -678,8 +680,9 @@ Known limits:
   own driver, which rejects a cancel and drives to the plan's last height at its own speed.
   Its joint state is the commanded profile, not a measured height. A whole-body goal that
   lowers the lift can therefore bring the arm down sooner than MoveIt checked. The guide
-  keeps lift travel small and moves the lift alone through `/lift/cmd`. A lift driver that
-  follows the trajectory's timing would close this, and is not built.
+  moves the lift alone through `/lift/cmd` and holds its whole-body stage back. A lift
+  driver that follows the trajectory's timing, reports the measured height, and accepts a
+  cancel would close this, and is not built.
 - The demo's `table_clearance_m` and `deep_column_gap_m` ignore the base heading, so they are
   only rough numbers. `table_clearance_m` was 0.14 m in one run and -0.02 m in the run before
   it. No contact was seen, but the box pose is not recorded.
