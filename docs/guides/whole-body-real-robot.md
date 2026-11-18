@@ -126,11 +126,44 @@ domain 77.
     pgrep -af "ros2_control_node|lift_homing_node|move_group|commander|whole_body"
     ```
 
-- The CAN interfaces are up: `ip -br link show type can` lists `can0` and `can1`
-  (arms) and `can2` (wheels and lift) as `UP`. On the morning of 2026-11-19,
-  `can0` and `can1` were down. Replug the OpenArm adapter: its udev rule brings
-  both up. If they stay down, see
-  [Real Robot: Set up the devices](real-robot.md#device-setup).
+- Each CAN name sits on the right adapter and is up:
+
+    ```bash
+    for n in can0 can1 can2; do echo "$n $(basename $(readlink -f /sys/class/net/$n/device/driver)) $(cat /sys/class/net/$n/dev_id) $(cat /sys/class/net/$n/operstate)"; done
+    ```
+
+    It must print exactly:
+
+    ```text
+    can0 peak_usb 0x0 up
+    can1 peak_usb 0x1 up
+    can2 gs_usb 0x0 up
+    ```
+
+    `can0` and `can1` are the two channels of the PCAN-USB Pro FD, for the right
+    and the left arm (CAN FD). `can2` is the candleLight, for the wheels and the
+    lift (1 Mbit/s). Do not start `lift_homing.launch.py` or
+    `real_omnibot.launch.py` while the output differs. Both open their bus by
+    name, so with swapped names the lift and the wheels talk on an arm bus, and
+    an arm on the wheel bus. When only the last column differs, see
+    [Real Robot: Set up the devices](real-robot.md#device-setup).
+
+- When a driver or a `dev_id` differs, fix the names at the robot, with nothing
+  running on the buses. These steps have not been tried yet:
+
+    1. Unplug both USB-CAN adapters, the PCAN (arms) and the candleLight
+       (wheels and lift).
+    2. Plug the PCAN back into the same USB port, and wait until
+       `ip -br link show type can` lists `can0` and `can1`.
+    3. Plug in the candleLight.
+    4. Run the check above again. `readlink -f /sys/class/net/can0/device` must
+       end in `3-2.4:1.0`, the PCAN's port.
+
+    Replugging only the PCAN does not help. The names follow the order in which
+    the adapters appear, and the rule that names the PCAN `can0` cannot take a
+    name that the candleLight already holds. On 2026-11-19 the candleLight held
+    `can0` and the PCAN channels were `can1` and `can2`, from a boot where the
+    candleLight came up first.
 - The space around the arms, above the lift, and below it is clear. Homing first
   drives the lift down for 3 s, then up to its upper hard stop. When the arm
   hardware activates, every arm joint is commanded to 0 rad at once, then the
@@ -359,6 +392,8 @@ As of 2026-11-19:
 - The lift node does not follow a plan's timing and rejects a cancel. Stage 2
   avoids this with the groups without `_lift`. Stage 3 cannot, so it waits for a
   new lift driver.
+- The replug order that fixes swapped CAN names, in
+  [Before you power the arms](#before-power), has not been tried.
 - The rehearsal ran on the robot computer without windows. RViz has not been
   opened on its desktop.
 - How the arms and the lift behave when their motors turn off.
