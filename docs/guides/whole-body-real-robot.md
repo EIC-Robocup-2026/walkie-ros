@@ -1,0 +1,284 @@
+# Whole-Body MoveIt on the Real Robot
+
+Run whole-body MoveIt on the robot and drive it from RViz, with no agent,
+perception, or Nav2. Go through three stages, and start the next one only when
+the last one behaves:
+
+1. [Rehearse in MuJoCo](#rehearse-in-mujoco) on the robot computer. Nothing on
+   the robot moves.
+2. [Real arms, base fixed](#real-arms-base-fixed). The arms and the lift move,
+   the base cannot.
+3. [Real whole body](#real-whole-body). The base, the lift, and one arm move
+   together.
+
+!!! warning "Whole-body goals have not run on the real robot"
+    Stage 3 is tested only with MuJoCo in place of the hardware (see
+    [What has not been verified](#not-verified)). No node implements an
+    emergency stop: keep a hand on the robot's power switch in stages 2 and 3.
+    Read [Stop safely](#stop-safely) and
+    [Do not run at the same time](#do-not-run-together) before stage 2.
+
+## Prepare every terminal { #prepare-terminals }
+
+The workspace is cloned and built on the robot computer in
+`~/Project/robocup_experiments/walkie-ros-fullbody`, on the branch
+`feat/moveit-full-body`, with the lift's Python environment. It is separate from
+the team workspace `~/Project/robocup_ros_ws`.
+
+Start a Zenoh router of your own in the first terminal:
+
+```bash
+cd ~/Project/robocup_experiments/walkie-ros-fullbody
+export PATH=$HOME/.pixi/bin:$HOME/.local/bin:$PATH ROS_DOMAIN_ID=77
+ZENOH_CONFIG_OVERRIDE='listen/endpoints=["tcp/localhost:7499"]' pixi run ros2 run rmw_zenoh_cpp rmw_zenohd
+```
+
+Run this first in every other terminal:
+
+```bash
+cd ~/Project/robocup_experiments/walkie-ros-fullbody
+export PATH=$HOME/.pixi/bin:$HOME/.local/bin:$PATH ROS_DOMAIN_ID=77
+export ZENOH_CONFIG_OVERRIDE='connect/endpoints=["tcp/localhost:7499"]'
+```
+
+- The router on port 7499 and domain 77 keep this run apart from the team router
+  on port 7447. No team node, such as the joystick, Nav2, or the agent, can send
+  it commands. They do not keep it off the CAN buses, see
+  [Do not run at the same time](#do-not-run-together).
+- An ssh shell has neither `~/.pixi/bin` (pixi) nor `~/.local/bin` (uv, for the
+  lift environment) on its `PATH`.
+
+To update after new commits on the branch:
+
+```bash
+git pull --recurse-submodules
+pixi run build-pkg walkie_description robot_bringup openarm_bimanual_moveit_config openarm_bimanual_commander_cpp
+```
+
+??? info "Build the workspace from scratch"
+    The clone on the robot was made this way on 2026-11-19. The build of all 74
+    packages, Nav2 included, took 16 min.
+
+    ```bash
+    cd ~/Project/robocup_experiments
+    git clone --recurse-submodules -b feat/moveit-full-body git@github.com:EIC-Robocup-2026/walkie-ros.git walkie-ros-fullbody
+    cd walkie-ros-fullbody
+    git lfs pull
+    git submodule foreach --recursive git lfs pull
+    pixi install --locked
+    MAKEFLAGS=-j6 pixi run build-setup 4
+    cd bringup
+    pixi run uv venv --python python3.12 --system-site-packages
+    pixi run uv sync
+    ```
+
+    `build-setup 4` builds with four packages at a time and `MAKEFLAGS=-j6`
+    limits each to six compile jobs, which keeps the build within the robot
+    computer's memory.
+
+## Rehearse in MuJoCo { #rehearse-in-mujoco }
+
+```bash
+pixi run ros2 launch robot_bringup whole_body_demo.launch.py start_router:=false
+```
+
+This starts a MuJoCo scene with a table, Nav2 (idle), MoveIt with
+`base_mode:=whole_body`, the commander, the base follower, the hand target, the
+MuJoCo viewer, and RViz. `headless:=true` leaves out the viewer. In RViz:
+
+1. Send both arms to `rest_pose`: in **MotionPlanning**, choose **Planning
+   Group** `both_arms_lift` and **Goal State** `rest_pose`, then **Plan** and
+   **Execute**. The lift goes to 0.744 m.
+2. Drag the orange box of **Whole-Body Hand Target**, right-click it, and pick
+   **Reach with left arm**. The text above the box then reads
+   `whole_body_left: done: ...` or `whole_body_left: failed: ...` with the reason.
+   See
+   [Drag a hand target in RViz](manipulation.md#drag-a-hand-target-in-rviz).
+3. Pick **Cancel goal** while a goal runs.
+
+A whole-body goal prefers base poses that leave the arm near `rest_pose`, see
+[Tune whole-body goals](manipulation.md#tune-whole-body-goals). Before a goal near
+the table, send the other arm to `standby`, see
+[Clear the idle arm](manipulation.md#clear-the-idle-arm).
+
+The scripted demo runs nine goals in about 2 min on the robot computer:
+
+```bash
+pixi run ros2 run openarm_bimanual_commander_cpp whole_body_demo
+```
+
+Stop the rehearsal with Ctrl-C before stage 2. It runs its own controllers in
+domain 77.
+
+## Real arms, base fixed { #real-arms-base-fixed }
+
+### Before you power the arms { #before-power }
+
+- The team stack is not running. This prints nothing:
+
+    ```bash
+    pgrep -af "ros2_control_node|lift_homing_node|move_group|commander|whole_body"
+    ```
+
+- The CAN interfaces are up: `ip -br link show type can` lists `can0` and `can1`
+  (arms) and `can2` (wheels and lift) as `UP`. On the morning of 2026-11-19,
+  `can0` and `can1` were down. Replug the OpenArm adapter: its udev rule brings
+  both up. If they stay down, see
+  [Real Robot: Set up the devices](real-robot.md#device-setup).
+- The space around the arms and above the lift is clear. Homing drives the lift
+  to its upper hard stop. When the arm hardware activates, every arm joint is
+  commanded to 0 rad at once, then the arms go to `home` over 5 s.
+- Someone keeps a hand on the power switch.
+- `right_joint2_fixed` has the same value for `real_omnibot.launch.py` and
+  `moveit_only.launch.py`. Both default to `false`. If the right arm's joint 2 is
+  locked, pass `right_joint2_fixed:=true` to both, and send whole-body goals to
+  the left arm only: `commander.launch.py` has no such argument, and
+  `whole_body_right` with a locked joint 2 is untested.
+
+### Start { #start-fixed }
+
+Each in its own terminal, in this order:
+
+```bash
+pixi run ros2 launch robot_bringup lift_homing.launch.py      # wait for "Homing Successful"
+pixi run ros2 launch robot_bringup real_omnibot.launch.py use_zed:=false use_rviz:=false
+pixi run ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=real_robot base_mode:=fixed
+pixi run ros2 launch openarm_bimanual_commander_cpp commander.launch.py base_mode:=fixed
+```
+
+- `use_zed:=false`: this workspace has no ZED wrapper, and nothing here needs
+  the camera.
+- `use_rviz:=false`: the RViz with **MotionPlanning** comes from
+  `moveit_only.launch.py`, see [Open RViz on the robot's desktop](#rviz-on-the-desktop).
+
+Move the arms as in [Move the arms in RViz](manipulation.md#move-the-arms-in-rviz).
+Try `rest_pose` on `left_arm` first, then on `both_arms_lift`. Look at the
+planned path before you click **Execute**. The hand target does nothing in this
+stage: `base_mode:=fixed` refuses whole-body goals.
+
+!!! warning "The lift ignores the plan's timing and cannot be canceled"
+    The lift node drives to the plan's last height at its own speed, so the arm
+    and the lift do not move in step as planned. It rejects a cancel: a stop
+    halts the arms and the base, and the lift finishes its move. Groups without
+    `_lift` leave the lift where it is.
+
+## Real whole body { #real-whole-body }
+
+Keep `lift_homing.launch.py` and `real_omnibot.launch.py` running. Stop MoveIt and
+the commander, then start these in order:
+
+```bash
+pixi run ros2 launch robot_bringup whole_body_real.launch.py
+pixi run ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=real_robot base_mode:=whole_body
+pixi run ros2 launch openarm_bimanual_commander_cpp commander.launch.py base_mode:=whole_body
+```
+
+`whole_body_real.launch.py` starts what the base needs: an identity `map` to
+`odom` transform, the collision monitor with the real Nav2 parameters, the base
+follower, and the hand target. `moveit_only.launch.py` waits for `map` to
+`base_footprint`, so it comes second.
+
+Before the first goal:
+
+- `pixi run ros2 lifecycle get /collision_monitor` prints `active`.
+- `pixi run ros2 topic hz /scan` and `pixi run ros2 topic hz /unilidar/cloud/filtered`
+  show messages. Without either one, the collision monitor stops every base
+  command.
+- At least 1.5 m of free floor around the robot, and no table or shelf within
+  reach. Without the ZED, MoveIt sees no obstacles. Only the collision monitor
+  protects the base, from the two lidars.
+- The plans that move the base run slowly:
+
+    ```bash
+    pixi run ros2 param set /bimanual_commander whole_body_velocity_scaling 0.3
+    pixi run ros2 param set /bimanual_commander whole_body_acceleration_scaling 0.3
+    ```
+
+Then, with the hand target (the RViz fixed frame is `map`):
+
+1. Right-click the box, pick **Snap to left hand**, drag the box 5 cm, and pick
+   **Reach with left arm**. The status reads
+   `whole_body_left: done: Success (base fixed)`, so the arm reached the target
+   alone.
+2. Drag the box about 0.3 m further forward and pick **Reach with left arm**
+   again. The base drives, and the lift and the arm follow.
+3. Pick **Cancel goal** during a motion. The base and the arm stop, the lift does
+   not.
+
+??? info "What this stage relies on"
+    - **Odometry:** the omni controller computes odometry from its commands
+      (`open_loop: true` in `real_controllers.yaml`), and `map` to `odom` is a
+      fixed identity. So `map` to `base_footprint` is where the base was sent,
+      not where it is, and a slipping wheel goes unnoticed. With a map of the
+      room, run `localization_Nav2_real.launch.py`, set the initial pose in RViz,
+      and start `whole_body_real.launch.py static_map_odom:=false collision_monitor:=false`.
+      Nav2 then runs its own collision monitor, which publishes no state, so the
+      follower notices a stop only as a stall, after about 0.5 s.
+    - **Velocity path:** the follower publishes on `/cmd_vel_smoothed`, the
+      collision monitor passes it to `/cmd_vel_nav`, and `twist_mux` forwards it
+      to the omni controller. The follower stops for the reasons in
+      [Why the follower stops](manipulation.md#why-the-follower-stops).
+    - **Collision monitor parameters:** `nav2_mppi_walkie_params.yaml` uses YAML
+      anchors, which `--params-file` rejects. The launch file reads it through
+      `RewrittenYaml`, as Nav2's launch files do, and sets `state_topic` to
+      `/collision_monitor_state` so that the follower sees a stop at once. The
+      monitor has its own lifecycle manager, `lifecycle_manager_whole_body`.
+
+## Open RViz on the robot's desktop { #rviz-on-the-desktop }
+
+The robot computer runs a KDE Plasma desktop on Wayland, and RViz opens on it
+through XWayland. Start the commands from a terminal on that desktop.
+
+Over ssh, with someone logged in on the desktop, run this in the terminal that
+starts RViz (`moveit_only.launch.py` or the rehearsal) before the launch command:
+
+```bash
+export DISPLAY=:0 XAUTHORITY=$(ls /run/user/$(id -u)/xauth_* | head -n 1)
+```
+
+The name of the `xauth_*` file changes at each login.
+
+## Stop safely { #stop-safely }
+
+In an emergency, cut the power. Ctrl-C on MoveIt or the commander does not stop
+the lift, and Ctrl-C on `real_omnibot.launch.py` turns off the arm motors, so the
+arms drop.
+
+Otherwise, in this order:
+
+1. End the running goal: **Cancel goal** on the hand target, or **Stop** in
+   **MotionPlanning**. Wait for the lift to finish its move.
+2. Let both arms hang: **Planning Group** `both_arms_lift`, **Goal State**
+   `home`, **Plan** and **Execute**. `home` needs the lift at 0.50 m or higher,
+   and `both_arms_lift` raises it to 0.744 m.
+3. Ctrl-C the commander, `moveit_only.launch.py`, and `whole_body_real.launch.py`.
+4. Ctrl-C `real_omnibot.launch.py`. The arm motors turn off.
+5. Ctrl-C `lift_homing.launch.py`. It takes `can2`, which the wheels share, down
+   on exit, so it goes after the base.
+6. Ctrl-C the router.
+
+## Do not run at the same time { #do-not-run-together }
+
+| Do not run | Why |
+| --- | --- |
+| The team bringup from `~/Project/robocup_ros_ws`, in any domain | It drives the same CAN buses: `can0` and `can1` for the arms, `can2` for the wheels and the lift. A ROS domain or a router does not separate CAN. |
+| A second `lift_homing.launch.py` | It resets `can2` at start and takes it down at exit |
+| A second MoveIt or commander in domain 77 | Both drive the same controllers. The hand target refuses to send goals while two commanders run. |
+| `moveit_demo.launch.py hardware_type:=real_robot` | It spawns its own `lift_controller`, which clashes with the lift node's action server |
+| The MuJoCo rehearsal during stages 2 and 3 | It runs its own controllers and base follower in domain 77 |
+| Joystick or keyboard teleop in domain 77 during a whole-body goal | `twist_mux` puts them above the follower, and they bypass the collision monitor |
+| Nav2 next to `whole_body_real.launch.py` with its defaults | Both start a `collision_monitor`. Pass `static_map_odom:=false collision_monitor:=false`, see [Real whole body](#real-whole-body). |
+
+## What has not been verified { #not-verified }
+
+As of 2026-11-19:
+
+- No whole-body goal and no `rest_pose` has run on the real robot.
+- Stage 3 ran end to end only with MuJoCo in place of the hardware:
+  `mujoco_omnibot.launch.py` with `whole_body_real.launch.py`, the real Nav2
+  parameters, and the demo client. See
+  [Migration 7: A first run on the real robot](../migrations/07-whole-body-moveit.md#a-first-run-on-the-real-robot).
+- `real_omnibot.launch.py` has not been started from this workspace.
+- The rehearsal ran on the robot computer without windows. RViz has not been
+  opened on its desktop.
+- How the arms and the lift behave when their motors turn off.

@@ -81,6 +81,7 @@ nav:
       - MuJoCo Simulation: guides/simulation-mujoco.md
       - Navigation: guides/navigation.md
       - Manipulation: guides/manipulation.md
+      - Whole-Body MoveIt on the Real Robot: guides/whole-body-real-robot.md
       - Perception: guides/perception.md
       - Real Robot: guides/real-robot.md
       - Tests: guides/testing.md

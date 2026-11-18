@@ -27,7 +27,8 @@ pulling. For day-to-day use, read
   is now solved by IK first, and can end in a different arm configuration than before
   (added 2026-11-14, `ik_first_enable` turns it off, see
   [IK first for arm pose goals](#ik-first-for-arm-pose-goals)). Whole-body goals have not
-  run on the real robot, so keep `base_mode:=fixed` there.
+  run on the real robot. Keep `base_mode:=fixed` there, except for a supervised first run
+  that follows [Whole-Body MoveIt on the Real Robot](../guides/whole-body-real-robot.md).
 - **Added 2026-11-16:** weights that rank the sampled base poses of a whole-body goal, a
   rest posture, and a hand target to drag in RViz. The defaults pick the same base pose
   as before. See
@@ -38,6 +39,9 @@ pulling. For day-to-day use, read
   `whole_body_weight_rest` to 0.0 and `whole_body_rest_state` to `home` for the old
   behaviour. See
   [A rest pose by default](#a-rest-pose-by-default).
+- **Added 2026-11-19:** `whole_body_real.launch.py` starts the base side of
+  `base_mode:=whole_body` on the real robot, and a guide walks through a first run there.
+  See [A first run on the real robot](#a-first-run-on-the-real-robot).
 - **Result:** the MuJoCo demo passed all ten steps in the last run here and in six runs of
   three independent checks, and the launch tests pass ([Verification](#verification)). A
   collision monitor stop missed its 0.5 s target in four of seven runs, by up to 0.09 s of
@@ -420,11 +424,43 @@ fell by 11 percent, for 9 cm more base travel and about 1.1 s more planning per 
     With the other arm in `hands_up` or `standby`, `rest_pose` was free at every checked
     lift from 0.2 m up. At a lift of 0, link4 hits `base_link`, as it does in `hands_up`.
 
+## A first run on the real robot
+
+Added 2026-11-19. `bringup/launch/whole_body_real.launch.py` starts what
+`base_mode:=whole_body` needs on top of `real_omnibot.launch.py`, apart from `move_group`
+and the commander:
+
+- an identity `map` to `odom` transform (`static_map_odom:=true`),
+- the collision monitor with the real Nav2 parameters, and its own lifecycle manager,
+  `lifecycle_manager_whole_body` (`collision_monitor:=true`),
+- `whole_body_base_follower`,
+- `whole_body_marker`, the hand target (`use_marker:=true`).
+
+The steps of a first run, from a rehearsal in MuJoCo to the whole robot, are in
+[Whole-Body MoveIt on the Real Robot](../guides/whole-body-real-robot.md).
+
+??? info "Why a launch file, and why these choices"
+    - **YAML anchors.** `nav2_mppi_walkie_params.yaml` uses anchors. `ros2 run` with
+      `--params-file` aborts on them (`Will not support aliasing`), so the monitor reads
+      the file through `nav2_common`'s `RewrittenYaml`, as Nav2's launch files do.
+    - **`state_topic`.** The real parameters leave it empty, so the monitor publishes no
+      state. The launch file sets it to `/collision_monitor_state`, and the follower stops
+      at the monitor's first stop instead of after its 0.5 s stall check.
+    - **Static `map` to `odom`.** `moveit_only.launch.py` waits for `map` to
+      `base_footprint`, and a first run needs no map. The omni controller's odometry is
+      open loop (`open_loop: true`), so `map` to `base_footprint` is where the base was
+      sent, not where it is. With a map, AMCL replaces the static transform:
+      `static_map_odom:=false collision_monitor:=false` next to
+      `localization_Nav2_real.launch.py`. Nav2's own monitor publishes no state, so the
+      follower then notices a stop through its stall check only.
+    - **A lifecycle manager of its own.** `lifecycle_manager_nav2` belongs to the Nav2
+      launch files. A second manager under that name would clash with it.
+
 ## CI
 
 `openarm_bimanual_commander_cpp` joins the tested packages. Its launch tests add about 11
 minutes to the **Test** step, and they use the router that CI already starts. These tests
-have not run in CI yet, because the branch has not been pushed. They are timing-sensitive
+have not run in CI yet, because no pull request has been opened for the branch. They are timing-sensitive
 in places, so a slower runner may show problems that this laptop did not.
 
 ## Verification
@@ -583,6 +619,17 @@ Checked on 2026-11-17 on the same laptop, for the changes in
 | Demo, one fresh run with the new defaults | Passed every step. `near_body` reported `base fixed` with no base command. `far_body` drove the base 1.12 m and turned it 0.66 rad. Largest tip error 14.6 mm. The collision monitor only slowed the base, it never stopped it. Report in `~/.cache/walkie-plan-fullbody/demo_rest_pose.json`. |
 | `pixi run docs-build` | Builds without warnings |
 
+### The real-robot launch file { #verification-real-robot-launch }
+
+Checked on 2026-11-19, each time on a private Zenoh router (`localhost:7499`) in domain 77.
+No real hardware moved.
+
+| Check | Result |
+| --- | --- |
+| `whole_body_real.launch.py` with MuJoCo in place of the hardware, on the laptop | `mujoco_omnibot.launch.py` with `scene_whole_body.xml` and no Nav2, then `whole_body_real.launch.py use_sim_time:=true`, `moveit_only.launch.py hardware_type:=mujoco base_mode:=whole_body`, and the commander. The monitor came up `active` with the real parameters. `/collision_monitor_state` had one publisher and one subscriber, the follower. The demo passed all nine steps. The base drove 1.05 m in `far_body` and 1.09 m in `seam_cross`, largest tip error 15.0 mm. The monitor slowed the base four times (`PolygonSlow`) and never stopped it. Report in `~/.cache/walkie-plan-fullbody/demo_real_chain.json`. |
+| A fresh clone on the robot computer | Built all 74 packages in 16 min 11 s. `whole_body_demo.launch.py headless:=true` and the demo client passed all nine steps in 2 min 1 s, largest tip error 16.3 mm. Report in `~/.cache/walkie-plan-fullbody/demo_robot_computer.json`. |
+| `ros2 run nav2_collision_monitor collision_monitor --params-file nav2_mppi_walkie_params.yaml` | Aborts with `Will not support aliasing at line 173`, which is why the launch file exists |
+
 ## Commits
 
 To be listed once the branch lands.
@@ -625,9 +672,10 @@ Known limits:
   first attempt needs an exact IK solution. In the second MuJoCo check, the target
   (0.45, 0.25, 1.00) in `base_footprint` moved it by 7.5 cm. Callers who need the base to
   stay still use an arm group.
-- The real-robot Nav2 parameters set no `state_topic`, so the follower would not see a
-  collision monitor stop there. The real lift has its own driver, which does not accept a
-  cancel.
+- The collision monitor that `localization_Nav2_real.launch.py` starts publishes no state,
+  so with Nav2 on the real robot the follower notices a stop through its stall check only.
+  `whole_body_real.launch.py` sets `state_topic` for its own monitor. The real lift has its
+  own driver, which rejects a cancel and drives to the plan's last height at its own speed.
 - The demo's `table_clearance_m` and `deep_column_gap_m` ignore the base heading, so they are
   only rough numbers. `table_clearance_m` was 0.14 m in one run and -0.02 m in the run before
   it. No contact was seen, but the box pose is not recorded.

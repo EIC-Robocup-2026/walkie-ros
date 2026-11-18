@@ -230,6 +230,8 @@ Then start each step in its own terminal, in this order:
   the same value as in `real_omnibot.launch.py`.
 - `base_mode:=fixed` is the default. Give steps 5 and 6 the same value. Whole-body
   goals are [not tested on the real robot](manipulation.md#whole-body-goals) yet.
+  For a first run, follow
+  [Whole-Body MoveIt on the Real Robot](whole-body-real-robot.md).
 - Under pixi, step 3 stops with `package not found`. See
   [Packages that pixi does not provide](#packages-that-pixi-does-not-provide).
 - Step 4 is ready when `lifecycle_manager_nav2` logs `Managed nodes are active`.

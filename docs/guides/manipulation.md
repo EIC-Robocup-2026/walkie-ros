@@ -347,6 +347,8 @@ command the base.
 !!! warning "Tested in MuJoCo only"
     No whole-body goal has run on the real robot. The default, `base_mode:=fixed`,
     refuses these goals, so the option stays off until a launch command turns it on.
+    For a first run on the robot, follow
+    [Whole-Body MoveIt on the Real Robot](whole-body-real-robot.md).
 
 Run the demo in two terminals:
 
@@ -903,7 +905,7 @@ and `max_acceleration_scaling_factor`. The base limits are `virtual_joint/*` in
     | `start_position_tolerance`, `start_yaw_tolerance` | `0.05`, `0.1` | Largest difference to the plan's start. A larger one rejects the goal. |
     | `goal_position_tolerance`, `goal_yaw_tolerance` | `0.02`, `0.03` | Tolerance at the end of the plan |
     | `cmd_topic` | `/cmd_vel_smoothed` | Output |
-    | `monitor_state_topic` | `/collision_monitor_state` | Collision monitor state. `nav_mujoco_omnibot.launch.py` turns it on; the real-robot Nav2 parameters do not set `state_topic` yet. |
+    | `monitor_state_topic` | `/collision_monitor_state` | Collision monitor state. `nav_mujoco_omnibot.launch.py` and `whole_body_real.launch.py` set the monitor's `state_topic` to it. The monitor that `localization_Nav2_real.launch.py` starts publishes no state. |
     | `commander_topic` | `/whole_body/commander_alive` | Commander heartbeat, `std_msgs/Bool` at 5 Hz of wall time, plus one beat as a whole-body goal starts executing. `data` is true while a whole-body goal executes, including one the arm reaches alone. Arm-group goals leave it false. |
     | `commander_timeout` | `2.0` | Wall seconds without a heartbeat before the follower stops. At 0.12 m/s the base can travel about 24 cm in that time. |
     | `stall_time` | `0.5` | Window of the stall check, in seconds between `map` to `base_footprint` stamps. A transform that stops updating is reported as stale, not as a stalled base. |
@@ -1478,7 +1480,7 @@ goal states by IK from random seeds, and many of those solutions put the lift be
 | --- | --- | --- |
 | `moveit_demo.launch.py` does not start the MuJoCo simulator (`mujoco_ros2_control`) | With `hardware_type:=mujoco`, `moveit_demo.launch.py` starts no `ros2_control_node`. The spawners have no timeout and wait forever | Use `whole_body_demo.launch.py` in `robot_bringup`, or start `mujoco_omnibot.launch.py` ([MuJoCo Simulation: Run with ROS 2](simulation-mujoco.md#run-with-ros-2)) and then `moveit_only.launch.py hardware_type:=mujoco` |
 | MoveIt in MuJoCo is tested only with `base_mode:=whole_body` | `hardware_type:=mujoco` with `base_mode:=fixed` starts no octomap, and nobody has run it | Use `base_mode:=whole_body` in MuJoCo |
-| Whole-body goals have not run on the real robot | The follower, the octomap in `map`, and the repairs are tested only against MuJoCo and a stub. The real lift has its own driver, and the real-robot Nav2 parameters set no `state_topic`, so the follower would not see a collision monitor stop | Keep `base_mode:=fixed` on the real robot |
+| Whole-body goals have not run on the real robot | The follower, the octomap in `map`, and the repairs are tested only against MuJoCo and a stub. The real lift has its own driver, which ignores the plan's timing and rejects a cancel | Keep `base_mode:=fixed` on the real robot, except for a supervised run that follows [Whole-Body MoveIt on the Real Robot](whole-body-real-robot.md) |
 | The idle arm limits a whole-body goal | A whole-body goal never moves the other arm. In the home pose that arm hangs down to 0.61 m in front of the base: it keeps the column about 0.2 m from a table edge, and its fingers reach the base at a lift position of about 0.495 m. Targets deep on a table, or that need a lower lift, fail. | Send the idle arm to `standby` first, see [Clear the idle arm](#clear-the-idle-arm) |
 | A second collision box on the column blocks approaches from the right | Besides the column box, `base_link` in `base.urdf.xacro` has a box at x -0.10 to -0.04 m, y -0.23 to 0 m, z 0.33 to 1.37 m in `base_footprint`. It sticks out 0.13 m past the column's right side, and no hardware part matching it is known. A whole-body goal that turns the right side of the robot toward a table keeps the column up to 0.13 m further away | Ask whoever added it to the description before removing it |
 | The description has no `isaac` ros2_control block | With `hardware_type:=isaac` the URDF has no hardware, so no controller starts | None in this repository |

@@ -12,6 +12,7 @@ workspace is built.
 | [MuJoCo Simulation](simulation-mujoco.md) | The MuJoCo model, the viewer, custom worlds, and the ROS 2 launch files, with or without Nav2 |
 | [Navigation](navigation.md) | Nav2, localization, mapping, and the lidar pipeline |
 | [Manipulation](manipulation.md) | MoveIt and the commander for the bimanual OpenArm and the lift |
+| [Whole-Body MoveIt on the Real Robot](whole-body-real-robot.md) | A first run of whole-body goals on the robot from RViz: rehearsal, arms only, whole body, and a safe stop |
 | [Perception](perception.md) | Object detection, 3D poses, and grasp poses |
 | [Real Robot](real-robot.md) | Device setup, lift homing, and bringup on the physical robot |
 | [Tests](testing.md) | Running the test suites and what they check |
