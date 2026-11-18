@@ -123,8 +123,15 @@ domain 77.
 - The team stack is not running. This prints nothing:
 
     ```bash
-    pgrep -af "ros2_control_node|lift_homing_node|move_group|commander|whole_body"
+    pgrep -af "ros2_control_node|lift_homing_node|move_group|openarm_bimanual_commander_cpp|whole_body"
     ```
+
+    It also catches a bringup started from the team's walkie-commander web UI,
+    whose saved commands launch `lift_homing.launch.py` and
+    `real_omnibot.launch.py`. If it prints anything, agree with the team before
+    you stop it. Never stop the web UI itself
+    (`walkie-commander/.venv/bin/python main.py`): it runs the team router on
+    port 7447.
 
 - Each CAN name sits on the right adapter and is up:
 
@@ -145,8 +152,24 @@ domain 77.
     lift (1 Mbit/s). Do not start `lift_homing.launch.py` or
     `real_omnibot.launch.py` while the output differs. Both open their bus by
     name, so with swapped names the lift and the wheels talk on an arm bus, and
-    an arm on the wheel bus. When only the last column differs, see
-    [Real Robot: Set up the devices](real-robot.md#device-setup).
+    an arm on the wheel bus.
+
+    When the drivers and the `dev_id`s match and only the last column says
+    `down`, bring that bus up by hand and run the check again. `can2` is down
+    after every exit of the lift node, which takes it down on exit. With the
+    motor power off, run only the line for each bus that shows `down`:
+
+    ```bash
+    sudo ip link set can0 up type can bitrate 1000000 dbitrate 5000000 fd on   # right arm, PCAN channel 0
+    sudo ip link set can1 up type can bitrate 1000000 dbitrate 5000000 fd on   # left arm, PCAN channel 1
+    sudo ip link set can2 up type can bitrate 1000000                          # wheels and lift, candleLight
+    ```
+
+    On a bus that is already up, the line fails with `Device or resource busy`.
+    Do not run the device setup from
+    [Real Robot: Set up the devices](real-robot.md#device-setup) for a bus that
+    is only down: it rewrites the `.link` files and asks for replugs. Keep it for
+    an interface that is missing.
 
 - When a driver or a `dev_id` differs, fix the names at the robot, with nothing
   running on the buses. These steps have not been tried yet:
@@ -172,6 +195,9 @@ domain 77.
   drives the lift down for 3 s, then up to its upper hard stop. When the arm
   hardware activates, every arm joint is commanded to 0 rad at once, then the
   arms go to `home` over 5 s.
+- No hand is near the head or its ZED. `real_omnibot.launch.py` drives the head's
+  Dynamixel (`/dev/ttyDynamixel`) and tilts the head to 0.25 rad shortly after
+  it starts. Ctrl-C on it turns off the head's torque, so the head can drop.
 - The grippers are empty, and no hand is near them or the arm joints. The
   grippers close when the arm hardware activates.
 - No joystick or keyboard teleop runs in domain 77, in this stage or the next.
@@ -189,12 +215,16 @@ domain 77.
 Each in its own terminal, in this order:
 
 ```bash
-pixi run ros2 launch robot_bringup lift_homing.launch.py      # wait for "Homing Successful"
+sudo -v && pixi run ros2 launch robot_bringup lift_homing.launch.py      # wait for "Homing Successful"
 pixi run ros2 launch robot_bringup real_omnibot.launch.py use_zed:=false use_rviz:=false use_rosbridge:=false
 pixi run ros2 launch openarm_bimanual_moveit_config moveit_only.launch.py hardware_type:=real_robot base_mode:=fixed
 pixi run ros2 launch openarm_bimanual_commander_cpp commander.launch.py base_mode:=fixed
 ```
 
+- `sudo -v`: the lift node runs `sudo ip link` itself to reset `can2`. Without a
+  password cached in that terminal, it stops at a `[sudo] password` prompt
+  buried in the launch output, and homing starts whenever the password goes in.
+  `sudo -v` asks for it first.
 - `use_zed:=false`: this workspace has no ZED wrapper, and nothing here needs
   the camera.
 - `use_rosbridge:=false`: rosbridge listens on port 9090 on every network
@@ -342,8 +372,8 @@ The name of the `xauth_*` file changes at each login.
 ## Stop safely { #stop-safely }
 
 In an emergency, cut the power. Ctrl-C on MoveIt or the commander does not stop
-the lift, and Ctrl-C on `real_omnibot.launch.py` turns off the arm motors, so the
-arms drop.
+the lift, and Ctrl-C on `real_omnibot.launch.py` turns off the arm motors and
+the head's torque, so the arms and the head drop.
 
 Otherwise, in this order:
 
@@ -362,10 +392,15 @@ Otherwise, in this order:
    **Goal State** `home`, **Plan** and **Execute**. `home` needs the lift at
    0.50 m or higher, or the fingers hit the base. Wait until the arms are still.
 4. Ctrl-C the commander, `moveit_only.launch.py`, and `whole_body_real.launch.py`.
-5. Ctrl-C `real_omnibot.launch.py`. The arm motors turn off.
+5. Ctrl-C `real_omnibot.launch.py`. The arm motors and the head's torque turn
+   off.
 6. Ctrl-C `lift_homing.launch.py`. It takes `can2`, which the wheels share, down
-   on exit, so it goes after the base.
+   on exit, so it goes after the base. It runs `sudo` for that, so it may ask
+   for the password again in its terminal.
 7. Ctrl-C the router.
+8. Close all of these terminals. They export `ZENOH_CONFIG_OVERRIDE`, which
+   points ROS at the private router, and a later run started from one of them,
+   such as the agent stack, would inherit it.
 
 ## Do not run at the same time { #do-not-run-together }
 
@@ -400,4 +435,4 @@ As of 2026-11-19:
   [Before you power the arms](#before-power), has not been tried.
 - The rehearsal ran on the robot computer without windows. RViz has not been
   opened on its desktop.
-- How the arms and the lift behave when their motors turn off.
+- How the arms, the head, and the lift behave when their motors turn off.
