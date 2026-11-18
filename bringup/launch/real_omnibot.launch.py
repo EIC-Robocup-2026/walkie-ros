@@ -640,6 +640,12 @@ def generate_launch_description():
         condition=IfCondition(use_zed),
     )
 
+    declare_use_rosbridge = DeclareLaunchArgument(
+        "use_rosbridge",
+        default_value="true",
+        description="Start the rosbridge WebSocket server on port 9090. Any client on the "
+        "network can then publish into this ROS graph, velocity commands included.",
+    )
     rosbridge_launch = IncludeLaunchDescription(
         AnyLaunchDescriptionSource(
             os.path.join(
@@ -649,6 +655,7 @@ def generate_launch_description():
         launch_arguments={
             "delay_between_messages": "0.0",
         }.items(),
+        condition=IfCondition(LaunchConfiguration("use_rosbridge")),
     )
 
     foxgloveBridge_cmd = Node(
@@ -732,6 +739,7 @@ def generate_launch_description():
     ld.add_action(declare_use_head_beep)
     ld.add_action(declare_unitree_cloud_frame)
     ld.add_action(declare_unitree_imu_frame)
+    ld.add_action(declare_use_rosbridge)
     ld.add_action(robot_state_publisher_cmd)
     ld.add_action(twist_mux)
     ld.add_action(controller_manager_spawner)

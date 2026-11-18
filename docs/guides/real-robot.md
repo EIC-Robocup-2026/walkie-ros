@@ -434,6 +434,7 @@ pixi run ros2 launch robot_bringup real_omnibot.launch.py use_zed:=false use_rvi
     | --- | --- | --- |
     | `use_zed_watchdog` | `true` | Run the ZED under `zed_watchdog.py` instead of launching it directly |
     | `use_head_beep` | `true` | Start the head touch beep node |
+    | `use_rosbridge` | `true` | Start the rosbridge WebSocket server on port 9090. Any client on the network can publish through it, velocity commands included. |
     | `left_can_interface` | `can1` | CAN interface of the left arm |
     | `right_can_interface` | `can0` | CAN interface of the right arm |
     | `unitree_cloud_frame` | `unitree4d_l2_imu_initial` | Frame of the Unitree point cloud |
