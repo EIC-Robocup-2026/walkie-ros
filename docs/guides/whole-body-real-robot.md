@@ -143,8 +143,8 @@ domain 77.
 - Someone keeps a hand on the power switch.
 - `right_joint2_fixed` has the same value for `real_omnibot.launch.py` and
   `moveit_only.launch.py`. Both default to `false`. If the right arm's joint 2 is
-  locked, pass `right_joint2_fixed:=true` to both, and send whole-body goals to
-  the left arm only: `commander.launch.py` has no such argument, and
+  locked, pass `right_joint2_fixed:=true` to both, and in stage 3 send
+  whole-body goals to the left arm only: `commander.launch.py` has no such argument, and
   `whole_body_right` with a locked joint 2 is untested.
 
 ### Start { #start-fixed }
@@ -264,8 +264,8 @@ Then, with the hand target (the RViz fixed frame is `map`):
    again. The base may drive: the status then ends in `(base travel ... m)`, and
    in `(base fixed)` when the arm and the lift reach it from where the robot
    stands.
-3. Pick **Cancel goal** during a motion. The base and the arm stop, the lift does
-   not.
+3. Pick **Cancel goal** during a motion. The base, the lift, and the arm must
+   stop.
 
 ??? info "What this stage relies on"
     - **Odometry:** the omni controller computes odometry from its commands
