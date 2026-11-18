@@ -83,6 +83,7 @@ in `scripts/setup_device/` conflict with it (see [Known issues](#known-issues)).
     ```bash
     sudo ip link set can2 up type can bitrate 1000000
     sudo ip link set can0 up type can bitrate 1000000 dbitrate 5000000 fd on
+    sudo ip link set can1 up type can bitrate 1000000 dbitrate 5000000 fd on
     ```
 
 ### ZED USB reset rule
