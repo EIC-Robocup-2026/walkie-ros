@@ -13,6 +13,11 @@ right-click menu (whole_body_marker, started with use_rviz:=true).
 
 map -> odom comes from ground truth, because the omni controller's odometry reports
 commands and not wheel motion. A real robot needs AMCL there.
+
+With world:=NAME (and optionally variant, spawn or spawn_pose), the named MuJoCo
+world replaces the obstacle scene, and Nav2 serves the world's map. map -> odom
+still comes from ground truth and AMCL does not run: the world loader writes the
+spawn's map X and Y into the MuJoCo world frame, so the two frames coincide.
 """
 import os
 
@@ -22,6 +27,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     GroupAction,
     IncludeLaunchDescription,
+    OpaqueFunction,
     RegisterEventHandler,
 )
 from launch.conditions import IfCondition
@@ -29,6 +35,32 @@ from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from robot_bringup.mujoco_launch import WORLD_ARGUMENTS, declare_world_arguments
+
+
+def _simulation(context, *, nav_launch, default_model, nav_default_model):
+    """Include the MuJoCo and Nav2 launch with the obstacle scene or a named world."""
+    world = LaunchConfiguration("world").perform(context).strip()
+    mujoco_model = LaunchConfiguration("mujoco_model").perform(context)
+    if world and mujoco_model.strip() != default_model:
+        raise ValueError(f"world:={world} supplies mujoco_model; do not also set mujoco_model")
+    arguments = {name: LaunchConfiguration(name) for name in WORLD_ARGUMENTS}
+    arguments.update({
+        # The group passes this launch's configurations to the include, so with a world
+        # mujoco_model is reset to the include's own default, which a world may replace.
+        "mujoco_model": nav_default_model if world else mujoco_model,
+        "headless": LaunchConfiguration("headless"),
+        "use_rviz": "false",
+        "truth_map_odom": "true",
+    })
+    # An include's launch arguments stay set after it, so without the scope of this group
+    # the use_rviz:=false would also reach the MoveIt include.
+    return [GroupAction([
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(nav_launch),
+            launch_arguments=arguments.items(),
+        )
+    ])]
 
 
 def generate_launch_description():
@@ -37,7 +69,8 @@ def generate_launch_description():
     pkg_moveit = get_package_share_directory("openarm_bimanual_moveit_config")
     pkg_commander = get_package_share_directory("openarm_bimanual_commander_cpp")
 
-    declared_arguments = [
+    default_model = os.path.join(pkg_description, "mujoco", "scene_whole_body.xml")
+    declared_arguments = declare_world_arguments(nav2=True) + [
         DeclareLaunchArgument(
             "headless",
             default_value="false",
@@ -55,8 +88,8 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "mujoco_model",
-            default_value=os.path.join(pkg_description, "mujoco", "scene_whole_body.xml"),
-            description="MJCF scene to load",
+            default_value=default_model,
+            description="MJCF scene to load without world",
         ),
     ]
 
@@ -67,23 +100,11 @@ def generate_launch_description():
         condition=IfCondition(LaunchConfiguration("start_router")),
     )
 
-    # An include's launch arguments stay set after it, so without the scope of this group
-    # the use_rviz:=false below would also reach the MoveIt include.
-    simulation = GroupAction(
-        [
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    os.path.join(pkg_bringup, "launch", "nav_mujoco_omnibot.launch.py")
-                ),
-                launch_arguments={
-                    "mujoco_model": LaunchConfiguration("mujoco_model"),
-                    "headless": LaunchConfiguration("headless"),
-                    "use_rviz": "false",
-                    "truth_map_odom": "true",
-                }.items(),
-            )
-        ]
-    )
+    simulation = OpaqueFunction(function=_simulation, kwargs={
+        "nav_launch": os.path.join(pkg_bringup, "launch", "nav_mujoco_omnibot.launch.py"),
+        "default_model": default_model,
+        "nav_default_model": os.path.join(pkg_description, "mujoco", "scene.xml"),
+    })
 
     moveit = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -93,8 +114,10 @@ def generate_launch_description():
             "hardware_type": "mujoco",
             "base_mode": "whole_body",
             "use_rviz": LaunchConfiguration("use_rviz"),
-            # The table starts 1.55 m from the robot and the wall 3.15 m. Anything out
-            # of range is unknown space, which the planner treats as free.
+            # In the obstacle scene the table starts 1.55 m from the robot and the wall
+            # 3.15 m. Anything out of range is unknown space, which the planner treats
+            # as free. In a named world 3.5 m covers the furniture in the camera's view
+            # of a small room, and a longer range adds voxels to every scene update.
             "planar_octomap_max_range": "3.5",
         }.items(),
     )

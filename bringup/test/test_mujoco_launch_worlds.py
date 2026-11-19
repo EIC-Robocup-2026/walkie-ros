@@ -221,6 +221,51 @@ def test_world_mode_matches_amcl_in_the_given_params_file(prepared_world):
     assert str(prepared_world[0]["nav2_params_source"]) == "/tmp/custom-nav2.yaml"
 
 
+def _demo_navigation(**arguments):
+    """Resolve whole_body_demo and return its context and Nav2 simulation include."""
+    context, actions = _resolve(_load("whole_body_demo"), **arguments)
+    (navigation,) = [
+        include for include in _includes(actions)
+        # Its location is unperformed until the include runs; only this include passes
+        # truth_map_odom.
+        if "truth_map_odom" in {key for key, _ in include.launch_arguments}
+    ]
+    return context, navigation
+
+
+def test_whole_body_demo_keeps_the_obstacle_scene_without_world(prepared_world):
+    context, navigation = _demo_navigation()
+    nav_args = _arguments(navigation, context)
+    assert nav_args["mujoco_model"].endswith("/mujoco/scene_whole_body.xml")
+    assert (nav_args["world"], nav_args["spawn"], nav_args["spawn_pose"]) == ("", "", "")
+    assert nav_args["truth_map_odom"] == "true"
+    assert nav_args["use_rviz"] == "false"
+    nav_context, actions = _resolve(_load("nav_mujoco_omnibot"), **nav_args)
+    assert prepared_world == []
+    assert nav_context.launch_configurations["mujoco_model"] == nav_args["mujoco_model"]
+    assert _executables(actions, nav_context) == ["ground_truth_map_odom.py", "nav_commander.py"]
+
+
+def test_whole_body_demo_passes_a_world_with_ground_truth(prepared_world):
+    context, navigation = _demo_navigation(world="chula_pat14_6", spawn="living-room")
+    nav_args = _arguments(navigation, context)
+    assert nav_args["world"] == "chula_pat14_6"
+    assert nav_args["spawn"] == "living-room"
+    # The Nav2 launch's own default, which the world then replaces.
+    assert nav_args["mujoco_model"].endswith("/mujoco/scene.xml")
+    nav_context, actions = _resolve(_load("nav_mujoco_omnibot"), **nav_args)
+    assert len(prepared_world) == 1
+    assert prepared_world[0]["spawn"] == "living-room"
+    assert nav_context.launch_configurations["mujoco_model"] == PREPARED["model_path"]
+    assert nav_context.launch_configurations["use_localization"] == "False"
+    assert _executables(actions, nav_context) == ["ground_truth_map_odom.py", "nav_commander.py"]
+
+
+def test_whole_body_demo_rejects_a_world_with_a_model(prepared_world):
+    with pytest.raises(ValueError, match="supplies mujoco_model"):
+        _demo_navigation(world="chula_pat14_6", mujoco_model="/tmp/custom.xml")
+
+
 def test_simulator_only_needs_no_navigation_package(prepared_world, monkeypatch):
     find = ament_index_python.packages.get_package_share_directory
 
