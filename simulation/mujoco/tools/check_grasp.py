@@ -274,9 +274,10 @@ def main(argv=None) -> int:
                         help="Hand distance ahead of the base in m (default: %(default)s)")
     parser.add_argument("--hand-y", type=float, default=-0.25,
                         help="Hand offset to the base's left in m (default: %(default)s)")
-    parser.add_argument("--depth", type=float, default=0.08,
+    parser.add_argument("--depth", type=float, default=0.06,
                         help="Object origin along the approach axis from the hand frame in m, "
-                             "0.08 is the hand's TCP (default: %(default)s)")
+                             "as in bringup/scripts/sim_bottle_pick.py; the hand's TCP is "
+                             "at 0.08 (default: %(default)s)")
     parser.add_argument("--camera-down", dest="camera_up", action="store_false",
                         help="Point the wrist camera bracket down instead of up")
     parser.add_argument("--lift", type=float, default=0.10,
@@ -300,7 +301,8 @@ def main(argv=None) -> int:
     robot_path = args.robot_mjcf.resolve()
     pose = world_loader.resolve_spawn(args.world, manifest, None, None)
     tree = world_loader.assemble_world(
-        robot_path, directory / manifest["variants"][variant], robot_path.parent / "scene.xml", pose)
+        robot_path, directory / manifest["variants"][variant], robot_path.parent / "scene.xml",
+        pose)
     model = mujoco.MjModel.from_xml_string(ET.tostring(tree, encoding="unicode"))
 
     report = run(model, args)
