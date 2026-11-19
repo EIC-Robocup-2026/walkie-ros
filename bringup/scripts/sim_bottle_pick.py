@@ -75,6 +75,9 @@ TABLE_TOP = 0.75
 # far from it the camera check looks for the bottle.
 HELD_DEPTH = 0.045
 HELD_RADIUS = 0.04
+# Largest distance of the hand frame from its target after a move. The hand ends 0.01 to
+# 0.02 m off in a normal run.
+HAND_TOLERANCE = 0.05
 DEPTH_TOPIC = '/zed_head/zed_node/depth/depth_registered'
 INFO_TOPIC = '/zed_head/zed_node/depth/camera_info'
 COLOR_TOPIC = '/zed_head/zed_node/rgb/color/rect/image'
@@ -451,23 +454,27 @@ def main():
                        'pregrasp': pregrasp.round(4).tolist(), 'grasp': grasp.round(4).tolist(),
                        'base_at_plan': [round(v, 4) for v in base]}
 
-    def hand_report(target):
+    def hand_step(name, ok, status, target, **extra):
+        # The commander reports success when the joint trajectory finishes. If the arm
+        # caught on the table on the way, the hand ends far from the target anyway.
         hand = node.hand_in_map()
-        if hand is None:
-            return {'hand': None, 'hand_error_m': None}
-        return {'hand': hand[0].round(4).tolist(),
-                'hand_error_m': round(float(np.linalg.norm(hand[0] - target)), 4)}
+        error = None if hand is None else float(np.linalg.norm(hand[0] - target))
+        if ok and (error is None or error > HAND_TOLERANCE):
+            ok = False
+            status = f'{status}, but the hand is not at the target'
+        step(name, ok, status, **extra,
+             hand=None if hand is None else hand[0].round(4).tolist(),
+             hand_error_m=None if error is None else round(error, 4))
 
     ok, status = node.move_hand('whole_body_right', pregrasp, rpy, False, 900.0)
-    step('pregrasp', ok, status, base=node.pose_in_map('base_footprint'),
-         **hand_report(pregrasp))
+    hand_step('pregrasp', ok, status, pregrasp, base=node.pose_in_map('base_footprint'))
 
     # The fingers have to enter the bottle's and the table's voxels.
     step('allow_octomap', node.set_commander(allow_gripper_vs_octomap=True),
          'set allow_gripper_vs_octomap true')
     time.sleep(1.0)
     ok, status = node.move_hand('right_arm_lift', grasp, rpy, True, 600.0)
-    step('approach', ok, status, **hand_report(grasp))
+    hand_step('approach', ok, status, grasp)
 
     result, status = node.control_gripper(GRIPPER_CLOSED, 120.0)
     grasped = result is not None and result.grasped
