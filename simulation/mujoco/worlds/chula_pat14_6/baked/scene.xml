@@ -255,9 +255,9 @@
       <freejoint name="task_water_bottle_1_free" />
       <inertial pos="0 0 0" mass="0.4" diaginertia="0.00177666667 0.00177666667 0.000326666667" />
       <geom name="task_water_bottle_1_00" type="mesh" pos="0 0 0" material="chula_water_bottle" mesh="task_water_bottle_1_00_authored_mesh" class="chula_visual" />
-      <geom name="task_water_bottle_1_01" type="cylinder" pos="0 0 -0.036" material="chula_water_bottle" size="0.034 0.074" rgba="0 0 0 0" group="3" />
-      <geom name="task_water_bottle_1_02" type="cylinder" pos="0 0 0.056" material="chula_water_bottle" size="0.022 0.022" rgba="0 0 0 0" group="3" />
-      <geom name="task_water_bottle_1_03" type="cylinder" pos="0 0 0.093" material="chula_water_bottle" size="0.015 0.017" rgba="0 0 0 0" group="3" />
+      <geom name="task_water_bottle_1_01" type="cylinder" pos="0 0 -0.036" material="chula_water_bottle" size="0.034 0.074" rgba="0 0 0 0" group="3" priority="1" solref="0.004 1" solimp="0.99 0.999 0.001" />
+      <geom name="task_water_bottle_1_02" type="cylinder" pos="0 0 0.056" material="chula_water_bottle" size="0.022 0.022" rgba="0 0 0 0" group="3" priority="1" solref="0.004 1" solimp="0.99 0.999 0.001" />
+      <geom name="task_water_bottle_1_03" type="cylinder" pos="0 0 0.093" material="chula_water_bottle" size="0.015 0.017" rgba="0 0 0 0" group="3" priority="1" solref="0.004 1" solimp="0.99 0.999 0.001" />
     </body>
     <body name="task_mug_1" pos="1.43 -5.56 0.802" quat="1 0 0 0" childclass="chula_object">
       <freejoint name="task_mug_1_free" />
@@ -323,9 +323,9 @@
       <freejoint name="task_water_bottle_2_free" />
       <inertial pos="0 0 0" mass="0.4" diaginertia="0.00177666667 0.00177666667 0.000326666667" />
       <geom name="task_water_bottle_2_00" type="mesh" pos="0 0 0" material="chula_water_bottle" mesh="task_water_bottle_1_00_authored_mesh" class="chula_visual" />
-      <geom name="task_water_bottle_2_01" type="cylinder" pos="0 0 -0.036" material="chula_water_bottle" size="0.034 0.074" rgba="0 0 0 0" group="3" />
-      <geom name="task_water_bottle_2_02" type="cylinder" pos="0 0 0.056" material="chula_water_bottle" size="0.022 0.022" rgba="0 0 0 0" group="3" />
-      <geom name="task_water_bottle_2_03" type="cylinder" pos="0 0 0.093" material="chula_water_bottle" size="0.015 0.017" rgba="0 0 0 0" group="3" />
+      <geom name="task_water_bottle_2_01" type="cylinder" pos="0 0 -0.036" material="chula_water_bottle" size="0.034 0.074" rgba="0 0 0 0" group="3" priority="1" solref="0.004 1" solimp="0.99 0.999 0.001" />
+      <geom name="task_water_bottle_2_02" type="cylinder" pos="0 0 0.056" material="chula_water_bottle" size="0.022 0.022" rgba="0 0 0 0" group="3" priority="1" solref="0.004 1" solimp="0.99 0.999 0.001" />
+      <geom name="task_water_bottle_2_03" type="cylinder" pos="0 0 0.093" material="chula_water_bottle" size="0.015 0.017" rgba="0 0 0 0" group="3" priority="1" solref="0.004 1" solimp="0.99 0.999 0.001" />
     </body>
     <body name="task_mug_2" pos="2.715 -1.8 0.472" quat="1 0 0 0" childclass="chula_object">
       <freejoint name="task_mug_2_free" />

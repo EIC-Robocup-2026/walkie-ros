@@ -34,6 +34,11 @@ TV_PARTS = {
 }
 DISH_TEST = {"object": "task_apple_2", "joint": "task_apple_2_free",
              "dish": "task_red_plate_1"}
+# The bottles' colliders carry stiffer contacts than the exporter writes, so the gripper
+# holds them without creeping (simulation/mujoco/tools/check_grasp.py). They are edited
+# by hand in both variants, and a re-export drops them.
+GRIP_OBJECTS = ("task_water_bottle_1", "task_water_bottle_2")
+GRIP_CONTACT = {"priority": 1, "solref": (.004, 1.), "solimp": (.99, .999, .001)}
 BAKED_VARIANT = "baked"
 BAKED_VISUAL = "chula_baked_static_visual"
 # Uncluttered floor points in both rooms, 0.35 m above the floor.
@@ -146,6 +151,22 @@ def baked_checks(model):
     }
 
 
+def grip_contacts(model):
+    """True if every collider of the grip objects has the hand-edited contact settings."""
+    for name in GRIP_OBJECTS:
+        body = model.body(name).id
+        colliders = [geom for geom in range(model.ngeom)
+                     if model.geom_bodyid[geom] == body and model.geom_contype[geom]]
+        if not colliders:
+            return False
+        for geom in colliders:
+            if (model.geom_priority[geom] != GRIP_CONTACT["priority"]
+                    or not np.allclose(model.geom_solref[geom], GRIP_CONTACT["solref"])
+                    or not np.allclose(model.geom_solimp[geom][:3], GRIP_CONTACT["solimp"])):
+                return False
+    return True
+
+
 def scene_checks(world):
     default = world.manifest["default_variant"]
     report = {"variants": {}}
@@ -153,7 +174,8 @@ def scene_checks(world):
         task_objects = [model.body(i).name for i in range(model.nbody)
                         if model.body(i).name.startswith("task_") and model.body_jntnum[i]]
         entry = {"checks": {"twelve_task_objects": len(task_objects) == TASK_OBJECT_COUNT,
-                            "task_objects_share_meshes": model.nmesh == MESH_COUNT}}
+                            "task_objects_share_meshes": model.nmesh == MESH_COUNT,
+                            "bottles_keep_grip_contacts": grip_contacts(model)}}
         if variant == default:
             # The other variants share these colliders (physics parity), but
             # their merged visuals cannot be checked part by part.
