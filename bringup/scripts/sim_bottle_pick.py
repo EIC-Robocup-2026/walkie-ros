@@ -420,8 +420,8 @@ def main():
                 bottle[1] - args.standoff * math.sin(heading)
                 + args.standoff_lateral * math.cos(heading))
         # On a loaded machine the behavior tree can time out waiting for the planner or
-        # the controller to accept a goal and abort the navigation (error codes 207 and
-        # 107). Sending the goal again from where the base stopped recovers from that.
+        # the controller to accept a goal and abort the navigation (error codes 207, 107
+        # and 105). Sending the goal again from where the base stopped recovers from that.
         failures = []
         for _ in range(max(1, args.nav_attempts)):
             ok, status = node.navigate_to(goal[0], goal[1], heading, 900.0)
