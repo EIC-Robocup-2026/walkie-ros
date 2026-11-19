@@ -358,6 +358,8 @@ def main():
                         help='wall seconds to hold the bottle after the lift before the check')
     parser.add_argument('--skip-nav', action='store_true',
                         help='start from where the robot stands')
+    parser.add_argument('--nav-attempts', type=int, default=3,
+                        help='Nav2 goals to send before the drive counts as failed')
     parser.add_argument('--image-prefix',
                         help='save head camera images to PREFIX_before.png and '
                              'PREFIX_after.png')
@@ -414,9 +416,18 @@ def main():
                 - args.standoff_lateral * math.sin(heading),
                 bottle[1] - args.standoff * math.sin(heading)
                 + args.standoff_lateral * math.cos(heading))
-        ok, status = node.navigate_to(goal[0], goal[1], heading, 900.0)
+        # On a loaded machine the behavior tree can time out waiting for the planner or
+        # the controller to accept a goal and abort the navigation (error codes 207 and
+        # 107). Sending the goal again from where the base stopped recovers from that.
+        failures = []
+        for _ in range(max(1, args.nav_attempts)):
+            ok, status = node.navigate_to(goal[0], goal[1], heading, 900.0)
+            if ok:
+                break
+            failures.append(status)
+            node.get_logger().warn(f'navigation failed ({status}), sending the goal again')
         step('navigate', ok, status, goal=[round(v, 3) for v in goal],
-             base=node.pose_in_map('base_footprint'))
+             base=node.pose_in_map('base_footprint'), failed_attempts=failures)
 
     # Seen from the stand-off, before the arm moves in front of the camera.
     time.sleep(2.0)
