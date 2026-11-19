@@ -432,6 +432,84 @@ pixi run ros2 action send_goal /go_to_pose my_robot_interfaces/action/GoToPose \
     `lifecycle_manager_nav2` missed `planner_server`'s bond heartbeat for 4 s under the
     load and restarted Nav2, which came back by itself.
 
+### Pick a bottle in the Chula room { #chula-bottle-pick }
+
+`sim_bottle_pick.py` (package `robot_bringup`) picks the water bottle
+`task_water_bottle_1` from the kitchen table of the
+[Chula Pat14 room](simulation-chula-pat14.md) with the right arm. It reads the
+bottle's pose as the world places it, as if it came from memory. Start the demo launch,
+then the script from the spawn:
+
+```bash
+pixi run ros2 launch robot_bringup whole_body_demo.launch.py world:=chula_pat14_6
+pixi run ros2 run robot_bringup sim_bottle_pick.py --report /tmp/pick.json
+```
+
+| Step | Goal |
+| --- | --- |
+| Open | `/control_gripper`, `right_gripper`, position 0.044 |
+| Drive | Nav2 `/navigate_to_pose` to 0.65 m south and 0.20 m west of the bottle, heading north (yaw +90°): the bottle is ahead and to the right |
+| Tuck | `/go_to_home`, `left_arm` to `standby` |
+| Pre-grasp | `/go_to_pose`, `whole_body_right`, `frame_id: map`: the hand 0.16 m back from the bottle centre along the line from the base to the bottle, at the bottle's centre height, pointing at it, wrist camera up. The base moves only if the arm cannot reach. |
+| Approach | `/go_to_pose`, `right_arm_lift`, `cartesian_path: true`, `frame_id: map`: 0.10 m straight in, to the hand frame 0.06 m from the bottle centre |
+| Close | `/control_gripper`, `right_gripper`, position 0.0; the result's `grasped` must be true |
+| Lift | `/go_to_pose`, `right_arm_lift`, `cartesian_path: true`, `frame_id: map`: 0.10 m straight up |
+| Hold | After 5 s, the finger position must still be in the grasp band, and the head camera must see the bottle above its old top and nothing of it at its old place. If the base turned and the camera no longer sees the table there, the finger alone decides and the report has `bottle_left_table: null` |
+
+The script prints a JSON report and exits non-zero at the first failed step.
+`--image-prefix PREFIX` also saves the head camera's images before and after the pick.
+`--help` lists the other options: the bottle pose, the approach heading, the
+stand-off, the pre-grasp and grasp distances, the grasp height, the lift and the
+number of Nav2 goals to send.
+
+- On a loaded machine, Nav2's behavior tree can time out waiting for the planner or
+  the controller to accept a goal (`Timed out waiting for action server to acknowledge
+  goal request`) and abort the drive, with error code 207, 107 or 105. The script then sends
+  the goal again, up to `--nav-attempts` goals in all (default 3).
+- From the stand-off, the right arm reaches the pre-grasp pose with the base still
+  (`Success (base fixed)`) or after a turn of up to 0.16 rad. In one run it turned
+  the base 0.37 rad, which took the bottle out of the head camera's view. From 0.90 m
+  straight south,
+  the whole-body goal drove the base 0.14 to 0.32 m and planned turns of up to
+  0.7 rad, and in one of eleven runs the collision monitor stopped the turning base
+  (`Execution Failed ... collision monitor stop on polygon VelocityPolygonStop`).
+- The hand's orientation is roll 0, pitch −π/2 and the approach heading plus π. That
+  is the gripper pointing along the approach with the wrist camera bracket up. With
+  pitch +π/2, as in the `whole_body_demo` client, the bracket points down and reaches
+  0.11 m below the hand frame: at the bottle's centre height (0.862 m) that is the
+  table top (0.75 m). Pass `--camera-down` to try it.
+- The approach and the lift use `right_arm_lift`, with the base still: whole-body
+  groups do not take Cartesian paths. The straight-line approach can lower the lift by
+  more than 0.1 m. With the left arm at `home`, its padded fingers then touch the base,
+  and the approach ends with `Planning Failed`: `move_group` logs that the Cartesian
+  path followed only 18 to 82 % of the requested trajectory, and the commander needs
+  over 90 %. The tuck to `standby` prevents that.
+- Before the approach the script sets the commander's `allow_gripper_vs_octomap` to
+  true, because the fingers have to enter the bottle's voxels. It sets it back to false
+  at the end. It keeps `grasp_scene_action` at `none`: the box that `grasp` attaches
+  would start the lift in collision with the table top's voxels.
+- The controller stalls on the bottle, so the close result has `success: false` and
+  `status: Failed`. `grasped` and `gripper_gap` are what tell a hold. In the live runs,
+  the gap settled at 0.013 to 0.014 m, inside the default band of 0.005 to 0.044 m.
+- The bottle's contacts are stiffer than the exported ones, see
+  [Interact with the room](simulation-chula-pat14.md#open-the-door). Without that,
+  the bottle slides down between the fingers at 2 to 3 mm/s.
+- In one run the pre-grasp move most likely caught the fingers on the table's near
+  edge: the hand stopped 0.17 m from its target, level with the table top and 0.07 m
+  short of the edge, and the base, which the commander did not move, was pushed back
+  0.07 m. The trajectory controllers still reported the goal reached, so the commander
+  returned `Success (base fixed)`. The script now fails a move when the hand ends more
+  than 0.05 m from its target.
+
+In 17 runs from a fresh launch with these settings (`headless:=true`, on a loaded
+machine), 13 picks passed with the head camera confirming the bottle off the table.
+Two drives failed before the script sent the goal again; the retry has since recovered
+one. One pick held the bottle, but the base had turned it out of the camera's view.
+One pre-grasp caught on the table. A pass takes about 3.5 minutes of wall time.
+
+The pick picks only once per launch: restart the launch to put the bottle back on
+the table.
+
 ### Drag a hand target in RViz
 
 The demo launch file starts `whole_body_marker`, which shows an orange box with a

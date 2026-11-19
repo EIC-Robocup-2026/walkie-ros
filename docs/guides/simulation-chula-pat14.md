@@ -37,6 +37,7 @@ the log shows `Managed nodes are active`, about 10 s after the start.
 | Send a goal from a terminal | See [Send a goal](#send-a-goal) |
 | Drive the robot by hand | See [Drive by hand](#drive-by-hand) |
 | Run whole-body MoveIt goals in the room (ground truth `map` to `odom`, no AMCL) | `pixi run ros2 launch robot_bringup whole_body_demo.launch.py world:=chula_pat14_6`, see [Manipulation](manipulation.md#whole-body-named-world) |
+| Pick the water bottle on the kitchen table with whole-body MoveIt | `pixi run ros2 run robot_bringup sim_bottle_pick.py` with the line above, see [Manipulation](manipulation.md#chula-bottle-pick) |
 | Check the room offline, without a build | `pixi run world-validate chula_pat14_6 --robot` |
 
 !!! warning "AMCL is 0.1 to 0.2 m off in this room"
@@ -235,6 +236,18 @@ These controls work with both launch files. Robot motion stays under ROS 2 contr
 - **Task objects:** twelve free bodies that you can drag in the viewer or grasp: apples, red
   plates, Pringles cans, chip bags, water bottles and mugs.
 
+!!! note "The water bottles have stiffer contacts than the export"
+    With MuJoCo's default soft contacts, a bottle held by its side slides down between
+    Walkie's fingers at 2 to 3 mm/s, and higher friction or `condim` does not change
+    that. The colliders of `task_water_bottle_1` and `task_water_bottle_2`, in both
+    variants, therefore carry `priority="1" solref="0.004 1"
+    solimp="0.99 0.999 0.001"`. The priority makes a contact take the bottle's settings
+    instead of mixing them with the finger's. With them, the bottle slips 6 mm in 24 s
+    of holding and carrying, in
+    [the offline grasp check](#check-a-grasp). Their mass (0.4 kg) and friction
+    are as exported. The export does not write these attributes, see
+    [Edit and export the room](#edit-and-export-the-room).
+
 ## Where the room files live { #project-locations }
 
 The room is in `simulation/mujoco/worlds/chula_pat14_6/`. The package installs only the
@@ -325,6 +338,12 @@ install it in Blender with **Install from Disk…**, as its README describes.
 7. Restart the launch. For the copy, add `worlds_dir:=/tmp/worlds`.
 8. Commit the `.blend`, the exported `scene.xml` and the changed assets together.
 
+!!! warning "An export drops the bottles' contact settings"
+    The `priority`, `solref` and `solimp` attributes of the water bottles' colliders are
+    edited by hand in `scene.xml` and `baked/scene.xml`. After an export, add them again
+    to the six `task_water_bottle_*` collider geoms of each file. `world-validate` fails
+    `bottles_keep_grip_contacts` until you do.
+
 ??? info "How the bake and the export work"
     - The bake writes a linear HDR lightmap, packed into `baked.blend`, and a
       display-transformed PNG, `scene_assets/chula_baked_lightmap.png`, which MuJoCo reads.
@@ -350,10 +369,36 @@ pixi run world-overlay chula_pat14_6 --check-navigation
 
 | Command | Checks |
 | --- | --- |
-| `world-validate` | Every variant compiles, has one analytic floor plane, finds all its assets, keeps the physics of the default variant and settles without warnings. Every limited hinge reaches both limits. `--robot` also merges each variant with Walkie as the launch does, and checks the start pose and the lidar readings. `authoring/checks.py` adds the plate cavities, the TV assembly, furniture clearances and the baked mesh. |
+| `world-validate` | Every variant compiles, has one analytic floor plane, finds all its assets, keeps the physics of the default variant and settles without warnings. Every limited hinge reaches both limits. `--robot` also merges each variant with Walkie as the launch does, and checks the start pose and the lidar readings. `authoring/checks.py` adds the plate cavities, the TV assembly, furniture clearances, the baked mesh and the bottles' contact settings. |
+| `python simulation/mujoco/tools/check_grasp.py` | Whether the gripper holds a task object through a lift, without ROS. See below. |
 | `world-overlay` | Draws the colliders and spawns over the map, as `map_alignment_<variant>.png`. `--check-navigation` adds a flood fill for a round robot (radius 0.30 m) from the default spawn to the other spawns and waypoints. It shows geometric reachability, not Nav2 behavior. |
 | `pixi run test --packages-select robot_bringup --ctest-args " -LE" linter` | After a build: merges and compiles every installed variant with the installed `walkie.xml`. See [Tests](simulation-mujoco.md#tests). |
 
 Reports and images go to the ignored `simulation/mujoco/output/chula_pat14_6/`. Add
 `--render` to `world-validate` for camera previews; on a machine without a display, run it
 as `MUJOCO_GL=egl pixi run world-validate chula_pat14_6 --render`.
+
+### Check a grasp offline { #check-a-grasp }
+
+```bash
+pixi run python simulation/mujoco/tools/check_grasp.py chula_pat14_6
+```
+
+The check assembles the room with Walkie as the launch does and runs one side grasp in
+MuJoCo alone. IK puts the right hand at the bottle's centre height (0.86 m), 0.45 m ahead
+of the base and 0.25 m to its right, with the gripper level and the wrist camera up. The
+bottle is placed upright between the open fingers, 0.06 m from the hand frame along the
+approach, and held there while the fingers close at the commander's speed
+(0.1 units/s). Then it is released, the lift rises 0.10 m, and the robot holds it for
+22 s more. The check fails if the finger position leaves the commander's grasp band
+(0.005 to 0.044 m), if the bottle does not rise with the hand, or if it slips more than
+0.01 m. It writes `grasp_check_<object>.json`.
+
+| Variant | Finger position after the lift | Bottle rise, of the hand's 0.10 m | Slip |
+| --- | --- | --- | --- |
+| `lowpoly`, `baked` | 0.0125 m | 0.0989 m | 0.0056 m |
+| `lowpoly`, as exported | 0.0109 m | 0.0923 m | 0.0475 m (fails) |
+
+`--object`, `--variant`, `--height`, `--depth`, `--lift` and `--carry` change the
+setup; `--help` lists them all. The check loads its own copy of the world and does not
+touch a running launch.

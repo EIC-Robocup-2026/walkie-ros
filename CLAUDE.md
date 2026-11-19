@@ -37,11 +37,13 @@ pixi run ros2 launch robot_bringup real_omnibot.launch.py         # real robot
 pixi run ros2 launch robot_bringup lift_homing.launch.py [mock:=true]
 pixi run ros2 launch robot_bringup whole_body_demo.launch.py      # MuJoCo + Nav2 + MoveIt with base_mode:=whole_body; starts its own router
 pixi run ros2 run openarm_bimanual_commander_cpp whole_body_demo  # client of that launch; exits non-zero if a step misses its expectation
+pixi run ros2 run robot_bringup sim_bottle_pick.py                # with that launch and world:=chula_pat14_6: Nav2 + whole-body pick of the kitchen bottle; exits non-zero on failure
 
 pixi run mjcf          # regenerate description/mujoco/walkie.xml from the xacro
 pixi run mjcf-view     # open description/mujoco/scene.xml in the MuJoCo viewer
 pixi run world-validate chula_pat14_6 --robot          # check a named world offline (no build)
 pixi run world-overlay chula_pat14_6 --check-navigation # draw it over its map
+pixi run python simulation/mujoco/tools/check_grasp.py chula_pat14_6   # does the gripper hold the bottle through a lift (no ROS)
 ```
 
 Real robot CAN interfaces are set up persistently by `scripts/setup_device/` (udev rules + systemd units): `can2` = CubeMars wheels and the lift motor, `can0`/`can1` = OpenArm (CAN FD). The lift node needs the uv venv in `bringup/` (`pixi run uv venv --python python3.12 --system-site-packages && pixi run uv sync`); `lift_homing.launch.py` adds it to `PYTHONPATH`.
