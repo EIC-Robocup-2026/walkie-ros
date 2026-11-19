@@ -510,14 +510,25 @@ def main():
         'above_old_top_after': count_in_cylinder(
             after, held_xy, HELD_RADIUS, top + 0.015, top + args.lift + 0.01),
     }
+    # If the whole-body goal turned the base, the bottle's old place can leave the head
+    # camera's view. The table top around it tells whether the camera still sees it.
+    camera['table_near_old_place_after'] = count_in_cylinder(
+        after, bottle[:2], 0.15, TABLE_TOP - 0.01, TABLE_TOP + 0.01)
     seen = camera['old_place_lower_before'] or 0
-    camera['bottle_left_table'] = bool(
-        seen >= 20 and camera['old_place_lower_after'] is not None
-        and camera['old_place_lower_after'] <= 0.1 * seen
-        and (camera['above_old_top_after'] or 0) >= 10)
-    problems = ([] if held else ['finger gap out of the grasp band']) + \
-        ([] if camera['bottle_left_table'] else ['head camera does not see the bottle lifted'])
-    step('hold', not problems, '; '.join(problems) or 'held above the table',
+    in_view = seen >= 20 and (camera['table_near_old_place_after'] or 0) >= 20
+    camera['bottle_left_table'] = None if not in_view else bool(
+        camera['old_place_lower_after'] <= 0.1 * seen
+        and camera['above_old_top_after'] >= 10)
+    problems = [] if held else ['finger gap out of the grasp band']
+    if camera['bottle_left_table'] is False:
+        problems.append('head camera does not see the bottle lifted')
+    if problems:
+        status = '; '.join(problems)
+    elif in_view:
+        status = 'held above the table'
+    else:
+        status = "held; the head camera does not see the bottle's old place"
+    step('hold', not problems, status,
          finger=None if finger is None else round(finger, 4), camera=camera)
 
     node.set_commander(allow_gripper_vs_octomap=False)
