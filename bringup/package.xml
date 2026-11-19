@@ -46,6 +46,11 @@
   <exec_depend>openarm_bimanual_moveit_config</exec_depend>
   <exec_depend>openarm_bimanual_commander_cpp</exec_depend>
   <exec_depend>walkie_mujoco_worlds</exec_depend>
+  <!-- sim_bottle_pick.py -->
+  <exec_depend>my_robot_interfaces</exec_depend>
+  <exec_depend>nav2_msgs</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
   <!-- mujoco_omnibot.launch.py also needs mujoco_ros2_control and the MuJoCo
        extension mujoco_3d_lidar (head 3D lidar), which the pixi environment
        provides. They are not declared so that rosdep does not install MuJoCo
