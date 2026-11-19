@@ -74,7 +74,7 @@ Start a Zenoh router first, as described in
    collision classes. It writes the spawn into the free base and into every keyframe.
 4. It writes `world.xml` into `<world_output_dir>/<world>/<variant>/`, by default under
    `$ROS_HOME/mujoco_worlds`. The Nav2 launch also writes `nav2.yaml` there: a copy of
-   `params_file` with the AMCL initial pose at the spawn.
+   `nav2_config` with the AMCL initial pose at the spawn.
 5. `mujoco_ros2_control` loads `world.xml`, `map_server` serves the world's map, and AMCL
    starts at the spawn.
 

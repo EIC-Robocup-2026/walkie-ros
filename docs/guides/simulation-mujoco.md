@@ -487,7 +487,7 @@ pixi run world-validate <name> --robot --worlds-dir /tmp/worlds
 ??? info "Where the launch writes the merged world"
     - The launch writes `<world>/<variant>/world.xml` and, with Nav2, `nav2.yaml` into
       `world_output_dir`, by default `$ROS_HOME/mujoco_worlds` (`~/.ros/mujoco_worlds`).
-    - `nav2.yaml` is a copy of `params_file` with AMCL's `set_initial_pose: true` and its
+    - `nav2.yaml` is a copy of `nav2_config` with AMCL's `set_initial_pose: true` and its
       `initial_pose` at the spawn.
     - Every launch rewrites both files atomically. Two launches of the same world and
       variant at the same time overwrite each other's files.
@@ -622,16 +622,23 @@ Run the commands from the repository root.
        `use_rviz` and `rviz_config`. With `world`, `nav_mujoco_omnibot.launch.py`
        prepares the world once, with the map and the Nav2 parameter copy, and passes the
        generated model to the include with `world`, `spawn` and `spawn_pose` cleared.
-    2. Without `world`, `static_transform_publisher` (node name `map_to_odom`): an
-       identity transform from `map` to `odom`. With `world`, AMCL publishes this
-       transform, and no static publisher starts.
-    3. `nav2_bringup`'s `bringup_launch.py` with `use_sim_time:=True`,
-       `serve_static_map:=True` (`map_server` serves `map`), `use_keepout_zones:=False`,
-       `use_speed_zones:=False`, `autostart:=True` and `use_composition:=False`. Each
-       Nav2 server runs as its own process. Without `world`, `use_localization:=False`
-       (no AMCL), and `params_file` is passed through unchanged. With `world`,
-       `use_localization:=True` starts AMCL, `map` is the world's map, and `params_file`
-       is the generated copy with the AMCL initial pose at the spawn. The include sits in
+    2. The source of `map` to `odom`. Without `world`, `static_transform_publisher`
+       (node name `map_to_odom`): an identity transform. With `world`, AMCL publishes
+       this transform, and no static publisher starts. With `truth_map_odom:=true`,
+       with or without `world`, `ground_truth_map_odom.py` publishes it from
+       `/mujoco_ground_truth/odom`, and neither the static publisher nor AMCL starts.
+    3. `nav2_bringup`'s `bringup_launch.py` with `use_sim_time:=true`,
+       `serve_static_map:=true` (`map_server` serves `map.yaml` from the `map`
+       directory), `use_keepout_zones` and `keepout_mask` from this launch,
+       `use_speed_zones:=false`, `autostart:=true` and `use_composition:=false`. Each
+       Nav2 server runs as its own process. `params_file` is `nav2_config` after a
+       `RewrittenYaml` with the simulation rewrites: `use_sim_time`, the STVL layer and
+       the collision monitor's point cloud source off, and the collision monitor's
+       `state_topic`. Without `world`, `use_localization:=False` (no AMCL). With
+       `world`, `map` is the world's map file, the rewrites apply to the generated copy
+       of `nav2_config` with the AMCL initial pose at the spawn, and
+       `use_localization:=True` starts AMCL unless `truth_map_odom` is `true`. A
+       `keepout_mask` left at its default points next to the world's map. The include sits in
        a `GroupAction` with `SetRemap(src="cmd_vel", dst="cmd_vel_controller")`, so Nav2
        commands pass `velocity_smoother` and `collision_monitor` before they reach
        `twist_mux` on `/cmd_vel_nav`.
@@ -675,9 +682,12 @@ pixi run ros2 launch robot_bringup nav_mujoco_omnibot.launch.py headless:=true u
 | `headless` | Both | `false` | `true` runs MuJoCo without the viewer window |
 | `use_rviz` | Both | `true` | `false` starts no RViz |
 | `rviz_config` | Both | `<robot_bringup share>/config/rviz/mujoco.rviz`, or `mujoco_nav.rviz` for Nav2 | RViz config file |
-| `map` | `nav_mujoco_omnibot.launch.py` | `<robot_bringup share>/config/map/empty_floor.yaml` | Map for `map_server`. Its origin must match the MuJoCo world origin. With `world`, the world's map replaces it. |
-| `params_file` | `nav_mujoco_omnibot.launch.py` | `<robot_navigation share>/config/nav2/nav2_mppi_walkie_sim_params.yaml` | Nav2 parameter file. With `world`, Nav2 reads a copy with the AMCL initial pose at the spawn. |
-| `truth_map_odom` | `nav_mujoco_omnibot.launch.py` | `false` | `true` computes `map` to `odom` from `/mujoco_ground_truth/odom` instead of a static transform, so the robot's `map` pose is its true pose. The whole-body demo needs it, because the omni controller's odometry reports commands and not wheel motion. |
+| `map` | `nav_mujoco_omnibot.launch.py` | `<robot_bringup share>/config/map/empty_floor` | Map directory with `map.yaml` (and `keepout.yaml`) for `map_server`. Its origin must match the MuJoCo world origin. With `world`, the world's map file replaces it. |
+| `nav2_config` | `nav_mujoco_omnibot.launch.py` | `<robot_navigation share>/config/nav2/nav2_mppi_walkie_params.yaml` | Nav2 parameter file, with the simulation rewrites applied at launch. With `world`, Nav2 reads a copy with the AMCL initial pose at the spawn. |
+| `use_keepout_zones` | `nav_mujoco_omnibot.launch.py` | `false` | `true` starts the keepout filter with `keepout_mask` |
+| `keepout_mask` | `nav_mujoco_omnibot.launch.py` | `keepout.yaml` in `map`, or next to the world's map with `world` | Keepout mask YAML. The Chula room ships none. |
+| `nav_debug` | `nav_mujoco_omnibot.launch.py` | `false` | `true` makes `nav_commander` publish its debug markers |
+| `truth_map_odom` | `nav_mujoco_omnibot.launch.py` | `false` | `true` computes `map` to `odom` from `/mujoco_ground_truth/odom` instead of a static transform or AMCL, so the robot's `map` pose is its true pose. With `world`, AMCL then does not run. The whole-body demo needs it, because the omni controller's odometry reports commands and not wheel motion. |
 
 - With `world`, setting `mujoco_model` or `map` to another value stops the launch with
   `world:=NAME supplies mujoco_model; do not also set mujoco_model`. `spawn` or
@@ -1037,8 +1047,8 @@ three files directly:
 | With `nav_mujoco_omnibot.launch.py`, Ctrl+C takes about 15 s and prints red `failed to terminate` and `process has died ... exit code -9` lines | `planner_server` and `controller_server`, sometimes `smoother_server`, do not exit on SIGINT or SIGTERM, so launch kills them with SIGKILL. Same with Fast DDS. | Harmless. Wait for the launch to exit. |
 | `walkie_tf_server` prints a traceback with `RCLError` and `rcl_shutdown already called` on Ctrl+C | `tools/walkie_tf/walkie_tf/tf_server_node.py` calls `rclpy.shutdown()` after the context is already shut down | Harmless. The bug predates the MuJoCo launch files. |
 | Nav2 hangs at `Waiting for service smoother_server/get_state...` | The composed Nav2 bringup can deadlock on Jazzy | Use `nav_mujoco_omnibot.launch.py`, which runs each server as its own process. With `nav2_bringup` directly, pass `use_composition:=False`. See [Navigation: Nav2 bringup hangs at smoother_server/get_state](navigation.md#nav2-composition-deadlock). |
-| `controller_server` logs `Can not get 'plugin' param value for FollowPath.Omni` and `Failed to load motion model plugin 'Omni'`, and `lifecycle_manager_nav2` aborts the bringup | The file passed with `params_file:=` sets `motion_model: "Omni"` without `FollowPath.Omni.plugin`. navigation2 (upstream main) loads MPPI motion models as plugins. The `robot_navigation` parameter files set the key. | Add `Omni: plugin: "mppi::OmniMotionModel"` under `FollowPath` in your file. See [Navigation](navigation.md#mppi-omni-motion-model-plugin). |
-| Nav2 repeats `The inflation radius (...) is smaller than the circumscribed radius (...)` errors | The local costmap `inflation_radius` in the file passed with `params_file:=` is smaller than the circumscribed radius of the footprint. Not a MuJoCo issue. | Set it to at least the circumscribed radius. `nav2_mppi_walkie_sim_params.yaml` uses 0.35 m (circumscribed radius 0.313 m). |
+| `controller_server` logs `Can not get 'plugin' param value for FollowPath.Omni` and `Failed to load motion model plugin 'Omni'`, and `lifecycle_manager_nav2` aborts the bringup | The file passed with `nav2_config:=` sets `motion_model: "Omni"` without `FollowPath.Omni.plugin`. navigation2 (upstream main) loads MPPI motion models as plugins. The `robot_navigation` parameter files set the key. | Add `Omni: plugin: "mppi::OmniMotionModel"` under `FollowPath` in your file. See [Navigation](navigation.md#mppi-omni-motion-model-plugin). |
+| Nav2 repeats `The inflation radius (...) is smaller than the circumscribed radius (...)` errors | The local costmap `inflation_radius` in the file passed with `nav2_config:=` is smaller than the circumscribed radius of the footprint. Not a MuJoCo issue. | Set it to at least the circumscribed radius. `nav2_mppi_walkie_params.yaml` uses 0.38 m (circumscribed radius 0.354 m with padding). |
 | A goal logs `Failed to make progress` once or twice, for example during the slow final approach, and is still reached | The progress checker wants 0.5 m of movement within 8 s | None needed. The behavior tree retries, and the goal is reached. |
 | A goal aborts with error 103, `Resulting plan has 0 poses in it` | The robot is already at the goal by odometry | None needed. The ground truth pose can still be off by the odometry drift. |
 | `bt_navigator` rejects goals and logs `"map" passed to lookupTransform argument target_frame does not exist` and `Initial robot pose is not available` (error 9002) | `bt_navigator` has no transform from `map` to `odom`, which the launch publishes only once. Seen once; the cause is not known. | Start a second publisher. See [Troubleshooting](../troubleshooting.md#nav2-map-frame-does-not-exist). |

@@ -36,6 +36,7 @@ the log shows `Managed nodes are active`, about 10 s after the start.
 | Start at another pose | See [Choose the spawn](#choose-the-spawn) |
 | Send a goal from a terminal | See [Send a goal](#send-a-goal) |
 | Drive the robot by hand | See [Drive by hand](#drive-by-hand) |
+| Run whole-body MoveIt goals in the room (ground truth `map` to `odom`, no AMCL) | `pixi run ros2 launch robot_bringup whole_body_demo.launch.py world:=chula_pat14_6`, see [Manipulation](manipulation.md#whole-body-named-world) |
 | Check the room offline, without a build | `pixi run world-validate chula_pat14_6 --robot` |
 
 !!! warning "AMCL is 0.1 to 0.2 m off in this room"
@@ -201,6 +202,11 @@ reached the spawn in 10 s.
       without motion, settled about 0.1 m off as well.
     - From `spawn:=origin`, a goal to the living-room spawn moved the robot 0.46 m in 200 s,
       with 32 `Failed to make progress` aborts and no collision monitor stop.
+    - The results above used `nav2_mppi_walkie_sim_params.yaml`. Nav2 now reads
+      `nav2_mppi_walkie_params.yaml` with the simulation rewrites of
+      `nav_mujoco_omnibot.launch.py` (`nav2_config`). In one headless check with it, a
+      goal from the spawn to 1.9, -2.5 succeeded; the robot stopped 0.11 m from the goal,
+      and the AMCL pose was 0.05 m from the true pose.
 
 ??? info "How the spawn, the odometry and AMCL fit together"
     - Wheel odometry starts at zero at the spawn. AMCL supplies the `map` to `odom`
@@ -214,8 +220,9 @@ reached the spawn in 10 s.
       default). Every launch rewrites them.
     - The map source in `authoring/source/` includes a keepout mask (`keepout.pgm`, 921
       occupied cells) that the simulation does not use. `nav_mujoco_omnibot.launch.py`
-      starts Nav2 with `use_keepout_zones:=False` and `use_speed_zones:=False`, and the
-      simulation Nav2 parameters have no costmap filters.
+      starts Nav2 with `use_keepout_zones:=false` by default and `use_speed_zones:=false`.
+      The installed map directory has no `keepout.yaml`, so `use_keepout_zones:=true`
+      needs `keepout_mask:=<path>` in this room.
 
 ## Interact with the room { #open-the-door }
 

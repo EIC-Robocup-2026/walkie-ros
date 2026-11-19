@@ -401,6 +401,37 @@ planned base path.
     headless, and 0.16 to 0.30 with the viewer and RViz, depending on what else the
     laptop runs. A step takes about 40 to 70 s of wall time.
 
+### Run in a named world { #whole-body-named-world }
+
+Pass `world:=NAME` to run the same stack in a [named MuJoCo world](simulation-mujoco.md#add-a-named-world),
+for example the [Chula Pat14 room](simulation-chula-pat14.md):
+
+```bash
+pixi run ros2 launch robot_bringup whole_body_demo.launch.py world:=chula_pat14_6
+pixi run ros2 action send_goal /go_to_pose my_robot_interfaces/action/GoToPose \
+  "{group_name: whole_body_right, x: 0.45, y: -0.25, z: 1.0, roll: 0.0, pitch: 1.5708, yaw: 0.0, frame_id: base_footprint}"
+```
+
+- The world's model replaces `mujoco_model`, and Nav2 serves the world's map.
+  `variant`, `spawn`, `spawn_pose`, `worlds_dir` and `world_output_dir` work as on
+  `nav_mujoco_omnibot.launch.py`. `world` together with `mujoco_model` stops the launch.
+- `map` to `odom` still comes from the ground truth, and AMCL does not run. The world
+  loader writes the spawn's map `x` and `y` into the MuJoCo world frame, so the two
+  frames coincide, and `map` to `base_footprint` starts at the spawn (in the Chula room,
+  `living-room`: 1.76, -1.48, yaw -90°).
+- The `whole_body_demo` client's targets are placed for the obstacle scene. In a world,
+  send your own goals, as above.
+- `planar_octomap_max_range` stays at 3.5 m. In a room it covers the furniture in the
+  camera's view; a longer range adds voxels to every planning scene update.
+
+??? info "Live check in the Chula room"
+    Headless, on a loaded laptop (real-time factor about 0.3). The base started at
+    1.76, -1.48, yaw -90° in `map`, as the spawn says. The goal above succeeded with
+    `base travel 0.227235 m`, and the right hand ended 0.01 m from the target. A Nav2
+    goal 1 m away, to 1.9, -2.3, then succeeded. A first Nav2 goal aborted when
+    `lifecycle_manager_nav2` missed `planner_server`'s bond heartbeat for 4 s under the
+    load and restarted Nav2, which came back by itself.
+
 ### Drag a hand target in RViz
 
 The demo launch file starts `whole_body_marker`, which shows an orange box with a
