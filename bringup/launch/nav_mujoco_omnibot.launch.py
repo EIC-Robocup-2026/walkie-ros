@@ -222,11 +222,16 @@ def generate_launch_description():
 
     # Simulation parameter substitutions via RewrittenYaml. state_topic lets the
     # whole-body base follower see a monitor stop as soon as it happens.
+    # default_server_timeout is how long, in ms, a behavior tree node waits for a
+    # server to accept its goal. MuJoCo, MoveIt and vision share the CPU in a
+    # simulation, and at Nav2's 20 ms the tree aborted goals with error 107 or 207
+    # when follow_path or wait was slow to accept.
     nav2_rewritten_params = RewrittenYaml(
         source_file=nav2_config,
         root_key="",
         param_rewrites={
             "use_sim_time": "true",
+            "bt_navigator.ros__parameters.default_server_timeout": "200",
             "local_costmap.local_costmap.ros__parameters.stvl_layer.enabled": "false",
             "collision_monitor.ros__parameters.pointcloud.enabled": "false",
             "collision_monitor.ros__parameters.state_topic": "/collision_monitor_state",
