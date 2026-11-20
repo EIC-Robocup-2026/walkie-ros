@@ -593,8 +593,11 @@ Run the commands from the repository root.
        parameters are `use_sim_time: true`, `mujoco_world`,
        `description/config/ros2_controller/mujoco_controllers.yaml` and
        `bringup/config/mujoco/mujoco_plugins.yaml`. `mujoco_world` is the `world`
-       argument, or an empty string without one; it shows a client which world runs,
-       for example `ros2 param get /controller_manager mujoco_world`. It remaps
+       argument. Without `world` it is empty, unless `mujoco_world:=NAME` is passed to
+       this launch directly, as the Nav2 launch does for the world it prepared. It names
+       the world the launch was asked for, not what the simulator loaded; a client reads
+       it to check which simulation it talks to, for example
+       `ros2 param get /controller_manager mujoco_world`. It remaps
        `/imu_sensor_broadcaster/imu` to `/imu`. When it exits, for example because the
        MuJoCo window was closed, the whole launch shuts down.
     3. Two spawners, both with `--param-file` set to `mujoco_controllers.yaml`. The first

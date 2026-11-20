@@ -13,10 +13,11 @@ assembled with Walkie into a cached MJCF before the simulator starts, and that
 file replaces mujoco_model. Without world, mujoco_model is used unchanged.
 
 The simulator's controller_manager has a string parameter mujoco_world: the
-name of the prepared world, or empty without one. Clients that use a world's
-fixed coordinates, such as sim_bottle_pick.py, read it to check which
-simulation they talk to. A launch that prepares the world itself passes the
-name in mujoco_world.
+name of the prepared world. Without world it is empty, unless mujoco_world:=NAME
+is given directly; a launch that prepares the world itself passes the name that
+way. The parameter names the world the launch was asked for and does not prove
+which model the simulator loaded. Clients that use a world's fixed coordinates,
+such as sim_bottle_pick.py, read it to check which simulation they talk to.
 """
 import os
 
