@@ -445,18 +445,92 @@ pixi run ros2 launch robot_bringup whole_body_demo.launch.py world:=chula_pat14_
 pixi run ros2 run robot_bringup sim_bottle_pick.py --report /tmp/pick.json
 ```
 
-| Step | Goal |
-| --- | --- |
-| Open | `/control_gripper`, `right_gripper`, position 0.044 |
-| Drive | Nav2 `/navigate_to_pose` to 0.65 m south and 0.20 m west of the bottle, heading north (yaw +90°): the bottle is ahead and to the right |
-| Tuck | `/go_to_home`, `left_arm` to `standby` |
-| Pre-grasp | `/go_to_pose`, `whole_body_right`, `frame_id: map`: the hand 0.16 m back from the bottle centre along the line from the base to the bottle, at the bottle's centre height, pointing at it, wrist camera up. The base moves only if the arm cannot reach. |
-| Approach | `/go_to_pose`, `right_arm_lift`, `cartesian_path: true`, `frame_id: map`: 0.10 m straight in, to the hand frame 0.06 m from the bottle centre |
-| Close | `/control_gripper`, `right_gripper`, position 0.0; the result's `grasped` must be true |
-| Lift | `/go_to_pose`, `right_arm_lift`, `cartesian_path: true`, `frame_id: map`: 0.10 m straight up |
-| Hold | After 5 s, the finger position must still be in the grasp band, and the head camera must see the bottle above its old top and nothing of it at its old place. If the base turned and the camera no longer sees the table there, the finger alone decides and the report has `bottle_left_table: null` |
+The script is installed with `robot_bringup`, also on the robot. Before it changes a
+parameter or sends a goal, it checks that it talks to the Chula simulation, and exits
+with code 2 naming the failed check unless:
 
-The script prints a JSON report and exits non-zero at the first failed step.
+- `/clock` delivers at least 3 messages with advancing time within 10 s of wall time,
+- `/bimanual_commander` and `/bt_navigator` report `use_sim_time` true through their
+  parameter services,
+- `/controller_manager` reports `mujoco_world` `chula_pat14_6`. The MuJoCo launch
+  files set that parameter on the simulator from `world:=NAME`, see
+  [Run with ROS 2](simulation-mujoco.md#run-with-ros-2).
+
+It then waits up to 240 s for the four action servers, the parameter services, the
+finger joint in `/joint_states` and the `map` to `base_footprint` transform, and also
+exits with code 2 if one of them is missing.
+
+| Step | Goal | Passes when |
+| --- | --- | --- |
+| Open | `/control_gripper`, `right_gripper`, position 0.044 | The goal ends `SUCCEEDED` with `success` true |
+| Drive | Nav2 `/navigate_to_pose` to 0.65 m south and 0.20 m west of the bottle, heading north (yaw +90°): the bottle is ahead and to the right | The goal ends `SUCCEEDED` with `error_code` 0 |
+| Tuck | `/go_to_home`, `left_arm` to `standby` | The goal ends `SUCCEEDED` with `success` true |
+| Pre-grasp | `/go_to_pose`, `whole_body_right`, `frame_id: map`: the hand 0.16 m back from the bottle centre along the line from the base to the bottle, at the bottle's centre height, pointing at it, wrist camera up. The base moves only if the arm cannot reach. | The goal ends `SUCCEEDED` with `success` true, and the hand frame ends within 0.05 m of the target |
+| Approach | `/go_to_pose`, `right_arm_lift`, `cartesian_path: true`, `frame_id: map`: 0.10 m straight in, to the hand frame 0.06 m from the bottle centre | As for the pre-grasp |
+| Close | `/control_gripper`, `right_gripper`, position 0.0 | The goal ends `SUCCEEDED` or `ABORTED` with `grasped` true |
+| Lift | `/go_to_pose`, `right_arm_lift`, `cartesian_path: true`, `frame_id: map`: 0.10 m straight up | As for the pre-grasp, and the hand frame rose 0.08 to 0.12 m from where the close left it |
+| Hold | None: the script waits 5 s of wall time (`--hold`) | See below |
+
+The hand poses come from TF transforms stamped at or after the end of the move they
+check and within 1 s of simulated time of the script's clock. After the hold, the
+script checks:
+
+- **Hand**: the hand frame is still within 0.05 m of the lifted target.
+- **Finger**: the position of `openarm_right_finger_joint1` is in the commander's grasp
+  band (`grasp_detect_min` to `grasp_detect_max`, 0.005 to 0.044 m by default). The
+  reading counts only if its stamp is within 0.5 s of simulated time of the script's
+  clock and it arrived less than 1 s of wall time ago.
+- **Camera**: the first head depth image stamped after the hold shows the bottle
+  lifted. Its points are put into `map` with the camera pose at the image stamp. Of
+  the points the camera saw of the bottle's lower part at its old place before the
+  pick, at most 10 % may remain there, and at least 10 points must be above the
+  bottle's old top.
+
+The camera decides only if it saw at least 20 points of the bottle at its old place
+before the pick and 20 points of the table top around that place after it. When it
+cannot decide, for example because no image or camera transform arrived or the base
+turned the table out of view, the report has `bottle_left_table: null` and the result
+is `inconclusive`. With `--accept-finger-only`, the hand and the finger then pass the
+pick alone, as `passed_finger_only`. A failed check fails the pick in any case, and a
+stale finger reading or hand transform makes it inconclusive.
+
+The script prints one JSON report on every exit, also after an exception. rmw_zenoh
+logs to stdout as well, so use `--report` for a file that parses as JSON. The report's
+`passed` is true only for `result: passed` with exit code 0.
+
+| Exit code | `result` | Meaning |
+| --- | --- | --- |
+| 0 | `passed` or `passed_finger_only` | The pick passed and the cleanup succeeded |
+| 1 | `failed` or `error` | A step failed, or the script raised an exception; the report has its traceback |
+| 2 | `not_run` | A simulation check or a prerequisite failed, or an argument is wrong. Nothing was changed. |
+| 3 | `inconclusive` | The steps succeeded, but the evidence does not decide the hold |
+| 4 | Any | The cleanup failed, or the end of a goal is unknown. Takes precedence over the other codes. |
+| 130 | `interrupted` | SIGINT or SIGTERM, and the cleanup succeeded |
+
+Before its first change, the script reads the commander's `allow_gripper_vs_octomap`
+and `grasp_scene_action`. On every exit it can handle (the end of the pick, a failed
+step, an exception, SIGINT or SIGTERM), it then:
+
+1. cancels each goal that has not ended, and waits up to 10 s for the server's answer
+   and 30 s for the goal's terminal status,
+2. sets both parameters back to the values it read, and reads them back.
+
+The report's `cleanup` lists the goals it stopped and whether the parameters were
+`restored` and `verified`. A second signal during the cleanup does not stop it; the
+report lists it in `signals_ignored`. `ros2 run` does not pass a signal on to the
+script: Ctrl+C in the terminal reaches both, but a `kill` must name the script's own
+process or the process group. A SIGKILL skips the cleanup. After one, check
+the commander with `ros2 param get /bimanual_commander allow_gripper_vs_octomap` and
+set it back to `false` if the pick left it on.
+
+A goal that does not end within its timeout (900 s for the drive and the pre-grasp,
+600 s for the approach and the lift, 300 s for the tuck, 120 s for the gripper) is
+canceled, and its step fails once the server reports the goal's end. If the server
+does not answer a goal request within 30 s, or the goal's end stays unknown after the
+cancel, the script sends no further goal and changes no further parameter. It exits
+with code 4 unless the cleanup then establishes the goal's end. A report says
+`cancel accepted` only after the server answered the cancel.
+
 `--image-prefix PREFIX` also saves the head camera's images before and after the pick.
 `--help` lists the other options: the bottle pose, the approach heading, the
 stand-off, the pre-grasp and grasp distances, the grasp height, the lift and the
@@ -464,8 +538,21 @@ number of Nav2 goals to send.
 
 - On a loaded machine, Nav2's behavior tree can time out waiting for the planner or
   the controller to accept a goal (`Timed out waiting for action server to acknowledge
-  goal request`) and abort the drive, with error code 207, 107 or 105. The script then sends
-  the goal again, up to `--nav-attempts` goals in all (default 3).
+  goal request`) and abort the drive. The script then sends the goal again, up to
+  `--nav-attempts` goals in all (default 3), but only after a goal that ended
+  `ABORTED` with one of these error codes, which `bt_navigator` passes on from the
+  sub-action that failed:
+
+    | Code | Action | Constant |
+    | --- | --- | --- |
+    | 207 | `ComputePathToPose` | `TIMEOUT` |
+    | 107 | `FollowPath` | `CONTROLLER_TIMED_OUT` |
+    | 105 | `FollowPath` | `FAILED_TO_MAKE_PROGRESS`: the base did not move while the controller waited |
+    | 103 | `FollowPath` | `INVALID_PATH`: after a 105 near the goal, the behavior tree sent the controller its pruned path again, and the controller found no pose of it left (`Resulting plan has 0 poses in it`) |
+
+    A new goal clears the path on `bt_navigator`'s blackboard, so the drive is planned
+    again from where the base stands. Any other code, a cancel, a rejection or an
+    unknown end fails the drive.
 - From the stand-off, the right arm reaches the pre-grasp pose with the base still
   (`Success (base fixed)`) or after a turn of up to 0.16 rad. In one run it turned
   the base 0.37 rad, which took the bottle out of the head camera's view. From 0.90 m
@@ -485,9 +572,10 @@ number of Nav2 goals to send.
   path followed only 18 to 82 % of the requested trajectory, and the commander needs
   over 90 %. The tuck to `standby` prevents that.
 - Before the approach the script sets the commander's `allow_gripper_vs_octomap` to
-  true, because the fingers have to enter the bottle's voxels. It sets it back to false
-  at the end. It keeps `grasp_scene_action` at `none`: the box that `grasp` attaches
-  would start the lift in collision with the table top's voxels.
+  true, because the fingers have to enter the bottle's voxels. The cleanup restores the
+  value from before the pick. The script sets `grasp_scene_action` to `none` before the
+  first move: the box that `grasp` attaches would start the lift in collision with the
+  table top's voxels.
 - The controller stalls on the bottle, so the close result has `success: false` and
   `status: Failed`. `grasped` and `gripper_gap` are what tell a hold. In the live runs,
   the gap settled at 0.013 to 0.014 m, inside the default band of 0.005 to 0.044 m.
@@ -501,11 +589,19 @@ number of Nav2 goals to send.
   returned `Success (base fixed)`. The script now fails a move when the hand ends more
   than 0.05 m from its target.
 
-In 17 runs from a fresh launch with these settings (`headless:=true`, on a loaded
-machine), 13 picks passed with the head camera confirming the bottle off the table.
-Two drives failed before the script sent the goal again; the retry has since recovered
-one. One pick held the bottle, but the base had turned it out of the camera's view.
-One pre-grasp caught on the table. A pass takes about 3.5 minutes of wall time.
+In 17 runs of an earlier version of the script from a fresh launch (`headless:=true`,
+on a loaded machine), 13 picks passed with the head camera confirming the bottle off
+the table. Two drives failed before the script sent the goal again; the retry has since
+recovered one. One pick held the bottle, but the base had turned it out of the camera's
+view. One pre-grasp caught on the table.
+
+In six runs with the checks above, three picks passed with the camera confirming the
+lift. One drive ended with error code 103; the script now sends the goal again after
+that code too. In one pick the base stopped 0.03 m right of its goal, and after the lift the
+table around the bottle's old place was out of the camera's view: the fingers and the
+hand showed the bottle held, and the pick ended `inconclusive`. One pre-grasp ended
+0.14 m from its target with the base turned by 0.25 rad, although the commander
+reported `Success (base fixed)`. A pass takes 2 to 3.5 minutes of wall time.
 
 The pick picks only once per launch: restart the launch to put the bottle back on
 the table.
