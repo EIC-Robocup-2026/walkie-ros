@@ -279,10 +279,19 @@ public:
             std::bind(&Commander::handle_toggle_gripper_collision, this, _1, _2),
             rclcpp::ServicesQoS(),
             callback_group_);
+        // The planning scene clients take their answers in on a thread of their own.
+        // Their callers block an executor thread while they wait, and the ACM writers
+        // wait for acm_mtx_ in executor threads too, so with enough of them waiting no
+        // executor thread would be left to take the answer in.
+        scene_client_group_ = node_->create_callback_group(
+            rclcpp::CallbackGroupType::MutuallyExclusive, false);
         get_planning_scene_client_ = node_->create_client<moveit_msgs::srv::GetPlanningScene>(
-            "/get_planning_scene", rclcpp::ServicesQoS(), callback_group_);
+            "/get_planning_scene", rclcpp::ServicesQoS(), scene_client_group_);
         apply_planning_scene_client_ = node_->create_client<moveit_msgs::srv::ApplyPlanningScene>(
-            "/apply_planning_scene", rclcpp::ServicesQoS(), callback_group_);
+            "/apply_planning_scene", rclcpp::ServicesQoS(), scene_client_group_);
+        scene_client_executor_.add_callback_group(
+            scene_client_group_, node_->get_node_base_interface());
+        scene_client_thread_ = std::thread([this]() { scene_client_executor_.spin(); });
 
         // Whole-body option, selected per request by group_name. Declares base_mode.
         whole_body_ = std::make_unique<WholeBodyOption>(
@@ -538,6 +547,14 @@ public:
             callback_group_);
 
         RCLCPP_INFO(node_->get_logger(), "Bimanual Commander Node Initialized");
+    }
+
+    ~Commander()
+    {
+        scene_client_executor_.cancel();
+        if (scene_client_thread_.joinable()) {
+            scene_client_thread_.join();
+        }
     }
 
     // Map a gripper group to its hand link and the finger links that are
@@ -834,6 +851,7 @@ public:
             return;
         }
 
+        std::lock_guard<std::mutex> acm_lock(acm_mtx_);
         // 1. Read the current ACM.
         auto get_req = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
         get_req->components.components =
@@ -900,6 +918,7 @@ public:
             return;
         }
 
+        std::lock_guard<std::mutex> acm_lock(acm_mtx_);
         // 1. Read the current ACM.
         auto get_req = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
         get_req->components.components =
@@ -975,6 +994,7 @@ public:
             return;
         }
 
+        std::lock_guard<std::mutex> acm_lock(acm_mtx_);
         // 1. Read the current ACM.
         auto get_req = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
         get_req->components.components =
@@ -1185,6 +1205,10 @@ public:
     // explicit collision objects/other links (unlike the blanket gripper disable).
     void applyGripperOctomapAllowance()
     {
+        // Read the parameter only once this apply holds the lock, so applies queued
+        // behind each other all write the latest value, and the last one leaves the
+        // scene matching the parameter.
+        std::lock_guard<std::mutex> acm_lock(acm_mtx_);
         const bool allow = node_->get_parameter("allow_gripper_vs_octomap").as_bool();
         if (!get_planning_scene_client_->service_is_ready() ||
             !apply_planning_scene_client_->service_is_ready()) {
@@ -1224,10 +1248,13 @@ public:
 
     void scheduleGripperOctomapAllowance()
     {
+        // The timer cancels itself rather than octomap_acm_timer_: a parameter change
+        // can replace that member while this callback runs, and cancelling the
+        // replacement would drop the apply of the newer value.
         octomap_acm_timer_ = node_->create_wall_timer(
             std::chrono::milliseconds(200),
-            [this]() {
-                octomap_acm_timer_->cancel();
+            [this](rclcpp::TimerBase & timer) {
+                timer.cancel();
                 applyGripperOctomapAllowance();
             },
             callback_group_);
@@ -2617,6 +2644,10 @@ private:
     rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr toggle_all_collision_service_;
     rclcpp::Client<moveit_msgs::srv::GetPlanningScene>::SharedPtr get_planning_scene_client_;
     rclcpp::Client<moveit_msgs::srv::ApplyPlanningScene>::SharedPtr apply_planning_scene_client_;
+    // Serves only the two clients above, on scene_client_thread_.
+    rclcpp::CallbackGroup::SharedPtr scene_client_group_;
+    rclcpp::executors::SingleThreadedExecutor scene_client_executor_;
+    std::thread scene_client_thread_;
 
     // Software gripper speed cap and last commanded position per gripper group,
     // used by controlGripper() to ramp the setpoint (GripperActionController
@@ -2676,6 +2707,12 @@ private:
     rclcpp::TimerBase::SharedPtr table_apply_timer_;    // (B) live table re-apply
     bool table_added_ = false;
     rclcpp::TimerBase::SharedPtr octomap_acm_timer_;    // (A) live gripper<->octomap allowance
+
+    // Held across each read-modify-write of the AllowedCollisionMatrix: the
+    // gripper<->octomap allowance and the three toggle services. Each reads the whole
+    // matrix and writes the whole matrix back, so two at once would lose whichever
+    // change the later write did not read.
+    std::mutex acm_mtx_;
 };
 
 int main(int argc, char ** argv)
