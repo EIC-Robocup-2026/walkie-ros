@@ -391,8 +391,11 @@ bottle is placed upright between the open fingers, 0.06 m from the hand frame al
 approach, and held there while the fingers close at the commander's speed
 (0.1 units/s). Then it is released, the lift rises 0.10 m, and the robot holds it for
 22 s more. The check fails if the finger position leaves the commander's grasp band
-(0.005 to 0.044 m), if the bottle does not rise with the hand, or if it slips more than
-0.01 m. It writes `grasp_check_<object>.json`.
+(0.005 to 0.044 m) at any physics step from the release to the end of the hold, if the
+hand does not rise within 0.005 m of the 0.10 m lift (`--lift-tolerance`), if the
+bottle does not rise with the hand, or if it slips more than 0.01 m. It writes
+`grasp_check_<object>.json`, with the lowest and highest finger position from the
+release in `gap_min_from_release` and `gap_max_from_release`.
 
 | Variant | Finger position after the lift | Bottle rise, of the hand's 0.10 m | Slip |
 | --- | --- | --- | --- |
