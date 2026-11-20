@@ -1070,7 +1070,7 @@ def parse_arguments(argv):
                         help='start from where the robot stands')
     parser.add_argument('--nav-attempts', type=int, default=3,
                         help='Nav2 goals to send before the drive counts as failed; only '
-                             'error codes 105, 107 and 207 send the goal again')
+                             'error codes 103, 105, 107 and 207 send the goal again')
     parser.add_argument('--accept-finger-only', action='store_true',
                         help='pass as passed_finger_only when the head camera cannot decide '
                              'but the fingers and the hand show the bottle held')

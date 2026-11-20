@@ -64,8 +64,12 @@ RESULT_EXIT_CODES = {
 # nav2_msgs/action/ComputePathToPose and FollowPath. On a loaded machine the behavior
 # tree can time out waiting for the planner (207) or the controller (107) to accept a
 # goal; the controller then reports 105 when the base did not move while it waited.
+# After a 105 near the goal, the tree can also keep the pruned path and send it to
+# the controller again, which rejects it as empty (103). A new goal clears the path
+# on the blackboard, so it is planned again from where the base stands.
 # Every other code, a cancel, a rejection or an unknown end stops the pick.
 NAV_TRANSIENT_ERRORS = {
+    103: "FollowPath INVALID_PATH",
     105: "FollowPath FAILED_TO_MAKE_PROGRESS",
     107: "FollowPath CONTROLLER_TIMED_OUT",
     207: "ComputePathToPose TIMEOUT",
