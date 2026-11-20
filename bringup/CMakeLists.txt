@@ -40,6 +40,8 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_mujoco_world_assets test/test_mujoco_world_assets.py
     TIMEOUT 180)
   ament_add_pytest_test(test_sim_pick test/test_sim_pick.py)
+  # Loads scripts/sim_bottle_pick.py from the source tree, with fake ROS clients.
+  ament_add_pytest_test(test_sim_bottle_pick test/test_sim_bottle_pick.py)
   # Reads simulation/mujoco/tools/check_grasp.py from the source tree.
   ament_add_pytest_test(test_check_grasp test/test_check_grasp.py)
   find_package(ament_lint_auto REQUIRED)

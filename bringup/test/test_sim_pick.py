@@ -63,6 +63,55 @@ def test_gate_rejects_a_string_true_for_use_sim_time():
     assert sim_pick.gate_failures(None, {"/bt_navigator": "true"}, "chula_pat14_6")
 
 
+def test_one_server_per_action_passes():
+    servers = {"/navigate_to_pose": ["/bt_navigator"], "/go_to_pose": ["/bimanual_commander"]}
+    assert sim_pick.action_server_failures(servers) == []
+
+
+def test_a_second_or_missing_action_server_fails():
+    failures = sim_pick.action_server_failures({
+        "/navigate_to_pose": ["/bt_navigator", "/bt_navigator"],
+        "/go_to_pose": ["/bimanual_commander"],
+        "/control_gripper": [],
+    })
+    assert failures == [
+        "/navigate_to_pose: 2 action servers (/bt_navigator, /bt_navigator), need exactly one",
+        "/control_gripper: 0 action servers (none), need exactly one",
+    ]
+
+
+def test_commander_defaults_let_the_pick_start():
+    values = {"allow_gripper_vs_octomap": False, "grasp_scene_action": "none"}
+    assert values == sim_pick.COMMANDER_DEFAULTS
+    assert sim_pick.commander_problems(values, "/bimanual_commander") == []
+
+
+@pytest.mark.parametrize("name, value, command", [
+    ("allow_gripper_vs_octomap", True,
+     "ros2 param set /bimanual_commander allow_gripper_vs_octomap false"),
+    # 0 == False in Python, but the commander's parameter is a bool.
+    ("allow_gripper_vs_octomap", 0,
+     "ros2 param set /bimanual_commander allow_gripper_vs_octomap false"),
+    ("allow_gripper_vs_octomap", None,
+     "ros2 param set /bimanual_commander allow_gripper_vs_octomap false"),
+    ("grasp_scene_action", "grasp", "ros2 param set /bimanual_commander grasp_scene_action none"),
+    ("grasp_scene_action", "place", "ros2 param set /bimanual_commander grasp_scene_action none"),
+    ("grasp_scene_action", "None", "ros2 param set /bimanual_commander grasp_scene_action none"),
+])
+def test_commander_values_other_than_the_defaults_stop_the_pick(name, value, command):
+    values = {**sim_pick.COMMANDER_DEFAULTS, name: value}
+    problems = sim_pick.commander_problems(values, "/bimanual_commander")
+    assert len(problems) == 1
+    assert problems[0].startswith(f"/bimanual_commander: {name} is {value!r}")
+    assert problems[0].endswith(command)
+
+
+def test_commander_that_does_not_answer_stops_the_pick():
+    problems = sim_pick.commander_problems(None, "/bimanual_commander")
+    assert problems == ["/bimanual_commander: allow_gripper_vs_octomap, grasp_scene_action "
+                        "could not be read"]
+
+
 @pytest.mark.parametrize("status, code, verdict", [
     (STATUS_SUCCEEDED, 0, NAV_SUCCEEDED),
     # A canceled goal's result carries the default error_code 0; it is not a success.

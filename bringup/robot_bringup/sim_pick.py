@@ -2,9 +2,9 @@
 
 bringup/scripts/sim_bottle_pick.py sends the goals and reads the sensors; the
 functions here decide what those readings mean, so they can be tested offline:
-whether the graph is the Chula simulation, how a navigation attempt ended,
-whether a reading is fresh, whether the lift and the hold prove the pick, and
-the exit code.
+whether the graph is the Chula simulation, whether the commander may be changed,
+how a navigation attempt ended, whether a reading is fresh, whether the lift and
+the hold prove the pick, and the exit code.
 """
 from __future__ import annotations
 
@@ -12,6 +12,10 @@ from collections.abc import Mapping, Sequence
 
 # The exported world whose bottle pose and table height the pick script uses.
 WORLD = "chula_pat14_6"
+
+# The commander's defaults for the parameters the pick changes. The pick starts only
+# when the commander reports these values, and its cleanup always writes them back.
+COMMANDER_DEFAULTS = {"allow_gripper_vs_octomap": False, "grasp_scene_action": "none"}
 
 # action_msgs/msg/GoalStatus.
 STATUS_UNKNOWN = 0
@@ -64,9 +68,10 @@ RESULT_EXIT_CODES = {
 # nav2_msgs/action/ComputePathToPose and FollowPath. On a loaded machine the behavior
 # tree can time out waiting for the planner (207) or the controller (107) to accept a
 # goal; the controller then reports 105 when the base did not move while it waited.
-# After a 105 near the goal, the tree can also keep the pruned path and send it to
-# the controller again, which rejects it as empty (103). A new goal clears the path
-# on the blackboard, so it is planned again from where the base stands.
+# 103 means only that the controller rejected its path. It is retried for the one
+# cause seen in these runs: after a 105 near the goal, the tree sent the controller
+# its pruned path again, which had no pose left. A new goal clears the path on the
+# blackboard, so it is planned again from where the base stands.
 # Every other code, a cancel, a rejection or an unknown end stops the pick.
 NAV_TRANSIENT_ERRORS = {
     103: "FollowPath INVALID_PATH",
@@ -131,6 +136,41 @@ def gate_failures(clock: str | None, use_sim_time: Mapping[str, object],
     elif world != expected_world:
         failures.append(f"mujoco_world: {world!r}, not {expected_world!r}")
     return failures
+
+
+def action_server_failures(servers: Mapping[str, Sequence[str]]) -> list[str]:
+    """Return the actions that do not have exactly one server; empty when all do.
+
+    servers maps each action the pick uses to the nodes that publish its
+    _action/status topic, one entry per server. A second server behind the same
+    name, for example a real robot's on the same graph, could receive the goals.
+    """
+    failures = []
+    for action, nodes in servers.items():
+        if len(nodes) != 1:
+            names = ", ".join(nodes) if nodes else "none"
+            failures.append(f"{action}: {len(nodes)} action servers ({names}), "
+                            "need exactly one")
+    return failures
+
+
+def commander_problems(values: Mapping[str, object] | None, node: str) -> list[str]:
+    """Return why the commander's parameters keep the pick from starting; empty if none.
+
+    values maps each parameter of COMMANDER_DEFAULTS to the value node reported, or
+    is None when node did not answer. The pick restores the defaults when it ends,
+    so it starts only from them. Each problem names the command that resets it.
+    """
+    if values is None:
+        return [f"{node}: {', '.join(COMMANDER_DEFAULTS)} could not be read"]
+    problems = []
+    for name, default in COMMANDER_DEFAULTS.items():
+        value = values.get(name)
+        if type(value) is not type(default) or value != default:
+            text = str(default).lower()
+            problems.append(f"{node}: {name} is {value!r}, not {text}; reset it with "
+                            f"ros2 param set {node} {name} {text}")
+    return problems
 
 
 def classify_navigation(status, error_code: int | None) -> tuple[str, str]:

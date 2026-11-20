@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
 """Scripted pick of a water bottle in the MuJoCo Chula PAT14-6 world.
 
-Needs robot_bringup whole_body_demo.launch.py world:=chula_pat14_6 running. Before it
-changes a parameter or sends a goal, the script checks that it talks to that
-simulation, and exits 2 naming the failed check otherwise:
+Needs robot_bringup whole_body_demo.launch.py world:=chula_pat14_6 running on a Zenoh
+router and ROS domain of its own, never on the robot's graph. Before it changes a
+parameter or sends a goal, the script checks, in this order, and exits 2 naming the
+failed check:
 
-  - /clock delivers at least 3 messages with advancing time within 10 s of wall time,
-  - the commander and bt_navigator report use_sim_time true,
-  - the simulator's controller_manager reports mujoco_world chula_pat14_6, which
-    mujoco_omnibot.launch.py sets from world:=NAME.
+  1. /clock delivers at least 3 messages with advancing time within 10 s of wall time,
+  2. within 240 s, the four action servers, the parameter services, the finger joint
+     in /joint_states and the map -> base_footprint transform are there,
+  3. /clock advances again, the commander and bt_navigator report use_sim_time true,
+     the simulator's controller_manager reports mujoco_world chula_pat14_6, which
+     mujoco_omnibot.launch.py sets from world:=NAME, and each action the script uses
+     has exactly one server,
+  4. the commander's allow_gripper_vs_octomap is false and grasp_scene_action is none,
+     its defaults, which the cleanup writes back.
+
+The checks tell the simulation from a graph with only the real robot, which then fails
+closed. They do not keep a simulation and hardware on one graph apart.
 
 From the spawn, the script then:
 
@@ -25,8 +34,9 @@ From the spawn, the script then:
   5. closes the gripper and reads the commander's grasp verdict (grasped, gripper_gap),
   6. lifts the hand lift m in a straight line on right_arm_lift and holds it,
   7. checks the hold: the hand is still at the lifted target, a fresh finger reading is
-     in the commander's grasp band, and the head camera's depth image shows the bottle
-     above its old place and nothing left of it on the table.
+     in the commander's grasp band, and the head camera's depth image has points above
+     the bottle's old top and almost none left at its old place. That is a geometric
+     check of fixed regions; it does not identify the object.
 
 A move passes when the commander reports success and the hand frame ends within
 0.05 m of its target; the lift also needs the hand to rise within 0.02 m of the
@@ -35,21 +45,27 @@ evidence (no image, no camera transform at the image stamp, or too few points of
 bottle before or of the table after) the result is inconclusive, unless
 --accept-finger-only accepts the fingers and the hand alone as passed_finger_only.
 
-The commander's grasp_scene_action and allow_gripper_vs_octomap are read before the
-script changes them. On every exit it can handle (success, a failed step, an
-exception, Ctrl-C or SIGTERM, but not SIGKILL), it first cancels a goal that is still
-running and waits for its end, then restores both parameters and reads them back.
+On every exit it can handle (success, a failed step, an exception, Ctrl-C or SIGTERM,
+but not SIGKILL), the script first cancels a goal that is still running and waits for
+its end, then sets allow_gripper_vs_octomap false and grasp_scene_action none and
+reads them back. It writes them also when a goal's end stays unknown. That goal may
+still run, and a gripper goal reads grasp_scene_action only when it finishes.
+
+A signal never lands between sending a goal and recording it: the send, the record
+and the callback that cancels a late acceptance run with signals deferred. A signal
+during the cleanup does not stop it, but the exit code is still 130.
 
 All goals are in the map frame. The bottle's pose is the one the world was exported
 with, as if it came from memory. Prints one JSON report on every exit; rmw_zenoh logs
 to stdout, so use --report to get a file that parses as JSON. Exit codes: 0 passed
 (or passed_finger_only), 1 a step failed or an exception, 2 a simulation check or a
 prerequisite failed and nothing was changed, 3 the proof is inconclusive, 4 the
-cleanup failed or a goal's end is unknown (takes precedence), 130 interrupted with a
-clean cleanup.
+cleanup failed or a goal's end is unknown (takes precedence), 130 a signal arrived
+and the cleanup succeeded.
 """
 import argparse
 from collections import deque
+from contextlib import contextmanager
 import json
 import math
 import signal
@@ -87,8 +103,12 @@ COMMANDER = '/bimanual_commander'
 NAVIGATOR = '/bt_navigator'
 # mujoco_ros2_control's controller manager, in the simulator's process.
 SIMULATOR = '/controller_manager'
-# Commander parameters the pick changes, restored to their values from before it.
-SNAPSHOT_PARAMETERS = ('allow_gripper_vs_octomap', 'grasp_scene_action')
+# The actions the pick sends goals to; each must have exactly one server.
+NAVIGATE_ACTION = '/navigate_to_pose'
+GO_TO_POSE_ACTION = '/go_to_pose'
+GRIPPER_ACTION = '/control_gripper'
+GO_TO_HOME_ACTION = '/go_to_home'
+ACTIONS = (NAVIGATE_ACTION, GO_TO_POSE_ACTION, GRIPPER_ACTION, GO_TO_HOME_ACTION)
 FINGER_JOINT = 'openarm_right_finger_joint1'
 HAND_LINK = 'openarm_right_hand'
 # task_water_bottle_1 on the kitchen table, centre of its collider, in map. The world
@@ -174,20 +194,56 @@ class UsageError(Exception):
 
 
 class SignalGuard:
-    """Raise Interrupted on the first SIGINT or SIGTERM while armed; record the others."""
+    """Handler of SIGINT and SIGTERM that raises Interrupted only where that is safe.
+
+    The first signal is always recorded in received, also while the guard is disarmed
+    or inside a deferred section; later ones go to ignored. Interrupted is raised once,
+    for the first signal, while the guard is armed and outside every deferred section:
+    at once if the signal arrives there, otherwise when the guard is armed or the last
+    deferred section is left. The guard starts disarmed.
+    """
 
     def __init__(self):
-        self.armed = True
+        self.armed = False
         self.received = None
+        self.raised = False
         self.ignored = []
+        self.deferring = 0
 
     def __call__(self, signum, frame):
         name = signal.Signals(signum).name
-        if not self.armed or self.received is not None:
+        if self.received is not None:
             self.ignored.append(name)
             return
         self.received = name
-        raise Interrupted(name)
+        self.raise_pending()
+
+    def arm(self):
+        self.armed = True
+        self.raise_pending()
+
+    def disarm(self):
+        self.armed = False
+
+    def raise_pending(self):
+        """Raise Interrupted for the recorded signal if it may be raised now."""
+        if self.received is not None and self.armed and not self.deferring \
+                and not self.raised:
+            self.raised = True
+            raise Interrupted(self.received)
+
+    @contextmanager
+    def deferred(self):
+        """Record a signal inside the block and raise it when the block is left.
+
+        If the block raises, its exception propagates and the signal stays recorded.
+        """
+        self.deferring += 1
+        try:
+            yield
+        finally:
+            self.deferring -= 1
+        self.raise_pending()
 
 
 def rotation_matrix(q):
@@ -220,6 +276,11 @@ def hand_rpy(yaw, camera_up):
 
 def stamp_ns(stamp):
     return stamp.sec * 1_000_000_000 + stamp.nanosec
+
+
+def node_path(namespace, name):
+    """Fully qualified name of a node, such as /bt_navigator."""
+    return namespace.rstrip('/') + '/' + name
 
 
 def wait_done(future, timeout):
@@ -285,11 +346,135 @@ class GoalRecord:
                 self.attach(self.handle)
 
     def ended(self):
-        """Whether the goal is known to be over: rejected or with a terminal status."""
+        """Whether the goal is known to be over: rejected, or with a terminal status.
+
+        A result request that finished with an exception leaves the end unknown.
+        """
         with self.lock:
             if self.handle is not None and not self.handle.accepted:
                 return True
-            return self.result_future is not None and self.result_future.done()
+            return self.result_future is not None and self.result_future.done() \
+                and self.result_future.exception() is None
+
+
+def result_response(future):
+    """(response, None) of a done result future, or (None, why it has no response)."""
+    error = future.exception()
+    if error is not None:
+        return None, f'the result request failed ({type(error).__name__}: {error})'
+    return future.result(), None
+
+
+class GoalTracker:
+    """Sends action goals and keeps each one until its end is known.
+
+    Every goal is in goals before it is sent, and stays there for the cleanup.
+    """
+
+    def __init__(self, guard, now_ns):
+        self.guard = guard
+        self.now_ns = now_ns
+        self.goals = []
+
+    def send(self, client, goal, label):
+        """Send a goal and return its GoalRecord.
+
+        The send, the record of its future and the callback that cancels an
+        acceptance after the caller gave up run with signals deferred, so a signal
+        cannot leave a sent goal unrecorded or without that callback.
+        """
+        record = GoalRecord(label)
+        self.goals.append(record)
+
+        def on_response(future):
+            try:
+                handle = future.result()
+            except Exception:
+                return
+            with record.lock:
+                record.attach(handle)
+
+        with self.guard.deferred():
+            record.send_future = client.send_goal_async(goal)
+            record.send_future.add_done_callback(on_response)
+        return record
+
+    def run_goal(self, client, goal, label, timeout):
+        """Send a goal and wait for its end. Returns an Outcome.
+
+        A goal without a result within timeout is canceled, and the call waits for the
+        server's answer and the goal's terminal status. Raises UnresolvedGoal when the
+        goal's end cannot be established, so nothing else is sent after it.
+        """
+        record = self.send(client, goal, label)
+        if not wait_done(record.send_future, GOAL_RESPONSE_TIMEOUT):
+            record.cancel()
+            raise UnresolvedGoal(f'{label}: no goal response within '
+                                 f'{GOAL_RESPONSE_TIMEOUT:.0f} s; canceled if accepted later')
+        try:
+            handle = record.send_future.result()
+        except Exception as error:
+            raise UnresolvedGoal(f'{label}: goal request failed ({error})') from error
+        with record.lock:
+            record.attach(handle)
+        if not handle.accepted:
+            return Outcome(GOAL_REJECTED, end_ns=self.now_ns())
+        if wait_done(record.result_future, timeout):
+            response, problem = result_response(record.result_future)
+            if response is None:
+                raise UnresolvedGoal(f'{label}: {problem}')
+            return Outcome(response.status, response.result, end_ns=self.now_ns())
+        cancel, response, problem = self.stop_goal(record)
+        if response is None:
+            raise UnresolvedGoal(f'{label}: no result within {timeout:.0f} s; {cancel}; '
+                                 f'{problem}')
+        return Outcome(GOAL_TIMED_OUT, response.result,
+                       f'no result within {timeout:.0f} s; {cancel}; ended '
+                       f'{status_name(response.status)}', self.now_ns())
+
+    def stop_goal(self, record):
+        """Cancel an accepted goal and wait for its terminal status.
+
+        Returns (the server's answer to the cancel, the result response or None, why
+        there is no response or None).
+        """
+        record.cancel()
+        cancel = describe_cancel(None)
+        if wait_done(record.cancel_future, CANCEL_RESPONSE_TIMEOUT):
+            error = record.cancel_future.exception()
+            cancel = describe_cancel(record.cancel_future.result()) if error is None \
+                else f'cancel request failed ({type(error).__name__}: {error})'
+        if not wait_done(record.result_future, CANCEL_END_TIMEOUT):
+            return cancel, None, f'no terminal status within {CANCEL_END_TIMEOUT:.0f} s'
+        response, problem = result_response(record.result_future)
+        return cancel, response, problem
+
+    def resolve(self, record):
+        """Bring a goal that has not ended to a known end. Returns a report entry or None."""
+        if record.send_future is None or record.ended():
+            return None
+        entry = {'goal': record.label}
+        if not wait_done(record.send_future, CANCEL_RESPONSE_TIMEOUT):
+            record.cancel()
+            entry.update(resolved=False, end='unknown: no goal response')
+            return entry
+        try:
+            handle = record.send_future.result()
+        except Exception as error:
+            entry.update(resolved=False, end=f'unknown: goal request failed ({error})')
+            return entry
+        with record.lock:
+            record.attach(handle)
+        if not handle.accepted:
+            entry.update(resolved=True, end=GOAL_REJECTED)
+            return entry
+        cancel, response, problem = self.stop_goal(record)
+        entry['cancel'] = cancel
+        if response is None:
+            entry.update(resolved=False, end=f'unknown: {problem}')
+        else:
+            entry.update(resolved=True, end=status_name(response.status))
+        return entry
 
 
 class Outcome:
@@ -308,13 +493,14 @@ class Outcome:
 class PickClient(Node):
     """Sends the pick's goals and watches the clock, the fingers and the head camera."""
 
-    def __init__(self):
+    def __init__(self, guard):
         super().__init__('sim_bottle_pick')
         self.set_parameters([Parameter('use_sim_time', Parameter.Type.BOOL, True)])
-        self.navigate = ActionClient(self, NavigateToPose, '/navigate_to_pose')
-        self.go_to_pose = ActionClient(self, GoToPose, '/go_to_pose')
-        self.gripper = ActionClient(self, ControlGripper, '/control_gripper')
-        self.go_to_home = ActionClient(self, GoToHome, '/go_to_home')
+        self.navigate = ActionClient(self, NavigateToPose, NAVIGATE_ACTION)
+        self.go_to_pose = ActionClient(self, GoToPose, GO_TO_POSE_ACTION)
+        self.gripper = ActionClient(self, ControlGripper, GRIPPER_ACTION)
+        self.go_to_home = ActionClient(self, GoToHome, GO_TO_HOME_ACTION)
+        self.tracker = GoalTracker(guard, self.now_ns)
         self.parameter_clients = {}
         for node in (COMMANDER, NAVIGATOR, SIMULATOR):
             self.parameter_clients[node, 'get'] = self.create_client(
@@ -324,7 +510,6 @@ class PickClient(Node):
         self.buffer = Buffer()
         self.listener = TransformListener(self.buffer, self)
         self.lock = threading.Lock()
-        self.goals = []
         # Set before the first SetParameters request to the commander.
         self.changed_commander = False
         self.clock_samples = deque(maxlen=200)
@@ -385,10 +570,10 @@ class PickClient(Node):
         deadline = time.monotonic() + timeout
         while True:
             checks = {
-                '/navigate_to_pose action server': self.navigate.server_is_ready(),
-                '/go_to_pose action server': self.go_to_pose.server_is_ready(),
-                '/control_gripper action server': self.gripper.server_is_ready(),
-                '/go_to_home action server': self.go_to_home.server_is_ready(),
+                f'{NAVIGATE_ACTION} action server': self.navigate.server_is_ready(),
+                f'{GO_TO_POSE_ACTION} action server': self.go_to_pose.server_is_ready(),
+                f'{GRIPPER_ACTION} action server': self.gripper.server_is_ready(),
+                f'{GO_TO_HOME_ACTION} action server': self.go_to_home.server_is_ready(),
                 f'{FINGER_JOINT} in /joint_states': self.finger[0] is not None,
                 'map -> base_footprint transform':
                     self.buffer.can_transform('map', 'base_footprint', Time()),
@@ -399,6 +584,15 @@ class PickClient(Node):
             if not missing or time.monotonic() >= deadline:
                 return missing
             time.sleep(0.5)
+
+    def action_servers(self):
+        """Return {action: [node of each server]} from the publishers of its status topic."""
+        servers = {}
+        for action in ACTIONS:
+            servers[action] = sorted(
+                node_path(info.node_namespace, info.node_name)
+                for info in self.get_publishers_info_by_topic(f'{action}/_action/status'))
+        return servers
 
     def call(self, client, request):
         future = client.call_async(request)
@@ -436,92 +630,6 @@ class PickClient(Node):
         if refused or len(response.results) != len(values):
             return False, 'refused ' + '; '.join(refused)
         return True, None
-
-    def run_goal(self, client, goal, label, timeout):
-        """Send a goal and wait for its end. Returns an Outcome.
-
-        A goal without a result within timeout is canceled, and the call waits for the
-        server's answer and the goal's terminal status. Raises UnresolvedGoal when the
-        goal's end cannot be established, so nothing else is sent after it.
-        """
-        record = GoalRecord(label)
-        self.goals.append(record)
-        record.send_future = client.send_goal_async(goal)
-
-        def on_response(future):
-            # A goal accepted after the wait below gave up is canceled at once.
-            try:
-                handle = future.result()
-            except Exception:
-                return
-            with record.lock:
-                record.attach(handle)
-
-        record.send_future.add_done_callback(on_response)
-        if not wait_done(record.send_future, GOAL_RESPONSE_TIMEOUT):
-            record.cancel()
-            raise UnresolvedGoal(f'{label}: no goal response within '
-                                 f'{GOAL_RESPONSE_TIMEOUT:.0f} s; canceled if accepted later')
-        try:
-            handle = record.send_future.result()
-        except Exception as error:
-            raise UnresolvedGoal(f'{label}: goal request failed ({error})') from error
-        with record.lock:
-            record.attach(handle)
-        if not handle.accepted:
-            return Outcome(GOAL_REJECTED, end_ns=self.now_ns())
-        if wait_done(record.result_future, timeout):
-            response = record.result_future.result()
-            return Outcome(response.status, response.result, end_ns=self.now_ns())
-        cancel, response = self.stop_goal(record)
-        if response is None:
-            raise UnresolvedGoal(f'{label}: no result within {timeout:.0f} s; {cancel}; no '
-                                 f'terminal status within {CANCEL_END_TIMEOUT:.0f} s')
-        return Outcome(GOAL_TIMED_OUT, response.result,
-                       f'no result within {timeout:.0f} s; {cancel}; ended '
-                       f'{status_name(response.status)}', self.now_ns())
-
-    def stop_goal(self, record):
-        """Cancel an accepted goal and wait for its terminal status.
-
-        Returns (the server's answer to the cancel, the result response or None).
-        """
-        record.cancel()
-        cancel = None
-        if wait_done(record.cancel_future, CANCEL_RESPONSE_TIMEOUT):
-            cancel = record.cancel_future.result()
-        response = None
-        if wait_done(record.result_future, CANCEL_END_TIMEOUT):
-            response = record.result_future.result()
-        return describe_cancel(cancel), response
-
-    def resolve(self, record):
-        """Bring a goal that has not ended to a known end. Returns a report entry or None."""
-        if record.send_future is None or record.ended():
-            return None
-        entry = {'goal': record.label}
-        if not wait_done(record.send_future, CANCEL_RESPONSE_TIMEOUT):
-            record.cancel()
-            entry.update(resolved=False, end='unknown: no goal response')
-            return entry
-        try:
-            handle = record.send_future.result()
-        except Exception as error:
-            entry.update(resolved=False, end=f'unknown: goal request failed ({error})')
-            return entry
-        with record.lock:
-            record.attach(handle)
-        if not handle.accepted:
-            entry.update(resolved=True, end=GOAL_REJECTED)
-            return entry
-        cancel, response = self.stop_goal(record)
-        entry['cancel'] = cancel
-        if response is None:
-            entry.update(resolved=False, end='unknown: no terminal status within '
-                                             f'{CANCEL_END_TIMEOUT:.0f} s')
-        else:
-            entry.update(resolved=True, end=status_name(response.status))
-        return entry
 
     def fresh_finger(self):
         """(finger position, None) from a fresh joint state, or (None, why not)."""
@@ -589,22 +697,22 @@ class PickClient(Node):
         goal.pose.pose.position.y = float(y)
         goal.pose.pose.orientation.z = math.sin(yaw / 2.0)
         goal.pose.pose.orientation.w = math.cos(yaw / 2.0)
-        return self.run_goal(self.navigate, goal, 'navigate', timeout)
+        return self.tracker.run_goal(self.navigate, goal, 'navigate', timeout)
 
     def move_hand(self, label, group, position, rpy, cartesian, timeout):
         goal = GoToPose.Goal(
             group_name=group, x=float(position[0]), y=float(position[1]),
             z=float(position[2]), roll=float(rpy[0]), pitch=float(rpy[1]), yaw=float(rpy[2]),
             cartesian_path=cartesian, frame_id='map')
-        return self.run_goal(self.go_to_pose, goal, label, timeout)
+        return self.tracker.run_goal(self.go_to_pose, goal, label, timeout)
 
     def move_to_named(self, label, group, pose_name, timeout):
         goal = GoToHome.Goal(group_name=group, pose_name=pose_name)
-        return self.run_goal(self.go_to_home, goal, label, timeout)
+        return self.tracker.run_goal(self.go_to_home, goal, label, timeout)
 
     def control_gripper(self, label, position, timeout):
         goal = ControlGripper.Goal(group_name='right_gripper', position=float(position))
-        return self.run_goal(self.gripper, goal, label, timeout)
+        return self.tracker.run_goal(self.gripper, goal, label, timeout)
 
     def depth_points(self):
         """Return the points of the next head depth image in map, or why there are none.
@@ -693,7 +801,6 @@ class PickRun:
         self.node = None
         self.executor = None
         self.spinner = None
-        self.snapshot = None
         self.started = time.monotonic()
         self.result = None
         self.cleanup_ok = True
@@ -702,9 +809,16 @@ class PickRun:
                        'steps': []}
 
     def execute(self):
-        """Run the pick and the cleanup. Returns the exit code; never raises."""
+        """Run the pick, the cleanup and the node's shutdown. Returns the exit code.
+
+        Never raises. The first signal stops the pick. During the cleanup and the
+        shutdown the guard only records it, and the exit code is 130 either way
+        unless the cleanup failed.
+        """
+        signal_before_cleanup = None
         try:
             try:
+                self.guard.arm()
                 self.result = self.pick()
             except Stop as stop:
                 self.result = stop.result
@@ -713,32 +827,46 @@ class PickRun:
                 self.result = sim_pick.ERROR
                 self.report['error'] = f'{type(error).__name__}: {error}'
                 self.report['traceback'] = traceback.format_exc()
-        except Interrupted as interrupt:
-            self.interrupted(interrupt)
+        except Interrupted:
+            pass  # The guard keeps the signal's name.
         finally:
             while True:
                 try:
-                    # A signal can still arrive before the guard is disarmed; the guard
-                    # raises only once, so the second pass runs the whole cleanup.
-                    self.guard.armed = False
+                    # The guard raises at most once and never while disarmed. If it
+                    # raises before disarm(), the second pass runs the whole cleanup.
+                    self.guard.disarm()
+                    signal_before_cleanup = self.guard.received
                     self.cleanup()
                     break
-                except Interrupted as interrupt:
-                    self.interrupted(interrupt)
+                except Interrupted:
+                    pass
+        try:
+            self.stop_node()
+        except Exception as error:
+            self.report['shutdown_error'] = f'{type(error).__name__}: {error}'
+        return self.conclude(signal_before_cleanup)
+
+    def conclude(self, signal_before_cleanup):
+        """Set the report's result and exit code from the run and the guard's record."""
+        name = self.guard.received
+        if name is not None:
+            self.report['signal'] = name
+            self.report['signal_during'] = 'pick' if signal_before_cleanup else 'cleanup'
+            if self.result is not None:
+                self.report['result_before_signal'] = self.result
+            self.report.setdefault(
+                'error', f'interrupted by {name}'
+                + ('' if signal_before_cleanup else ' during the cleanup'))
+            self.result = INTERRUPTED
         code = sim_pick.exit_code(self.result, cleanup_ok=self.cleanup_ok,
                                   goals_resolved=self.goals_resolved,
-                                  interrupted=self.guard.received is not None)
+                                  interrupted=name is not None)
         self.report['result'] = self.result
         self.report['passed'] = self.result == PASSED and code == sim_pick.EXIT_PASSED
         self.report['exit_code'] = code
         if self.guard.ignored:
             self.report['signals_ignored'] = list(self.guard.ignored)
         return code
-
-    def interrupted(self, interrupt):
-        self.result = INTERRUPTED
-        self.report['signal'] = interrupt.name
-        self.report['error'] = f'interrupted by {interrupt.name}'
 
     def step(self, name, ok, status, failure=FAILED, **extra):
         """Record a step; if it did not succeed, stop the pick with result failure."""
@@ -771,7 +899,7 @@ class PickRun:
 
     def start_node(self):
         rclpy.init(args=sys.argv, signal_handler_options=SignalHandlerOptions.NO)
-        self.node = PickClient()
+        self.node = PickClient(self.guard)
         self.executor = MultiThreadedExecutor(num_threads=3)
         self.executor.add_node(self.node)
         self.spinner = threading.Thread(target=self.executor.spin, daemon=True)
@@ -808,20 +936,22 @@ class PickRun:
             use_sim_time[name] = None if values is None else values['use_sim_time']
         values = node.get_parameters(SIMULATOR, ['mujoco_world'])
         world = None if values is None else values['mujoco_world']
-        failures = sim_pick.gate_failures(clock, use_sim_time, world)
+        servers = node.action_servers()
+        failures = sim_pick.gate_failures(clock, use_sim_time, world) \
+            + sim_pick.action_server_failures(servers)
         gate.update(clock='advancing' if clock is None else clock,
-                    use_sim_time=use_sim_time, mujoco_world=world, failures=failures)
+                    use_sim_time=use_sim_time, mujoco_world=world, action_servers=servers,
+                    failures=failures)
         if failures:
             raise Stop(NOT_RUN, 'simulation check: ' + '; '.join(failures))
 
-    def take_snapshot(self):
-        values = self.node.get_parameters(COMMANDER, SNAPSHOT_PARAMETERS)
-        if values is None or not isinstance(values['allow_gripper_vs_octomap'], bool) or \
-                not isinstance(values['grasp_scene_action'], str):
-            raise Stop(NOT_RUN, f'could not read {", ".join(SNAPSHOT_PARAMETERS)} from '
-                                f'{COMMANDER}: {values}')
-        self.snapshot = values
-        self.report['snapshot'] = dict(values)
+    def check_commander(self):
+        """Fail unless the commander has the defaults the cleanup restores. Changes nothing."""
+        values = self.node.get_parameters(COMMANDER, list(sim_pick.COMMANDER_DEFAULTS))
+        self.report['snapshot'] = values
+        problems = sim_pick.commander_problems(values, COMMANDER)
+        if problems:
+            raise Stop(NOT_RUN, 'commander check: ' + '; '.join(problems))
 
     def set_commander(self, name, **values):
         ok, why = self.node.set_commander(**values)
@@ -833,7 +963,7 @@ class PickRun:
         self.start_node()
         node = self.node
         self.check_simulation()
-        self.take_snapshot()
+        self.check_commander()
         names = ('grasp_detect_min', 'grasp_detect_max')
         values = node.get_parameters(COMMANDER, names) or {}
         band = self.report['grasp_band'] = [values.get(name) for name in names]
@@ -1005,9 +1135,10 @@ class PickRun:
                                           'errors': []}
         if self.node is None:
             return
-        for record in self.node.goals:
+        tracker = self.node.tracker
+        for record in tracker.goals:
             try:
-                state = self.node.resolve(record)
+                state = tracker.resolve(record)
             except Exception as error:
                 state = {'goal': record.label, 'resolved': False,
                          'end': f'unknown: {type(error).__name__}: {error}'}
@@ -1016,22 +1147,25 @@ class PickRun:
                 if not state['resolved']:
                     self.goals_resolved = False
                     entry['errors'].append(f'{state["goal"]}: {state["end"]}')
-        # Restoring turns the gripper's octomap exemption off again, the conservative
-        # direction, so it runs even if a goal's end is unknown.
-        if not self.node.changed_commander or self.snapshot is None:
+        # The pick started from the commander's defaults, so restoring writes them:
+        # the gripper's octomap exemption off and no planning scene change. Both are
+        # the conservative direction, so they are written even if a goal's end is
+        # unknown. A gripper goal still running reads grasp_scene_action when it ends.
+        if not self.node.changed_commander:
             return
+        expected = sim_pick.COMMANDER_DEFAULTS
         try:
-            ok, why = self.node.set_commander(**self.snapshot)
+            ok, why = self.node.set_commander(**expected)
             entry['restored'] = ok
             if not ok:
                 self.cleanup_ok = False
                 entry['errors'].append(f'restore: {why}')
-            values = self.node.get_parameters(COMMANDER, SNAPSHOT_PARAMETERS)
+            values = self.node.get_parameters(COMMANDER, list(expected))
             entry['read_back'] = values
-            entry['verified'] = values == self.snapshot
+            entry['verified'] = values == expected
             if not entry['verified']:
                 self.cleanup_ok = False
-                entry['errors'].append(f'read back {values}, expected {self.snapshot}')
+                entry['errors'].append(f'read back {values}, expected {expected}')
         except Exception as error:
             self.cleanup_ok = False
             entry['errors'].append(f'restore: {type(error).__name__}: {error}')
@@ -1112,15 +1246,12 @@ def main():
             report_path = argv[argv.index('--report') + 1]
         write_report({'result': NOT_RUN, 'passed': False, 'error': f'usage: {error}',
                       'exit_code': sim_pick.EXIT_NOT_RUN}, report_path, sim_pick.EXIT_NOT_RUN)
+    # Disarmed until execute() arms it, which raises a signal recorded before then.
     guard = SignalGuard()
     signal.signal(signal.SIGINT, guard)
     signal.signal(signal.SIGTERM, guard)
     run = PickRun(args, guard)
     code = run.execute()
-    try:
-        run.stop_node()
-    except Exception as error:
-        run.report['shutdown_error'] = f'{type(error).__name__}: {error}'
     write_report(run.report, args.report, code)
 
 
