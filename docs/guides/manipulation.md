@@ -437,28 +437,63 @@ pixi run ros2 action send_goal /go_to_pose my_robot_interfaces/action/GoToPose \
 `sim_bottle_pick.py` (package `robot_bringup`) picks the water bottle
 `task_water_bottle_1` from the kitchen table of the
 [Chula Pat14 room](simulation-chula-pat14.md) with the right arm. It reads the
-bottle's pose as the world places it, as if it came from memory. Start the demo launch,
-then the script from the spawn:
+bottle's pose as the world places it, as if it came from memory.
+
+Run the simulation on a Zenoh router and ROS domain of its own, never on the robot's
+graph. Start the router in a first terminal:
 
 ```bash
-pixi run ros2 launch robot_bringup whole_body_demo.launch.py world:=chula_pat14_6
+export ROS_DOMAIN_ID=81
+unset ZENOH_ROUTER_CONFIG_URI ZENOH_SESSION_CONFIG_URI
+ZENOH_CONFIG_OVERRIDE='listen/endpoints=["tcp/localhost:7511"];connect/endpoints=[]' pixi run ros2 run rmw_zenoh_cpp rmw_zenohd
+```
+
+Run this first in every other terminal:
+
+```bash
+export ROS_DOMAIN_ID=81
+unset ZENOH_ROUTER_CONFIG_URI ZENOH_SESSION_CONFIG_URI
+export ZENOH_CONFIG_OVERRIDE='connect/endpoints=["tcp/localhost:7511"]'
+```
+
+Then start the demo launch without its own router in one terminal, and the script from
+the spawn in another:
+
+```bash
+pixi run ros2 launch robot_bringup whole_body_demo.launch.py world:=chula_pat14_6 start_router:=false
 pixi run ros2 run robot_bringup sim_bottle_pick.py --report /tmp/pick.json
 ```
 
+Port 7511 and domain 81 are an example. Use a pair that no robot stack uses: the team
+router has port 7447 and domain 23, and
+[Whole-Body MoveIt on the Real Robot](whole-body-real-robot.md#prepare-terminals) uses
+port 7499 and domain 77.
+
 The script is installed with `robot_bringup`, also on the robot. Before it changes a
-parameter or sends a goal, it checks that it talks to the Chula simulation, and exits
-with code 2 naming the failed check unless:
+parameter or sends a goal, it runs these checks in this order, and exits with code 2
+naming the failed check:
 
-- `/clock` delivers at least 3 messages with advancing time within 10 s of wall time,
-- `/bimanual_commander` and `/bt_navigator` report `use_sim_time` true through their
-  parameter services,
-- `/controller_manager` reports `mujoco_world` `chula_pat14_6`. The MuJoCo launch
-  files set that parameter on the simulator from `world:=NAME`, see
-  [Run with ROS 2](simulation-mujoco.md#run-with-ros-2).
+1. `/clock` delivers at least 3 messages with advancing time within 10 s of wall time.
+   Without a simulator, the script stops here.
+2. Within 240 s, the four action servers, the parameter services, the finger joint in
+   `/joint_states` and the `map` to `base_footprint` transform are there.
+3. `/clock` advances again, `/bimanual_commander` and `/bt_navigator` report
+   `use_sim_time` true through their parameter services, `/controller_manager` reports
+   `mujoco_world` `chula_pat14_6`, and each of the four actions has exactly one server:
+   one publisher of its `_action/status` topic. The MuJoCo launch files set
+   `mujoco_world` on the simulator from `world:=NAME`, see
+   [Run with ROS 2](simulation-mujoco.md#run-with-ros-2).
+4. `/bimanual_commander` reports `allow_gripper_vs_octomap` false and
+   `grasp_scene_action` `none`, its defaults, which the cleanup writes back. Otherwise
+   the message names the parameter and the command that resets it, such as
+   `ros2 param set /bimanual_commander allow_gripper_vs_octomap false`.
 
-It then waits up to 240 s for the four action servers, the parameter services, the
-finger joint in `/joint_states` and the `map` to `base_footprint` transform, and also
-exits with code 2 if one of them is missing.
+The checks tell the simulation from a graph with only the real robot, where `/clock`
+does not run, so the script fails closed there. They do not keep a simulation and
+hardware on one graph apart. `mujoco_world` is the name the launch gave the simulator,
+not proof of what it loaded, and the server count only catches a second server behind
+the same action name. What keeps the pick off the hardware is running the simulation
+on a router and domain of its own.
 
 | Step | Goal | Passes when |
 | --- | --- | --- |
@@ -480,11 +515,12 @@ script checks:
   band (`grasp_detect_min` to `grasp_detect_max`, 0.005 to 0.044 m by default). The
   reading counts only if its stamp is within 0.5 s of simulated time of the script's
   clock and it arrived less than 1 s of wall time ago.
-- **Camera**: the first head depth image stamped after the hold shows the bottle
-  lifted. Its points are put into `map` with the camera pose at the image stamp. Of
-  the points the camera saw of the bottle's lower part at its old place before the
-  pick, at most 10 % may remain there, and at least 10 points must be above the
-  bottle's old top.
+- **Camera**: a geometric check of the first head depth image stamped after the hold.
+  Its points are put into `map` with the camera pose at the image stamp. Of the points
+  the camera saw of the bottle's lower part at its old place before the pick, at most
+  10 % may remain there, and at least 10 points must be above the bottle's old top,
+  near where the fingers hold it. The check counts points in these regions; it does not
+  tell the bottle from anything else there.
 
 The camera decides only if it saw at least 20 points of the bottle at its old place
 before the pick and 20 points of the table top around that place after it. When it
@@ -502,34 +538,46 @@ logs to stdout as well, so use `--report` for a file that parses as JSON. The re
 | --- | --- | --- |
 | 0 | `passed` or `passed_finger_only` | The pick passed and the cleanup succeeded |
 | 1 | `failed` or `error` | A step failed, or the script raised an exception; the report has its traceback |
-| 2 | `not_run` | A simulation check or a prerequisite failed, or an argument is wrong. Nothing was changed. |
+| 2 | `not_run` | A simulation check, the commander check or a prerequisite failed, or an argument is wrong. Nothing was changed. |
 | 3 | `inconclusive` | The steps succeeded, but the evidence does not decide the hold |
 | 4 | Any | The cleanup failed, or the end of a goal is unknown. Takes precedence over the other codes. |
-| 130 | `interrupted` | SIGINT or SIGTERM, and the cleanup succeeded |
+| 130 | `interrupted` | SIGINT or SIGTERM arrived, during the pick or its cleanup, and the cleanup succeeded |
 
-Before its first change, the script reads the commander's `allow_gripper_vs_octomap`
-and `grasp_scene_action`. On every exit it can handle (the end of the pick, a failed
-step, an exception, SIGINT or SIGTERM), it then:
+On every exit it can handle (the end of the pick, a failed step, an exception, SIGINT
+or SIGTERM), the script:
 
 1. cancels each goal that has not ended, and waits up to 10 s for the server's answer
    and 30 s for the goal's terminal status,
-2. sets both parameters back to the values it read, and reads them back.
+2. if it changed a commander parameter, sets `allow_gripper_vs_octomap` back to false
+   and `grasp_scene_action` back to `none`, the values check 4 required, and reads them
+   back.
 
 The report's `cleanup` lists the goals it stopped and whether the parameters were
-`restored` and `verified`. A second signal during the cleanup does not stop it; the
-report lists it in `signals_ignored`. `ros2 run` does not pass a signal on to the
-script: Ctrl+C in the terminal reaches both, but a `kill` must name the script's own
-process or the process group. A SIGKILL skips the cleanup. After one, check
-the commander with `ros2 param get /bimanual_commander allow_gripper_vs_octomap` and
-set it back to `false` if the pick left it on.
+`restored` and `verified`.
+
+SIGINT or SIGTERM stops the pick where it is, except while the script sends a goal:
+then the signal takes effect once the goal is recorded, so the cleanup cancels it. A
+signal during the cleanup does not stop the cleanup, but it still counts: the exit
+code is 130 (or 4), the report's `result` is `interrupted`, `signal_during` is
+`cleanup`, and `result_before_signal` keeps the pick's own result. A second signal does
+not stop the cleanup either; the report lists it in `signals_ignored`. `ros2 run` does
+not pass a signal on to the script: Ctrl+C in the terminal reaches both, but a `kill`
+must name the script's own process or the process group. A SIGKILL skips the cleanup.
+After one, the next run stops at check 4 if the pick left a parameter changed, and
+prints the `ros2 param set` command that resets it. A goal the killed script sent may
+still run.
 
 A goal that does not end within its timeout (900 s for the drive and the pre-grasp,
 600 s for the approach and the lift, 300 s for the tuck, 120 s for the gripper) is
 canceled, and its step fails once the server reports the goal's end. If the server
 does not answer a goal request within 30 s, or the goal's end stays unknown after the
-cancel, the script sends no further goal and changes no further parameter. It exits
-with code 4 unless the cleanup then establishes the goal's end. A report says
-`cancel accepted` only after the server answered the cancel.
+cancel, the script sends no further goal and exits with code 4 unless the cleanup then
+establishes the goal's end. A goal that the server accepts after the script stopped
+waiting is canceled when the acceptance arrives, as long as the script runs. The
+cleanup writes the two parameters back on this path too, because false and `none` are
+the conservative values. That cannot reach into a goal that is still running: a
+gripper goal reads `grasp_scene_action` when it finishes, so it uses the value set at
+that time. A report says `cancel accepted` only after the server answered the cancel.
 
 `--image-prefix PREFIX` also saves the head camera's images before and after the pick.
 `--help` lists the other options: the bottle pose, the approach heading, the
@@ -548,11 +596,14 @@ number of Nav2 goals to send.
     | 207 | `ComputePathToPose` | `TIMEOUT` |
     | 107 | `FollowPath` | `CONTROLLER_TIMED_OUT` |
     | 105 | `FollowPath` | `FAILED_TO_MAKE_PROGRESS`: the base did not move while the controller waited |
-    | 103 | `FollowPath` | `INVALID_PATH`: after a 105 near the goal, the behavior tree sent the controller its pruned path again, and the controller found no pose of it left (`Resulting plan has 0 poses in it`) |
+    | 103 | `FollowPath` | `INVALID_PATH`: the controller rejected its path |
 
-    A new goal clears the path on `bt_navigator`'s blackboard, so the drive is planned
-    again from where the base stands. Any other code, a cancel, a rejection or an
-    unknown end fails the drive.
+    Code 103 is retried for the one cause seen in these runs: after a 105 near the
+    goal, the behavior tree sent the controller its pruned path again, and the
+    controller found no pose of it left (`Resulting plan has 0 poses in it`). A new goal
+    clears the path on `bt_navigator`'s blackboard, so the drive is planned again from
+    where the base stands. Any other code, a cancel, a rejection or an unknown end fails
+    the drive.
 - From the stand-off, the right arm reaches the pre-grasp pose with the base still
   (`Success (base fixed)`) or after a turn of up to 0.16 rad. In one run it turned
   the base 0.37 rad, which took the bottle out of the head camera's view. From 0.90 m
@@ -572,10 +623,10 @@ number of Nav2 goals to send.
   path followed only 18 to 82 % of the requested trajectory, and the commander needs
   over 90 %. The tuck to `standby` prevents that.
 - Before the approach the script sets the commander's `allow_gripper_vs_octomap` to
-  true, because the fingers have to enter the bottle's voxels. The cleanup restores the
-  value from before the pick. The script sets `grasp_scene_action` to `none` before the
-  first move: the box that `grasp` attaches would start the lift in collision with the
-  table top's voxels.
+  true, because the fingers have to enter the bottle's voxels. The cleanup sets it back
+  to false, the value the script requires before it starts. The script also sets
+  `grasp_scene_action` to `none` before the first move: the box that `grasp` attaches
+  would start the lift in collision with the table top's voxels.
 - The controller stalls on the bottle, so the close result has `success: false` and
   `status: Failed`. `grasped` and `gripper_gap` are what tell a hold. In the live runs,
   the gap settled at 0.013 to 0.014 m, inside the default band of 0.005 to 0.044 m.

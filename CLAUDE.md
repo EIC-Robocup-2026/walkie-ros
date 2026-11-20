@@ -37,7 +37,7 @@ pixi run ros2 launch robot_bringup real_omnibot.launch.py         # real robot
 pixi run ros2 launch robot_bringup lift_homing.launch.py [mock:=true]
 pixi run ros2 launch robot_bringup whole_body_demo.launch.py      # MuJoCo + Nav2 + MoveIt with base_mode:=whole_body; starts its own router
 pixi run ros2 run openarm_bimanual_commander_cpp whole_body_demo  # client of that launch; exits non-zero if a step misses its expectation
-pixi run ros2 run robot_bringup sim_bottle_pick.py                # with that launch and world:=chula_pat14_6: Nav2 + whole-body pick of the kitchen bottle; exits 2 unless that simulation runs, 0 only when the head camera confirms the lift (or with --accept-finger-only)
+pixi run ros2 run robot_bringup sim_bottle_pick.py                # with that launch and world:=chula_pat14_6: Nav2 + whole-body pick of the kitchen bottle; run the sim on its own router and domain, never the robot's graph; exits 2 unless its checks find that simulation and the commander's defaults, 0 only when the head camera's depth check sees the lift (or with --accept-finger-only)
 
 pixi run mjcf          # regenerate description/mujoco/walkie.xml from the xacro
 pixi run mjcf-view     # open description/mujoco/scene.xml in the MuJoCo viewer
