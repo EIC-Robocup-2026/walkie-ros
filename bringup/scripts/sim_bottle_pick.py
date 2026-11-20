@@ -691,6 +691,8 @@ class PickRun:
         self.args = args
         self.guard = guard
         self.node = None
+        self.executor = None
+        self.spinner = None
         self.snapshot = None
         self.started = time.monotonic()
         self.result = None
@@ -770,9 +772,22 @@ class PickRun:
     def start_node(self):
         rclpy.init(args=sys.argv, signal_handler_options=SignalHandlerOptions.NO)
         self.node = PickClient()
-        executor = MultiThreadedExecutor(num_threads=3)
-        executor.add_node(self.node)
-        threading.Thread(target=executor.spin, daemon=True).start()
+        self.executor = MultiThreadedExecutor(num_threads=3)
+        self.executor.add_node(self.node)
+        self.spinner = threading.Thread(target=self.executor.spin, daemon=True)
+        self.spinner.start()
+
+    def stop_node(self):
+        """Stop the executor and destroy the node; call after the cleanup.
+
+        Exiting while the executor thread still waits aborts the process in
+        std::terminate, which replaces the exit code with SIGABRT's.
+        """
+        if self.executor is not None:
+            self.executor.shutdown(timeout_sec=SERVICE_TIMEOUT)
+            self.spinner.join(SERVICE_TIMEOUT)
+        if self.node is not None:
+            self.node.destroy_node()
 
     def check_simulation(self):
         """Fail closed unless the graph is the Chula MuJoCo simulation. Changes nothing."""
@@ -1102,6 +1117,10 @@ def main():
     signal.signal(signal.SIGTERM, guard)
     run = PickRun(args, guard)
     code = run.execute()
+    try:
+        run.stop_node()
+    except Exception as error:
+        run.report['shutdown_error'] = f'{type(error).__name__}: {error}'
     write_report(run.report, args.report, code)
 
 
