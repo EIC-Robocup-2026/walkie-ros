@@ -39,6 +39,7 @@ if(BUILD_TESTING)
   # Compiles every installed world variant with the installed walkie.xml.
   ament_add_pytest_test(test_mujoco_world_assets test/test_mujoco_world_assets.py
     TIMEOUT 180)
+  ament_add_pytest_test(test_sim_pick test/test_sim_pick.py)
   # Reads simulation/mujoco/tools/check_grasp.py from the source tree.
   ament_add_pytest_test(test_check_grasp test/test_check_grasp.py)
   find_package(ament_lint_auto REQUIRED)
