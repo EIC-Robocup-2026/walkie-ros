@@ -304,7 +304,10 @@ class TestGripperOctomapAllowance(unittest.TestCase):
             'The disable')
         self.scene.release()
         log = self.wait_applied(proc_output, start, 2)
-        self.assertLess(log.find(ALLOWED), log.find(ENFORCED), log.decode(errors='replace'))
+        # The enable's apply reads the parameter once its held answer arrives, so it may
+        # enforce too. Either way the last apply must enforce.
+        self.assertTrue(log[log.rfind(APPLIED):].startswith(ENFORCED),
+                        log.decode(errors='replace'))
         self.assertEqual(grippers_allowed(self.acm()), set(),
                          'The scene still lets the fingers touch the octomap')
 
