@@ -11,6 +11,12 @@ Every node runs on simulated time from /clock.
 With world:=NAME, the exported world NAME (see robot_bringup.mujoco_launch) is
 assembled with Walkie into a cached MJCF before the simulator starts, and that
 file replaces mujoco_model. Without world, mujoco_model is used unchanged.
+
+The simulator's controller_manager has a string parameter mujoco_world: the
+name of the prepared world, or empty without one. Clients that use a world's
+fixed coordinates, such as sim_bottle_pick.py, read it to check which
+simulation they talk to. A launch that prepares the world itself passes the
+name in mujoco_world.
 """
 import os
 
@@ -40,6 +46,8 @@ def _resolve_world(context, *, description_dir, default_model):
         return []
     return [
         SetLaunchConfiguration("mujoco_model", prepared["model_path"]),
+        SetLaunchConfiguration("mujoco_world", LaunchConfiguration("world").perform(context)
+                               .strip()),
         LogInfo(msg=f"Prepared world variant {prepared['variant']}: "
                     f"{prepared['model_path']}"),
     ]
@@ -116,13 +124,23 @@ def generate_launch_description():
 
     # Simulator and controller manager. It reads the URDF from /robot_description
     # and the MJCF path from the URDF hardware block, and publishes /clock.
-    # Closing the MuJoCo viewer ends the whole launch.
+    # Closing the MuJoCo viewer ends the whole launch. The controller manager declares
+    # every parameter it is given, so mujoco_world can be read from it.
     mujoco_ros2_control = Node(
         package="mujoco_ros2_control",
         executable="ros2_control_node",
         output="screen",
         emulate_tty=True,
-        parameters=[{"use_sim_time": True}, controllers_yaml, plugins_yaml],
+        parameters=[
+            {
+                "use_sim_time": True,
+                "mujoco_world": ParameterValue(
+                    LaunchConfiguration("mujoco_world", default=""), value_type=str
+                ),
+            },
+            controllers_yaml,
+            plugins_yaml,
+        ],
         remappings=[("/imu_sensor_broadcaster/imu", "/imu")],
         on_exit=Shutdown(),
     )

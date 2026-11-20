@@ -11,6 +11,7 @@ from launch.actions import (
 )
 from launch.utilities import normalize_to_list_of_substitutions, perform_substitutions
 from launch_ros.actions import Node
+from launch_ros.utilities import evaluate_parameters
 import pytest
 from robot_bringup import mujoco_launch, world_loader
 import yaml
@@ -145,9 +146,11 @@ def test_room_uses_amcl_and_prepares_only_once(prepared_world, tmp_path):
     # model, with world/spawn cleared, and must not call preparation again.
     sim_args = _arguments(simulator, context)
     assert (sim_args["world"], sim_args["spawn"], sim_args["spawn_pose"]) == ("", "", "")
-    sim_context, _ = _resolve(_load("mujoco_omnibot"), **sim_args)
+    sim_context, sim_actions = _resolve(_load("mujoco_omnibot"), **sim_args)
     assert len(prepared_world) == 1
     assert sim_context.launch_configurations["mujoco_model"] == PREPARED["model_path"]
+    # The simulator names the world that the Nav2 launch prepared.
+    assert _simulator_parameters(sim_actions, sim_context)["mujoco_world"] == "chula_pat14_6"
 
 
 def test_navigation_rviz_config_sets_the_initial_pose_and_goals(prepared_world):
@@ -183,7 +186,10 @@ def test_empty_floor_retains_static_map_odom(prepared_world):
     assert prepared_world == []
     assert _executables(actions, context) == ["static_transform_publisher", "nav_commander.py"]
     simulator, navigation = _includes(actions)
-    assert _arguments(simulator, context)["mujoco_model"].endswith("/mujoco/scene.xml")
+    sim_args = _arguments(simulator, context)
+    assert sim_args["mujoco_model"].endswith("/mujoco/scene.xml")
+    sim_context, sim_actions = _resolve(_load("mujoco_omnibot"), **sim_args)
+    assert _simulator_parameters(sim_actions, sim_context)["mujoco_world"] == ""
     nav_args = _arguments(navigation, context)
     assert nav_args["use_localization"] == "False"
     assert nav_args["map"].endswith("/config/map/empty_floor/map.yaml")
@@ -259,6 +265,9 @@ def test_whole_body_demo_passes_a_world_with_ground_truth(prepared_world):
     assert nav_context.launch_configurations["mujoco_model"] == PREPARED["model_path"]
     assert nav_context.launch_configurations["use_localization"] == "False"
     assert _executables(actions, nav_context) == ["ground_truth_map_odom.py", "nav_commander.py"]
+    simulator, _ = _includes(actions)
+    assert _arguments(simulator, nav_context, keys={"mujoco_world"}) == {
+        "mujoco_world": "chula_pat14_6"}
 
 
 def test_whole_body_demo_rejects_a_world_with_a_model(prepared_world):
@@ -277,7 +286,7 @@ def test_simulator_only_needs_no_navigation_package(prepared_world, monkeypatch)
     monkeypatch.setattr(
         ament_index_python.packages, "get_package_share_directory", without_navigation
     )
-    context, _ = _resolve(
+    context, actions = _resolve(
         _load("mujoco_omnibot"), world="chula_pat14_6", spawn_pose="1.76 -1.48 -90",
     )
     assert len(prepared_world) == 1
@@ -288,6 +297,15 @@ def test_simulator_only_needs_no_navigation_package(prepared_world, monkeypatch)
     assert call["worlds_dir"] is None
     assert Path(call["robot_path"]).name == "walkie.xml"
     assert context.launch_configurations["mujoco_model"] == PREPARED["model_path"]
+    assert _simulator_parameters(actions, context)["mujoco_world"] == "chula_pat14_6"
+
+
+def test_simulator_without_world_names_no_world(prepared_world):
+    context, actions = _resolve(_load("mujoco_omnibot"))
+    assert prepared_world == []
+    parameters = _simulator_parameters(actions, context)
+    assert parameters["mujoco_world"] == ""
+    assert parameters["use_sim_time"] is True
 
 
 @pytest.mark.parametrize("launch_name", ["nav_mujoco_omnibot", "mujoco_omnibot"])
@@ -359,6 +377,17 @@ def test_x11_override_requires_wayland_and_an_x11_display(environ, platform, exp
 def _simulator_node(actions):
     return next(action for action in _flatten(actions) if isinstance(action, Node)
                 and action.node_package == "mujoco_ros2_control")
+
+
+def _simulator_parameters(actions, context):
+    """Evaluate the simulator node's inline parameters; parameter files are skipped."""
+    # launch_ros keeps a Node's parameters private until the node executes.
+    evaluated = evaluate_parameters(context, _simulator_node(actions)._Node__parameters)
+    parameters = {}
+    for entry in evaluated:
+        if isinstance(entry, dict):
+            parameters.update(entry)
+    return parameters
 
 
 def _x11_groups(actions):

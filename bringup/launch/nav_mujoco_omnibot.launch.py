@@ -57,6 +57,7 @@ def _resolve_world(context, *, description_dir, default_model, default_map_dir):
             SetLaunchConfiguration("map_yaml", os.path.join(map_dir, "map.yaml")),
             SetLaunchConfiguration("use_localization", "False"),
             SetLaunchConfiguration("static_map_odom", str(not truth_map_odom)),
+            SetLaunchConfiguration("mujoco_world", ""),
         ]
 
     # A world names its map file; its directory stands in for the map argument,
@@ -64,6 +65,8 @@ def _resolve_world(context, *, description_dir, default_model, default_map_dir):
     world_map_dir = os.path.dirname(prepared["map_path"])
     actions = [
         SetLaunchConfiguration("mujoco_model", prepared["model_path"]),
+        SetLaunchConfiguration("mujoco_world", LaunchConfiguration("world").perform(context)
+                               .strip()),
         SetLaunchConfiguration("map", world_map_dir),
         SetLaunchConfiguration("map_yaml", prepared["map_path"]),
         SetLaunchConfiguration("nav2_config", prepared["params_path"]),
@@ -180,8 +183,9 @@ def generate_launch_description():
     )
 
     # The world, if any, is prepared once here; the included simulator launch
-    # receives the generated model. world and the spawn arguments are cleared
-    # because the group passes this launch's configurations to the include.
+    # receives the generated model and the world's name in mujoco_world. world and
+    # the spawn arguments are cleared because the group passes this launch's
+    # configurations to the include.
     mujoco_launch = GroupAction(actions=[
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
@@ -192,6 +196,7 @@ def generate_launch_description():
                 "spawn": "",
                 "spawn_pose": "",
                 "mujoco_model": mujoco_model,
+                "mujoco_world": LaunchConfiguration("mujoco_world"),
                 "headless": headless,
                 "use_rviz": use_rviz,
                 "rviz_config": rviz_config,
