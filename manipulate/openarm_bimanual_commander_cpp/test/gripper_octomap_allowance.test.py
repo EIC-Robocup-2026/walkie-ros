@@ -7,8 +7,8 @@ which passes every request on to move_group at once, but can hold one answer bac
 commander then works on a matrix read before a later change landed, as when move_group
 answers late, and the test checks that the later change survives.
 
-The checks look only at the gripper links' pairs with the octomap and at the octomap's
-default entry, which are what the allowance and /toggle_octomap_collision set.
+The checks look only at the gripper links' pairs with the octomap and at the default
+entries the toggles set. collision_toggles.test.py checks what each toggle allows.
 
 Needs a running Zenoh router, as every launch test on this workspace does. Exit codes
 are not asserted: move_group and the commander abort in libzenohc during shutdown.
@@ -23,6 +23,7 @@ from launch import LaunchDescription
 import launch_testing
 from moveit_msgs.msg import PlanningSceneComponents
 from moveit_msgs.srv import GetPlanningScene
+from my_robot_interfaces.srv import ToggleGripperCollision
 import pytest
 import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -93,11 +94,11 @@ def grippers_allowed(acm):
     }
 
 
-def octomap_default(acm):
-    """The octomap's default entry: True when planning ignores the octomap."""
-    if OCTOMAP not in acm.default_entry_names:
+def default_entry(acm, name):
+    """The default entry of `name`: True when a toggle has turned its checking off."""
+    if name not in acm.default_entry_names:
         return False
-    return acm.default_entry_values[acm.default_entry_names.index(OCTOMAP)]
+    return acm.default_entry_values[acm.default_entry_names.index(name)]
 
 
 class SceneService:
@@ -194,6 +195,9 @@ class TestGripperOctomapAllowance(unittest.TestCase):
         node = cls.client.node
         cls.get_scene = node.create_client(GetPlanningScene, '/get_planning_scene')
         cls.toggle_octomap = node.create_client(SetBool, '/toggle_octomap_collision')
+        cls.toggle_gripper_client = node.create_client(
+            ToggleGripperCollision, '/toggle_gripper_collision')
+        cls.toggle_all_client = node.create_client(SetBool, '/toggle_all_collision_checking')
         cls.client.wait_ready()
 
     @classmethod
@@ -237,6 +241,34 @@ class TestGripperOctomapAllowance(unittest.TestCase):
         self.assertTrue(self.toggle_octomap.wait_for_service(timeout_sec=30.0))
         return self.toggle_octomap.call_async(SetBool.Request(data=use_octomap))
 
+    def toggle_gripper(self, enable):
+        """Return the future of a /toggle_gripper_collision call for the left gripper."""
+        self.assertTrue(self.toggle_gripper_client.wait_for_service(timeout_sec=30.0))
+        return self.toggle_gripper_client.call_async(
+            ToggleGripperCollision.Request(group_name='left_gripper', enable=enable))
+
+    def toggle_all(self, check):
+        """Return the future of a /toggle_all_collision_checking call."""
+        self.assertTrue(self.toggle_all_client.wait_for_service(timeout_sec=30.0))
+        return self.toggle_all_client.call_async(SetBool.Request(data=check))
+
+    def assert_survives_an_apply(self, proc_output, toggled_off, name):
+        """Hold the read of an apply of the allowance, turn checking of `name` off with
+        `toggled_off()` meanwhile, and check that the apply kept the toggle."""
+        start = len(commander_log(proc_output))
+        self.scene.hold_next()
+        self.client.set_parameter(PARAMETER, True)
+        self.assertTrue(self.scene.wait_held(), 'The enable never read the scene')
+        toggled = toggled_off()
+        # A toggle that does not wait for the apply finishes during the hold.
+        wait_until(toggled.done, HOLD_S)
+        self.scene.release()
+        self.wait_applied(proc_output, start, 1)
+        self.assertTrue(self.client.wait(toggled, 30.0).success)
+        acm = self.acm()
+        self.assertTrue(default_entry(acm, name), 'The allowance undid the toggle')
+        self.assertEqual(grippers_allowed(acm), GRIPPER_LINKS)
+
     def test_the_allowance_reaches_the_scene(self, proc_output):
         self.addCleanup(self.set_allowance, proc_output, False)
         self.set_allowance(proc_output, True)
@@ -268,7 +300,7 @@ class TestGripperOctomapAllowance(unittest.TestCase):
         # fingers and turn the octomap back on while the disallow's read is held.
         self.assertTrue(self.client.wait(self.toggle(False), 30.0).success)
         self.set_allowance(proc_output, True)
-        self.assertTrue(octomap_default(self.acm()))
+        self.assertTrue(default_entry(self.acm(), OCTOMAP))
         start = len(commander_log(proc_output))
         self.scene.hold_next()
         self.client.set_parameter(PARAMETER, False)
@@ -280,7 +312,7 @@ class TestGripperOctomapAllowance(unittest.TestCase):
         self.wait_applied(proc_output, start, 1)
         self.assertTrue(self.client.wait(toggled, 30.0).success)
         acm = self.acm()
-        self.assertFalse(octomap_default(acm), 'The allowance undid the toggle')
+        self.assertFalse(default_entry(acm, OCTOMAP), 'The allowance undid the toggle')
         self.assertEqual(grippers_allowed(acm), set(), 'The toggle undid the allowance')
 
     def test_an_apply_finishes_while_more_toggles_than_threads_wait_for_it(self, proc_output):
@@ -303,3 +335,15 @@ class TestGripperOctomapAllowance(unittest.TestCase):
         for toggled in toggles:
             self.assertTrue(self.client.wait(toggled, 60.0).success)
         self.assertEqual(grippers_allowed(self.acm()), GRIPPER_LINKS)
+
+    def test_a_gripper_toggle_during_an_apply_of_the_allowance_survives_it(self, proc_output):
+        self.addCleanup(self.set_allowance, proc_output, False)
+        self.addCleanup(lambda: self.client.wait(self.toggle_gripper(True), 30.0))
+        self.assert_survives_an_apply(
+            proc_output, lambda: self.toggle_gripper(False), 'openarm_left_hand')
+
+    def test_turning_all_checking_off_during_an_apply_of_the_allowance_survives_it(
+            self, proc_output):
+        self.addCleanup(self.set_allowance, proc_output, False)
+        self.addCleanup(lambda: self.client.wait(self.toggle_all(True), 30.0))
+        self.assert_survives_an_apply(proc_output, lambda: self.toggle_all(False), 'base_link')

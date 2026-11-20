@@ -155,6 +155,8 @@ install(PROGRAMS
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_whole_body_goal test/test_whole_body_goal.cpp)
+  ament_add_gtest(test_collision_matrix_edit test/test_collision_matrix_edit.cpp)
+  ament_target_dependencies(test_collision_matrix_edit moveit_core moveit_msgs)
 
   find_package(ros_testing REQUIRED)
   # The real move_group and commander against stub controllers. They need a running
@@ -172,6 +174,7 @@ if(BUILD_TESTING)
   add_ros_test(test/whole_body_follower.test.py TIMEOUT 180)
   add_ros_test(test/arm_ik_first.test.py TIMEOUT 300)
   add_ros_test(test/gripper_octomap_allowance.test.py TIMEOUT 300)
+  add_ros_test(test/collision_toggles.test.py TIMEOUT 300)
   add_ros_test(test/whole_body_marker.test.py TIMEOUT 300)
   add_ros_test(test/whole_body_marker_client.test.py TIMEOUT 120)
 endif()

@@ -190,6 +190,12 @@ code disagree, the code is correct (see [Known issues](#known-issues)).
 | Service | `/clear_collision_objects` | `std_srvs/Trigger` | Detach held objects and remove all world collision objects from the planning scene |
 | Service | `/execute_stored_plan` | `std_srvs/Trigger` | Execute the stored `plan_only` plan of the group named in `execute_plan_group` |
 
+The three toggle services edit `move_group`'s allowed collision matrix, one edit at a time.
+Turning a toggle back on restores the pairs the SRDF disables and, while
+`allow_gripper_vs_octomap` is true, the gripper links against the octomap. Any other entry in
+the toggled rows, such as one another node set, is reset to what those rules and the other
+toggles give.
+
 Pose goals use `base_footprint` as the default frame. Cartesian paths use a
 1 cm step.
 

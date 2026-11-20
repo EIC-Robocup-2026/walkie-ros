@@ -24,6 +24,7 @@
 #include <control_msgs/action/gripper_command.hpp>
 #include <moveit/trajectory_processing/time_optimal_trajectory_generation.hpp>
 #include <moveit/robot_state/robot_state.hpp>
+#include <moveit/collision_detection/collision_matrix.hpp>
 #include <moveit_msgs/msg/attached_collision_object.hpp>
 #include <moveit_msgs/msg/allowed_collision_entry.hpp>
 #include <moveit_msgs/msg/collision_object.hpp>
@@ -47,7 +48,10 @@
 #include <algorithm>
 #include <atomic>
 #include <functional>
+#include <optional>
+#include <string>
 
+#include "collision_matrix_edit.hpp"
 #include "ik_first_goal.hpp"
 #include "whole_body_option.hpp"
 
@@ -71,6 +75,9 @@ using GetJointStates = my_robot_interfaces::srv::GetJointStates;
 using ToggleGripperCollision = my_robot_interfaces::srv::ToggleGripperCollision;
 
 using namespace std::placeholders;
+
+// The name MoveIt gives the octomap in the AllowedCollisionMatrix.
+const std::string kOctomap = "<octomap>";
 
 class Commander
 {
@@ -96,6 +103,7 @@ public:
         right_arm_lift_ = std::make_shared<MoveGroupInterface>(node_, "right_arm_lift");
         both_arms_      = std::make_shared<MoveGroupInterface>(node_, "both_arms");
         both_arms_lift_ = std::make_shared<MoveGroupInterface>(node_, "both_arms_lift");
+        srdf_acm_ = collision_detection::AllowedCollisionMatrix(*left_arm_->getRobotModel()->getSRDF());
 
         // Velocity and acceleration scaling for the arm groups, as fractions of
         // the joint limits. The defaults come from joint_limits.yaml
@@ -834,57 +842,21 @@ public:
     }
 
     // ========== ToggleOctomapCollision Service ==========
-    // Select whether planning uses the octomap, by flipping the "<octomap>"
-    // entry in the AllowedCollisionMatrix. data=true -> collision checked (use);
-    // data=false -> allowed (ignored). The octomap keeps updating either way.
+    // Select whether planning uses the octomap. data=true -> collision checked
+    // (use); data=false -> every link may touch it (ignored). The octomap keeps
+    // updating either way.
     void handle_toggle_octomap_collision(
         const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
         std::shared_ptr<std_srvs::srv::SetBool::Response> response)
     {
         const bool use_octomap = request->data;
-        const bool allowed = !use_octomap;   // allowed == ignored in planning
-
-        if (!get_planning_scene_client_->service_is_ready() ||
-            !apply_planning_scene_client_->service_is_ready()) {
+        const auto failure = editCollisionMatrix([&](collision_matrix_edit::Matrix & acm) {
+            collision_matrix_edit::setIgnored(
+                acm, {kOctomap}, !use_octomap, collisionBaseline(grippersMayTouchOctomap()));
+        });
+        if (failure) {
             response->success = false;
-            response->message = "Planning scene services not available (is move_group up?)";
-            return;
-        }
-
-        std::lock_guard<std::mutex> acm_lock(acm_mtx_);
-        // 1. Read the current ACM.
-        auto get_req = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
-        get_req->components.components =
-            moveit_msgs::msg::PlanningSceneComponents::ALLOWED_COLLISION_MATRIX;
-        auto get_future = get_planning_scene_client_->async_send_request(get_req);
-        if (get_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
-            response->success = false;
-            response->message = "Timed out reading planning scene";
-            return;
-        }
-        auto acm = get_future.get()->scene.allowed_collision_matrix;
-
-        // 2. Flip the octomap's default ACM entry.
-        const std::string oct = "<octomap>";
-        auto it = std::find(acm.default_entry_names.begin(),
-                            acm.default_entry_names.end(), oct);
-        if (it != acm.default_entry_names.end()) {
-            acm.default_entry_values[
-                std::distance(acm.default_entry_names.begin(), it)] = allowed;
-        } else {
-            acm.default_entry_names.push_back(oct);
-            acm.default_entry_values.push_back(allowed);
-        }
-
-        // 3. Write it back as a diff.
-        auto apply_req = std::make_shared<moveit_msgs::srv::ApplyPlanningScene::Request>();
-        apply_req->scene.is_diff = true;
-        apply_req->scene.allowed_collision_matrix = acm;
-        auto apply_future = apply_planning_scene_client_->async_send_request(apply_req);
-        if (apply_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready ||
-            !apply_future.get()->success) {
-            response->success = false;
-            response->message = "Failed to apply ACM update";
+            response->message = *failure;
             return;
         }
 
@@ -896,65 +868,25 @@ public:
     }
 
     // ========== ToggleAllCollisionChecking Service ==========
-    // Blanket version of the gripper/octomap toggles above: flips the
-    // *default* ACM entry for EVERY link in the robot model, plus the
-    // octomap. A one-sided default entry is enough for MoveIt's ACM to
-    // allow a pair (see AllowedCollisionMatrix::getAllowedCollision), so
-    // marking every robot link "always allowed" disables self-collision AND
-    // robot-vs-world checks together, without needing to know world object
-    // ids ahead of time. data=true -> normal checking; data=false -> plan
-    // through everything.
+    // Blanket version of the gripper/octomap toggles: turns checking of every
+    // link in the robot model, plus the octomap, off or back on. Their default
+    // entries also cover world objects added later, so data=false plans
+    // through everything without knowing object ids ahead of time.
+    // data=true -> normal checking; data=false -> plan through everything.
     void handle_toggle_all_collision(
         const std::shared_ptr<std_srvs::srv::SetBool::Request> request,
         std::shared_ptr<std_srvs::srv::SetBool::Response> response)
     {
         const bool check_collisions = request->data;
-        const bool allowed = !check_collisions;
-
-        if (!get_planning_scene_client_->service_is_ready() ||
-            !apply_planning_scene_client_->service_is_ready()) {
+        auto names = left_arm_->getRobotModel()->getLinkModelNames();
+        names.push_back(kOctomap);
+        const auto failure = editCollisionMatrix([&](collision_matrix_edit::Matrix & acm) {
+            collision_matrix_edit::setIgnored(
+                acm, names, !check_collisions, collisionBaseline(grippersMayTouchOctomap()));
+        });
+        if (failure) {
             response->success = false;
-            response->message = "Planning scene services not available (is move_group up?)";
-            return;
-        }
-
-        std::lock_guard<std::mutex> acm_lock(acm_mtx_);
-        // 1. Read the current ACM.
-        auto get_req = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
-        get_req->components.components =
-            moveit_msgs::msg::PlanningSceneComponents::ALLOWED_COLLISION_MATRIX;
-        auto get_future = get_planning_scene_client_->async_send_request(get_req);
-        if (get_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
-            response->success = false;
-            response->message = "Timed out reading planning scene";
-            return;
-        }
-        auto acm = get_future.get()->scene.allowed_collision_matrix;
-
-        // 2. Flip the default entry for every robot link, plus the octomap.
-        auto link_names = left_arm_->getRobotModel()->getLinkModelNames();
-        link_names.push_back("<octomap>");
-        for (const auto & name : link_names) {
-            auto it = std::find(acm.default_entry_names.begin(),
-                                acm.default_entry_names.end(), name);
-            if (it != acm.default_entry_names.end()) {
-                acm.default_entry_values[
-                    std::distance(acm.default_entry_names.begin(), it)] = allowed;
-            } else {
-                acm.default_entry_names.push_back(name);
-                acm.default_entry_values.push_back(allowed);
-            }
-        }
-
-        // 3. Write it back as a diff.
-        auto apply_req = std::make_shared<moveit_msgs::srv::ApplyPlanningScene::Request>();
-        apply_req->scene.is_diff = true;
-        apply_req->scene.allowed_collision_matrix = acm;
-        auto apply_future = apply_planning_scene_client_->async_send_request(apply_req);
-        if (apply_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready ||
-            !apply_future.get()->success) {
-            response->success = false;
-            response->message = "Failed to apply ACM update";
+            response->message = *failure;
             return;
         }
 
@@ -966,14 +898,11 @@ public:
     }
 
     // ========== ToggleGripperCollision Service ==========
-    // Enable/disable collision checking for a gripper's links against the rest
-    // of the world. Works by flipping each gripper link's *default* entry in the
-    // AllowedCollisionMatrix: a true default means "collision with anything is
-    // allowed unless a specific entry says otherwise". SRDF adjacency and
-    // finger-vs-object touch_link pairs are *specific* entries and take
-    // precedence over the default, so they stay intact either way. Only the
-    // gripper links are touched here — any attached grasped_object_<side> keeps
-    // being collision-checked.
+    // Enable/disable collision checking for a gripper's links against everything
+    // else: the robot, the octomap and world objects, including ones added later.
+    // Only the gripper links are touched here. An attached grasped_object_<side>
+    // keeps being collision-checked, and its touch links live on the attached
+    // object, not in the AllowedCollisionMatrix.
     void handle_toggle_gripper_collision(
         const std::shared_ptr<ToggleGripperCollision::Request> request,
         std::shared_ptr<ToggleGripperCollision::Response> response)
@@ -987,55 +916,13 @@ public:
             return;
         }
 
-        if (!get_planning_scene_client_->service_is_ready() ||
-            !apply_planning_scene_client_->service_is_ready()) {
+        const auto failure = editCollisionMatrix([&](collision_matrix_edit::Matrix & acm) {
+            collision_matrix_edit::setIgnored(
+                acm, gripper_links, !request->enable, collisionBaseline(grippersMayTouchOctomap()));
+        });
+        if (failure) {
             response->success = false;
-            response->status  = "Planning scene services not available (is move_group up?)";
-            return;
-        }
-
-        std::lock_guard<std::mutex> acm_lock(acm_mtx_);
-        // 1. Read the current ACM.
-        auto get_req = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
-        get_req->components.components =
-            moveit_msgs::msg::PlanningSceneComponents::ALLOWED_COLLISION_MATRIX;
-        auto get_future = get_planning_scene_client_->async_send_request(get_req);
-        if (get_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
-            response->success = false;
-            response->status  = "Timed out reading planning scene";
-            return;
-        }
-        auto acm = get_future.get()->scene.allowed_collision_matrix;
-
-        // 2. enable=true  -> collision checked -> default entry = false (not allowed)
-        //    enable=false -> ignore vs world   -> default entry = true  (allowed)
-        const bool allowed = !request->enable;
-        for (const auto & link : gripper_links) {
-            auto it = std::find(acm.default_entry_names.begin(),
-                                acm.default_entry_names.end(), link);
-            if (it != acm.default_entry_names.end()) {
-                acm.default_entry_values[
-                    std::distance(acm.default_entry_names.begin(), it)] = allowed;
-            } else {
-                acm.default_entry_names.push_back(link);
-                acm.default_entry_values.push_back(allowed);
-            }
-        }
-
-        // 3. Write it back as a scene diff. is_diff=true keeps the rest of the
-        //    scene (objects, robot state); the supplied full ACM replaces the old.
-        auto apply_req = std::make_shared<moveit_msgs::srv::ApplyPlanningScene::Request>();
-        apply_req->scene.is_diff = true;
-        apply_req->scene.allowed_collision_matrix = acm;
-        auto apply_future = apply_planning_scene_client_->async_send_request(apply_req);
-        if (apply_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
-            response->success = false;
-            response->status  = "Timed out applying planning scene";
-            return;
-        }
-        if (!apply_future.get()->success) {
-            response->success = false;
-            response->status  = "apply_planning_scene rejected the ACM update";
+            response->status  = *failure;
             return;
         }
 
@@ -1172,73 +1059,101 @@ public:
             callback_group_);
     }
 
-    // ========== ACM helpers ==========
-    // Ensure `n` is a row/col in the ACM entry matrix; return its index. New names
-    // append all-false entries (collision checked by default).
-    size_t acmEnsureName(moveit_msgs::msg::AllowedCollisionMatrix & acm,
-                         const std::string & n)
+    // ========== AllowedCollisionMatrix edits ==========
+    // Reads move_group's AllowedCollisionMatrix, lets `edit` change it and writes the
+    // whole matrix back, holding acm_mtx_ throughout. Returns why it failed, if it did.
+    std::optional<std::string> editCollisionMatrix(
+        const std::function<void(collision_matrix_edit::Matrix &)> & edit)
     {
-        auto it = std::find(acm.entry_names.begin(), acm.entry_names.end(), n);
-        if (it != acm.entry_names.end())
-            return static_cast<size_t>(std::distance(acm.entry_names.begin(), it));
-        acm.entry_names.push_back(n);
-        for (auto & row : acm.entry_values)
-            row.enabled.push_back(false);
-        moveit_msgs::msg::AllowedCollisionEntry row;
-        row.enabled.assign(acm.entry_names.size(), false);
-        acm.entry_values.push_back(row);
-        return acm.entry_names.size() - 1;
-    }
-
-    void setAcmPair(moveit_msgs::msg::AllowedCollisionMatrix & acm,
-                    const std::string & a, const std::string & b, bool allowed)
-    {
-        const size_t ia = acmEnsureName(acm, a);
-        const size_t ib = acmEnsureName(acm, b);
-        acm.entry_values[ia].enabled[ib] = allowed;
-        acm.entry_values[ib].enabled[ia] = allowed;
-    }
-
-    // ========== (A) Allow gripper links vs the octomap only ==========
-    // Sets the ACM pairs (each gripper link, "<octomap>") = allow_gripper_vs_octomap.
-    // Lets grasping inside sensed voxels plan, WITHOUT the fingers ignoring
-    // explicit collision objects/other links (unlike the blanket gripper disable).
-    void applyGripperOctomapAllowance()
-    {
-        // Read the parameter only once this apply holds the lock, so applies queued
-        // behind each other all write the latest value, and the last one leaves the
-        // scene matching the parameter.
         std::lock_guard<std::mutex> acm_lock(acm_mtx_);
-        const bool allow = node_->get_parameter("allow_gripper_vs_octomap").as_bool();
         if (!get_planning_scene_client_->service_is_ready() ||
             !apply_planning_scene_client_->service_is_ready()) {
-            RCLCPP_WARN(node_->get_logger(),
-                "planning scene services not ready; gripper<->octomap allowance NOT applied");
-            return;
+            return "Planning scene services not available (is move_group up?)";
         }
         auto get_req = std::make_shared<moveit_msgs::srv::GetPlanningScene::Request>();
         get_req->components.components =
             moveit_msgs::msg::PlanningSceneComponents::ALLOWED_COLLISION_MATRIX;
-        auto fut = get_planning_scene_client_->async_send_request(get_req);
-        if (fut.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
-            RCLCPP_WARN(node_->get_logger(), "timed out reading ACM for gripper<->octomap allowance");
-            return;
+        auto get_future = get_planning_scene_client_->async_send_request(get_req);
+        if (get_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+            return "Timed out reading planning scene";
         }
-        auto acm = fut.get()->scene.allowed_collision_matrix;
-        for (const auto & grp : {std::string("left_gripper"), std::string("right_gripper")}) {
-            std::string hand, obj;
-            std::vector<std::string> links;
-            if (!gripperAttachInfo(grp, hand, links, obj)) continue;
-            for (const auto & link : links)
-                setAcmPair(acm, link, "<octomap>", allow);
-        }
+        auto acm = get_future.get()->scene.allowed_collision_matrix;
+        edit(acm);
+        // is_diff=true keeps the rest of the scene (objects, robot state); the
+        // supplied full ACM replaces the old one.
         auto apply_req = std::make_shared<moveit_msgs::srv::ApplyPlanningScene::Request>();
         apply_req->scene.is_diff = true;
         apply_req->scene.allowed_collision_matrix = acm;
-        auto af = apply_planning_scene_client_->async_send_request(apply_req);
-        if (af.wait_for(std::chrono::seconds(5)) != std::future_status::ready ||
-            !af.get()->success) {
-            RCLCPP_WARN(node_->get_logger(), "failed to apply gripper<->octomap allowance");
+        auto apply_future = apply_planning_scene_client_->async_send_request(apply_req);
+        if (apply_future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+            return "Timed out applying planning scene";
+        }
+        if (!apply_future.get()->success) {
+            return "apply_planning_scene rejected the ACM update";
+        }
+        return std::nullopt;
+    }
+
+    // Read inside an edit, so the value and the matrix it is applied to are taken
+    // under the same hold of acm_mtx_.
+    bool grippersMayTouchOctomap()
+    {
+        return node_->get_parameter("allow_gripper_vs_octomap").as_bool();
+    }
+
+    // Whether a pair may touch apart from any default entry: the SRDF disables it,
+    // which is where move_group's matrix starts, or the allowance lets a gripper link
+    // touch the octomap. A toggle turned back on restores each pair to this. It
+    // assumes move_group loads the SRDF this commander does; base_mode changes only
+    // the virtual joint, not the disabled pairs.
+    collision_matrix_edit::Baseline collisionBaseline(bool grippers_touch_octomap)
+    {
+        std::set<std::string> grippers;
+        if (grippers_touch_octomap) {
+            for (const auto & group : {std::string("left_gripper"), std::string("right_gripper")}) {
+                std::string hand, object;
+                std::vector<std::string> links;
+                if (gripperAttachInfo(group, hand, links, object)) {
+                    grippers.insert(links.begin(), links.end());
+                }
+            }
+        }
+        return [this, grippers](const std::string & a, const std::string & b) {
+            collision_detection::AllowedCollision::Type type;
+            if (srdf_acm_.getAllowedCollision(a, b, type) &&
+                type == collision_detection::AllowedCollision::ALWAYS) {
+                return true;
+            }
+            return (a == kOctomap && grippers.count(b) > 0) ||
+                   (b == kOctomap && grippers.count(a) > 0);
+        };
+    }
+
+    // ========== (A) Allow gripper links vs the octomap only ==========
+    // Lets each gripper link touch the octomap while allow_gripper_vs_octomap is set.
+    // Lets grasping inside sensed voxels plan, WITHOUT the fingers ignoring
+    // explicit collision objects/other links (unlike the blanket gripper disable).
+    // A pair stays allowed while a toggle ignores the octomap or the gripper.
+    void applyGripperOctomapAllowance()
+    {
+        // Read the parameter inside the edit, so applies queued behind each other all
+        // write the latest value, and the last one leaves the scene matching it.
+        bool allow = false;
+        const auto failure = editCollisionMatrix([&](collision_matrix_edit::Matrix & acm) {
+            allow = grippersMayTouchOctomap();
+            const auto baseline = collisionBaseline(allow);
+            for (const auto & group : {std::string("left_gripper"), std::string("right_gripper")}) {
+                std::string hand, object;
+                std::vector<std::string> links;
+                if (!gripperAttachInfo(group, hand, links, object)) continue;
+                for (const auto & link : links) {
+                    collision_matrix_edit::refresh(acm, link, {kOctomap}, baseline);
+                }
+            }
+        });
+        if (failure) {
+            RCLCPP_WARN(node_->get_logger(), "Gripper <-> octomap allowance NOT applied: %s",
+                failure->c_str());
             return;
         }
         RCLCPP_INFO(node_->get_logger(), "Gripper <-> octomap collision %s",
@@ -2708,11 +2623,13 @@ private:
     bool table_added_ = false;
     rclcpp::TimerBase::SharedPtr octomap_acm_timer_;    // (A) live gripper<->octomap allowance
 
-    // Held across each read-modify-write of the AllowedCollisionMatrix: the
-    // gripper<->octomap allowance and the three toggle services. Each reads the whole
-    // matrix and writes the whole matrix back, so two at once would lose whichever
-    // change the later write did not read.
+    // Held by editCollisionMatrix across each read-modify-write of the
+    // AllowedCollisionMatrix: the gripper<->octomap allowance and the three toggle
+    // services. Each reads the whole matrix and writes the whole matrix back, so two
+    // at once would lose whichever change the later write did not read.
     std::mutex acm_mtx_;
+    // The pairs the SRDF disables, which move_group's matrix starts from.
+    collision_detection::AllowedCollisionMatrix srdf_acm_;
 };
 
 int main(int argc, char ** argv)

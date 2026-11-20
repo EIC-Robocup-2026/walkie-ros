@@ -59,6 +59,7 @@
 #include <thread>
 #include <vector>
 
+#include "collision_matrix_edit.hpp"
 #include "whole_body_goal.hpp"
 
 class WholeBodyOption
@@ -746,18 +747,14 @@ private:
             return false;
         }
         // Turning all checking off also allows <octomap>, so base_link is the one to report first.
+        // The octomap check reads the pair itself, as MoveIt does, so an entry of the pair's
+        // own counts as well as the default entries.
         const auto & acm = response->scene.allowed_collision_matrix;
-        const auto allowed = [&acm](const std::string & name) {
-            for (size_t i = 0; i < acm.default_entry_names.size() && i < acm.default_entry_values.size(); ++i) {
-                if (acm.default_entry_names[i] == name && acm.default_entry_values[i]) return true;
-            }
-            return false;
-        };
-        if (allowed("base_link")) {
+        if (collision_matrix_edit::defaultAllows(acm, "base_link")) {
             why = "Collision checking is off: call toggle_all_collision_checking first";
             return false;
         }
-        if (allowed("<octomap>")) {
+        if (collision_matrix_edit::allows(acm, "base_link", "<octomap>")) {
             why = "Octomap collision checking is off: call toggle_octomap_collision first";
             return false;
         }
