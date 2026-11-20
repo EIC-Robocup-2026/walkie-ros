@@ -1065,7 +1065,12 @@ public:
     std::optional<std::string> editCollisionMatrix(
         const std::function<void(collision_matrix_edit::Matrix &)> & edit)
     {
-        std::lock_guard<std::mutex> acm_lock(acm_mtx_);
+        std::unique_lock<std::mutex> acm_lock(acm_mtx_, std::try_to_lock);
+        if (!acm_lock.owns_lock()) {
+            RCLCPP_INFO(node_->get_logger(),
+                "Waiting for another collision matrix edit to finish");
+            acm_lock.lock();
+        }
         if (!get_planning_scene_client_->service_is_ready() ||
             !apply_planning_scene_client_->service_is_ready()) {
             return "Planning scene services not available (is move_group up?)";

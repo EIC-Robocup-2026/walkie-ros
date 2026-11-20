@@ -5,7 +5,9 @@ own entries and writes the whole matrix back through /apply_planning_scene. The
 commander's /get_planning_scene is remapped to a service of this test (SceneService),
 which passes every request on to move_group at once, but can hold one answer back. The
 commander then works on a matrix read before a later change landed, as when move_group
-answers late, and the test checks that the later change survives.
+answers late, and the test checks that the later change survives. Before it lets the
+answer go, each test checks that the later change reached the commander: it either
+waits for the held edit, which the commander logs, or it has finished.
 
 The checks look only at the gripper links' pairs with the octomap and at the default
 entries the toggles set. collision_toggles.test.py checks what each toggle allows.
@@ -49,6 +51,8 @@ COMMANDER_STARTED = b'Arm groups using planner'
 APPLIED = b'Gripper <-> octomap collision '
 ALLOWED = b'Gripper <-> octomap collision ALLOWED'
 ENFORCED = b'Gripper <-> octomap collision ENFORCED'
+# The commander logs this when an edit of the matrix waits for another to finish.
+WAITING = b'Waiting for another collision matrix edit to finish'
 # The commander waits at most 5 s for /get_planning_scene, so a held answer is released
 # well before that.
 HOLD_S = 3.0
@@ -230,6 +234,17 @@ class TestGripperOctomapAllowance(unittest.TestCase):
         self.fail(f'The commander logged {self.applied_since(proc_output, start)} of '
                   f'{count} applies of the allowance')
 
+    def waits_since(self, proc_output, start):
+        """How many edits of the matrix have waited for another since `start`."""
+        return commander_log(proc_output)[start:].count(WAITING)
+
+    def assert_overlaps(self, proc_output, start, finished, writer):
+        """Check that `writer` reached the commander during the hold: it waits for the held
+        edit, or, if it does not wait, `finished()` turns true while the answer is held."""
+        self.assertTrue(
+            wait_until(lambda: finished() or self.waits_since(proc_output, start) > 0, HOLD_S),
+            f'{writer} neither waited for the held edit nor finished during the hold')
+
     def set_allowance(self, proc_output, allow):
         """Set the parameter and wait for its apply, with no answer held."""
         start = len(commander_log(proc_output))
@@ -260,8 +275,7 @@ class TestGripperOctomapAllowance(unittest.TestCase):
         self.client.set_parameter(PARAMETER, True)
         self.assertTrue(self.scene.wait_held(), 'The enable never read the scene')
         toggled = toggled_off()
-        # A toggle that does not wait for the apply finishes during the hold.
-        wait_until(toggled.done, HOLD_S)
+        self.assert_overlaps(proc_output, start, toggled.done, 'The toggle')
         self.scene.release()
         self.wait_applied(proc_output, start, 1)
         self.assertTrue(self.client.wait(toggled, 30.0).success)
@@ -284,9 +298,10 @@ class TestGripperOctomapAllowance(unittest.TestCase):
         self.assertTrue(self.scene.wait_held(), 'The enable never read the scene')
         self.client.set_parameter(PARAMETER, False)
         # An apply of the disable that does not wait for the enable finishes while the
-        # enable's answer is held; wait for that, so the enable's write lands after it.
-        # An apply that waits never logs here, and the answer is released after HOLD_S.
-        wait_until(lambda: ENFORCED in commander_log(proc_output)[start:], HOLD_S)
+        # enable's answer is held, so the enable's write lands after it.
+        self.assert_overlaps(
+            proc_output, start, lambda: ENFORCED in commander_log(proc_output)[start:],
+            'The disable')
         self.scene.release()
         log = self.wait_applied(proc_output, start, 2)
         self.assertLess(log.find(ALLOWED), log.find(ENFORCED), log.decode(errors='replace'))
@@ -306,8 +321,7 @@ class TestGripperOctomapAllowance(unittest.TestCase):
         self.client.set_parameter(PARAMETER, False)
         self.assertTrue(self.scene.wait_held(), 'The disallow never read the scene')
         toggled = self.toggle(True)
-        # As in the test above: a toggle that does not wait finishes during the hold.
-        wait_until(toggled.done, HOLD_S)
+        self.assert_overlaps(proc_output, start, toggled.done, 'The toggle')
         self.scene.release()
         self.wait_applied(proc_output, start, 1)
         self.assertTrue(self.client.wait(toggled, 30.0).success)
@@ -326,9 +340,13 @@ class TestGripperOctomapAllowance(unittest.TestCase):
         self.assertTrue(self.scene.wait_held(), 'The enable never read the scene')
         # Turning the octomap on while it is on changes nothing.
         toggles = [self.toggle(True) for _ in range(EXECUTOR_THREADS + 2)]
-        # Time for the commander to take the toggles. None can finish during the hold,
-        # since each waits for the apply.
-        time.sleep(1.0)
+        # The apply runs in one executor thread, and a toggle waits for it in each of
+        # the others.
+        threads_left = EXECUTOR_THREADS - 1
+        self.assertTrue(
+            wait_until(lambda: self.waits_since(proc_output, start) >= threads_left, HOLD_S),
+            f'{self.waits_since(proc_output, start)} of {threads_left} toggles waited for '
+            'the apply')
         self.scene.release()
         log = self.wait_applied(proc_output, start, 1)
         self.assertIn(ALLOWED, log)
