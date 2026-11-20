@@ -21,8 +21,10 @@ launch does, and runs the physics of one side grasp without ROS or MoveIt:
 It reports the settled finger position (the gap the commander compares with
 its grasp band), how far the object rose with the hand, and its slip: how far
 it fell against the hand from its release to the end of the carry. It exits
-non-zero if the gap leaves the band, the object does not rise with the hand,
-or it slips more than --max-slip.
+non-zero if the gap leaves the band at any physics step from the release to
+the end of the carry, the hand does not rise within --lift-tolerance of
+--lift, the object does not rise with the hand, or it slips more than
+--max-slip.
 
 The fingers taper toward their tips, so a round object is pushed toward the
 palm as they close. That motion is reported as moved_in_hand and is not slip.
@@ -155,11 +157,21 @@ def run(model, args) -> dict:
         hand_pos, hand_rot = body_frame(data, hand)
         return hand_rot.T @ (data.xpos[obj.id] - hand_pos)
 
-    def simulate(seconds, before_step=None):
+    def simulate(seconds, before_step=None, after_step=None):
         for _ in range(int(round(seconds / model.opt.timestep))):
             if before_step:
                 before_step()
             mujoco.mj_step(model, data)
+            if after_step:
+                after_step()
+
+    # Smallest and largest finger gap from the release to the end of the carry.
+    gap_range = [math.inf, -math.inf]
+
+    def track_gap():
+        gap = float(data.qpos[finger_q])
+        gap_range[0] = min(gap_range[0], gap)
+        gap_range[1] = max(gap_range[1], gap)
 
     # Settle the arm with the object pinned and the fingers open.
     simulate(1.0, pin)
@@ -177,7 +189,8 @@ def run(model, args) -> dict:
 
     released_in_hand = object_in_hand()
     released_drop = float(data.xpos[hand][2] - data.xpos[obj.id][2])
-    simulate(args.hold)
+    track_gap()
+    simulate(args.hold, after_step=track_gap)
     start_in_hand = object_in_hand()
     start_world = data.xpos[obj.id].copy()
     start_hand = data.xpos[hand].copy()
@@ -189,19 +202,19 @@ def run(model, args) -> dict:
     for step in range(1, lift_steps + 1):
         data.ctrl[lift] = lift_start + args.lift * step / lift_steps
         mujoco.mj_step(model, data)
-    simulate(args.hold)
+        track_gap()
+    simulate(args.hold, after_step=track_gap)
     lifted_in_hand = object_in_hand()
     hand_rise = float(data.xpos[hand][2] - start_hand[2])
     object_rise = float(data.xpos[obj.id][2] - start_world[2])
     gap_lifted = float(data.qpos[finger_q])
 
-    simulate(args.carry)
+    simulate(args.carry, after_step=track_gap)
     carried_in_hand = object_in_hand()
     gap_carried = float(data.qpos[finger_q])
     # The tapered fingers push a round object toward the palm, so the object moves in
     # the hand without loosening. Only a fall against the hand counts as slip.
     slip = float(data.xpos[hand][2] - data.xpos[obj.id][2]) - released_drop
-    in_band = all(GRASP_BAND[0] <= gap <= GRASP_BAND[1] for gap in (gap_lifted, gap_carried))
     mimic = model.jnt_qposadr[model.joint(FINGER_JOINT.replace("joint1", "joint2")).id]
     return {
         "object": args.object,
@@ -214,8 +227,11 @@ def run(model, args) -> dict:
         "gap_after_release": gap_held,
         "gap_after_lift": gap_lifted,
         "gap_after_carry": gap_carried,
+        "gap_min_from_release": gap_range[0],
+        "gap_max_from_release": gap_range[1],
         "mimic_finger_after_carry": float(data.qpos[mimic]),
         "grasp_band": list(GRASP_BAND),
+        "lift": args.lift,
         "hand_rise": hand_rise,
         "object_rise": object_rise,
         "slip": slip,
@@ -225,11 +241,26 @@ def run(model, args) -> dict:
         "object_in_hand_after_lift": lifted_in_hand.round(4).tolist(),
         "object_in_hand_after_carry": carried_in_hand.round(4).tolist(),
         "object_geoms": geom_settings(model, obj.id),
-        "checks": {
-            "gap_in_grasp_band": in_band,
-            "object_rose_with_hand": object_rise > 0.8 * hand_rise > 0.0,
-            "slip_below_limit": slip <= args.max_slip,
-        },
+        "checks": grasp_checks(
+            gap_range=tuple(gap_range), hand_rise=hand_rise, object_rise=object_rise,
+            slip=slip, lift=args.lift, lift_tolerance=args.lift_tolerance,
+            max_slip=args.max_slip),
+    }
+
+
+def grasp_checks(*, gap_range, hand_rise, object_rise, slip, lift, lift_tolerance,
+                 max_slip) -> dict[str, bool]:
+    """Pass or fail of each check, from the measured grasp.
+
+    gap_range is the smallest and largest finger gap from the release to the end of
+    the carry; every gap in it must be in the commander's grasp band. The hand must
+    rise within lift_tolerance of the commanded lift, and the object with it.
+    """
+    return {
+        "gap_in_grasp_band": GRASP_BAND[0] <= gap_range[0] and gap_range[1] <= GRASP_BAND[1],
+        "hand_rose_commanded_lift": abs(hand_rise - lift) <= lift_tolerance,
+        "object_rose_with_hand": object_rise > 0.8 * hand_rise > 0.0,
+        "slip_below_limit": slip <= max_slip,
     }
 
 
@@ -284,6 +315,9 @@ def main(argv=None) -> int:
                         help="Lift travel in m (default: %(default)s)")
     parser.add_argument("--lift-speed", type=float, default=0.05,
                         help="Lift speed in m/s (default: %(default)s)")
+    parser.add_argument("--lift-tolerance", type=float, default=0.005,
+                        help="Largest accepted difference between the hand's rise and "
+                             "--lift, in m (default: %(default)s)")
     parser.add_argument("--hold", type=float, default=2.0,
                         help="Seconds to hold before and after the lift (default: %(default)s)")
     parser.add_argument("--carry", type=float, default=20.0,
