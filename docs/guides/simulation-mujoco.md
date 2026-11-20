@@ -590,9 +590,11 @@ Run the commands from the repository root.
     2. `ros2_control_node` of the package `mujoco_ros2_control`, not the one of
        `controller_manager`. It steps the physics, runs the controller manager in the same
        process, publishes `/clock`, and reads the URDF from `/robot_description`. Its
-       parameters are `use_sim_time: true`,
+       parameters are `use_sim_time: true`, `mujoco_world`,
        `description/config/ros2_controller/mujoco_controllers.yaml` and
-       `bringup/config/mujoco/mujoco_plugins.yaml`. It remaps
+       `bringup/config/mujoco/mujoco_plugins.yaml`. `mujoco_world` is the `world`
+       argument, or an empty string without one; it shows a client which world runs,
+       for example `ros2 param get /controller_manager mujoco_world`. It remaps
        `/imu_sensor_broadcaster/imu` to `/imu`. When it exits, for example because the
        MuJoCo window was closed, the whole launch shuts down.
     3. Two spawners, both with `--param-file` set to `mujoco_controllers.yaml`. The first
